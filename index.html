@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Track your 4-day machine hypertrophy routine with progressive overload, rest timers, and superset pacing.">
+  <title>4-Day Machine Lifting Tracker</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="theme-color" content="#0a0e17">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="header-top">
+      <div class="brand">
+        <div class="brand-icon">🏋️‍♂️</div>
+        <div>
+          <h1 class="brand-title">Machine Master</h1>
+          <div class="brand-subtitle">4-Day Hypertrophy Routine</div>
+        </div>
+      </div>
+
+      <nav class="nav-tabs">
+        <button class="nav-btn active" data-view="workout">
+          <span>⚡</span> Workout
+        </button>
+        <button class="nav-btn" data-view="analytics">
+          <span>📈</span> Progress
+        </button>
+        <button class="nav-btn" data-view="routine">
+          <span>⚙️</span> Routine
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main class="main-container">
+
+    <!-- WORKOUT VIEW -->
+    <section id="workoutView">
+      
+      <!-- Day Selector Carousel/Grid -->
+      <div class="day-selector-wrap">
+        <div class="day-selector" id="daySelector">
+          <!-- Populated dynamically by app.js -->
+        </div>
+      </div>
+
+      <!-- 60-Min Cap Info Bar -->
+      <div class="time-saver-banner">
+        <span style="font-size: 1.1rem;">⏱️</span>
+        <div class="time-saver-text">
+          <strong>60-Min Gym Cap:</strong> Core lifts & supersets take ~32m. Bonus finishers at the bottom are 100% optional!
+        </div>
+      </div>
+
+      <!-- Active Session Control Bar -->
+      <div class="session-bar">
+        <div class="session-info" id="sessionInfo">
+          <!-- Populated dynamically -->
+        </div>
+        <button class="finish-btn" id="finishWorkoutBtn">
+          <span>✓</span> Finish Workout
+        </button>
+      </div>
+
+      <!-- Exercise Cards List -->
+      <div id="exerciseList">
+        <!-- Exercise cards populated dynamically by app.js -->
+      </div>
+    </section>
+
+    <!-- ANALYTICS & PROGRESS VIEW -->
+    <section id="analyticsView" style="display: none;">
+      <div id="analyticsContent">
+        <!-- Populated dynamically -->
+      </div>
+    </section>
+
+    <!-- ROUTINE / SETTINGS VIEW -->
+    <section id="routineView" style="display: none;">
+      <div id="routineEditor">
+        <!-- Populated dynamically -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Floating Rest Timer Dock -->
+  <div class="rest-timer-dock" id="timerDock">
+    <div class="timer-progress-bar" id="timerProgressBar"></div>
+    <div class="timer-content">
+      <div class="timer-left">
+        <span class="timer-icon">⏱️</span>
+        <div>
+          <div class="timer-display" id="timerDisplay">1:30</div>
+          <div class="timer-label">Rest Countdown</div>
+        </div>
+      </div>
+      <div class="timer-controls">
+        <button class="timer-btn" id="timerMinus15Btn">-15s</button>
+        <button class="timer-btn" id="timerPlus30Btn">+30s</button>
+        <button class="timer-btn skip-btn" id="timerSkipBtn">Skip</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Workout Summary Modal -->
+  <div class="modal-backdrop" id="summaryModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Session Completed</h3>
+        <button class="close-modal-btn">&times;</button>
+      </div>
+      <div id="summaryContent">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="routine-data.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(err => {
+          console.log('ServiceWorker registration skipped:', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
