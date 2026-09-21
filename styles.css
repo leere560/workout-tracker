@@ -489,6 +489,8 @@ input[type="number"] {
 .tag-Biceps { background: rgba(14, 165, 233, 0.15); color: #38bdf8; }
 .tag-Quads { background: rgba(16, 185, 129, 0.15); color: #34d399; }
 .tag-HamstringsGlutes { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.tag-Glutes { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.tag-GlutesHamstrings { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 .tag-Calves { background: rgba(20, 184, 166, 0.15); color: #2dd4bf; }
 .tag-AbsCore { background: rgba(239, 68, 68, 0.15); color: #f87171; }
 .tag-AdductorsHips { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }

@@ -293,19 +293,19 @@ const DEFAULT_ROUTINE = [
   },
   {
     "id": "mon__lower_b",
-    "title": "Mon- Lower B",
+    "title": "Mon - Lower B",
     "tag": "Lower",
     "exercises": [
       {
-        "id": "mon__lower_b_ex1",
-        "name": "Smith Machine Romanian Deadlift (RDL)",
-        "muscle": "Hamstrings / Glutes",
+        "id": "mon__lower_b_ex_hip_thrust",
+        "name": "Machine Hip Thrust / Glute Drive",
+        "muscle": "Glutes",
         "sets": 3,
-        "targetReps": "8–10",
-        "startingWeight": "Bar + 70–90 lbs",
-        "rest": "2.5–3 min",
-        "notes": "Set safety stops at mid-shin; soft knee bend; push hips back toward wall; bar grazes shins.",
-        "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+smith+machine+rdl",
+        "targetReps": "10–15",
+        "startingWeight": "Light (find weight)",
+        "rest": "2 min",
+        "notes": "Position the belt/pad across the hips, brace, and raise the hips without arching the lower back. Lower under control. Effort: finish with 2–3 reps in reserve.",
+        "videoUrl": "https://www.youtube.com/results?search_query=machine+hip+thrust+glute+drive+technique",
         "isOptional": false,
         "superset": null
       },
@@ -336,25 +336,6 @@ const DEFAULT_ROUTINE = [
         "superset": null
       },
       {
-        "id": "mon__lower_b_ex4",
-        "name": "Machine Hip Adduction",
-        "muscle": "Adductors / Hips",
-        "sets": 2,
-        "targetReps": "12–15",
-        "startingWeight": "80–110 lbs",
-        "rest": "60–90 sec",
-        "notes": "Wide, comfortable inner thigh stretch; smooth, controlled contraction without slamming plates.",
-        "videoUrl": "https://www.youtube.com/results?search_query=Renaissance+Periodization+hip+adduction+machine",
-        "isOptional": true,
-        "superset": {
-          "id": "lower_b_acc",
-          "tag": "4A",
-          "name": "Accessory Superset (Adductors + Calves)",
-          "tip": "⚡ Superset: Perform 1 set of Adduction, rest 45s, perform Calf Press, rest 60s. Saves ~6 mins!",
-          "rest": "45–60 sec"
-        }
-      },
-      {
         "id": "mon__lower_b_ex5",
         "name": "Leg Press Calf Press",
         "muscle": "Calves",
@@ -365,13 +346,20 @@ const DEFAULT_ROUTINE = [
         "notes": "Balls of feet on lower edge; achieve full ankle flexion stretch with a 2-second dead stop.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+calf+press+leg+press",
         "isOptional": false,
-        "superset": {
-          "id": "lower_b_acc",
-          "tag": "4B",
-          "name": "Accessory Superset (Adductors + Calves)",
-          "tip": "⚡ Superset: Alternate with Hip Adduction. Saves ~6 mins!",
-          "rest": "60 sec"
-        }
+        "superset": null
+      },
+      {
+        "id": "mon__lower_b_ex_back_ext",
+        "name": "45-Degree Back Extension",
+        "muscle": "Glutes / Hamstrings",
+        "sets": 2,
+        "targetReps": "10–15",
+        "startingWeight": "Bodyweight",
+        "rest": "90 sec",
+        "notes": "Pad just below the hip crease, feet secured, hinge slowly at the hips while keeping the spine comfortably steady. Rise until torso and legs align; don’t swing or arch backward. Effort: finish with 3–4 clean reps in reserve (start with just 1 set for the first two sessions).",
+        "videoUrl": "https://www.youtube.com/results?search_query=45+degree+back+extension+for+glutes+technique",
+        "isOptional": false,
+        "superset": null
       },
       {
         "id": "mon__lower_b_ex6",

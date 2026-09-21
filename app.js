@@ -37,6 +37,8 @@ class WorkoutApp {
   }
 
   loadRoutine() {
+    const CURRENT_ROUTINE_REV = 4;
+    const savedRev = localStorage.getItem('gym_routine_rev');
     const saved = localStorage.getItem(this.storageKeys.routine);
     if (saved) {
       try {
@@ -49,9 +51,32 @@ class WorkoutApp {
             }
           });
         });
+
+        // Migrate Monday Lower B to the updated routine (Hip Thrust & 45 Back Extension)
+        const monDay = parsed.find(d => d.id === 'mon__lower_b');
+        const needsMondayUpdate = monDay && (
+          monDay.exercises.some(e => e.id === 'mon__lower_b_ex1') ||
+          monDay.exercises.some(e => e.name.includes('Romanian Deadlift')) ||
+          monDay.exercises.some(e => e.name.includes('Adduction')) ||
+          savedRev !== String(CURRENT_ROUTINE_REV)
+        );
+
+        if (needsMondayUpdate) {
+          const newMonDay = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b');
+          if (newMonDay) {
+            const monIdx = parsed.findIndex(d => d.id === 'mon__lower_b');
+            if (monIdx !== -1) {
+              parsed[monIdx] = JSON.parse(JSON.stringify(newMonDay));
+            }
+          }
+          localStorage.setItem('gym_routine_rev', String(CURRENT_ROUTINE_REV));
+          localStorage.setItem(this.storageKeys.routine, JSON.stringify(parsed));
+        }
+
         return parsed;
       } catch (e) { console.error(e); }
     }
+    localStorage.setItem('gym_routine_rev', String(CURRENT_ROUTINE_REV));
     return DEFAULT_ROUTINE;
   }
 
@@ -89,6 +114,25 @@ class WorkoutApp {
       try {
         const parsed = JSON.parse(saved);
         if (parsed.dayId === this.routine[this.activeDayIndex]?.id) {
+          // Ensure any newly added exercises have initialized log entries
+          const day = this.routine[this.activeDayIndex];
+          if (day && day.exercises) {
+            day.exercises.forEach(ex => {
+              if (!parsed.logs[ex.id] || parsed.logs[ex.id].length === 0) {
+                const prevData = this.getPreviousExercisePerformance(ex.name);
+                parsed.logs[ex.id] = [];
+                for (let i = 1; i <= ex.sets; i++) {
+                  const prevSet = prevData && prevData.sets && prevData.sets[i - 1];
+                  parsed.logs[ex.id].push({
+                    setNum: i,
+                    weight: prevSet ? prevSet.weight : this.parseInitialWeight(ex.startingWeight),
+                    reps: prevSet ? prevSet.reps : this.parseInitialReps(ex.targetReps),
+                    completed: false
+                  });
+                }
+              }
+            });
+          }
           return parsed;
         }
       } catch (e) { console.error(e); }
