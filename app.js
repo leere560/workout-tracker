@@ -37,7 +37,7 @@ class WorkoutApp {
   }
 
   loadRoutine() {
-    const CURRENT_ROUTINE_REV = 4;
+    const CURRENT_ROUTINE_REV = 5;
     const savedRev = localStorage.getItem('gym_routine_rev');
     const saved = localStorage.getItem(this.storageKeys.routine);
     if (saved) {
@@ -52,12 +52,13 @@ class WorkoutApp {
           });
         });
 
-        // Migrate Monday Lower B to the updated routine (Hip Thrust & 45 Back Extension)
+        // Migrate Monday Lower B to the updated routine (Hip Thrust, 45 Back Extension, Leg Press Superset)
         const monDay = parsed.find(d => d.id === 'mon__lower_b');
         const needsMondayUpdate = monDay && (
           monDay.exercises.some(e => e.id === 'mon__lower_b_ex1') ||
           monDay.exercises.some(e => e.name.includes('Romanian Deadlift')) ||
           monDay.exercises.some(e => e.name.includes('Adduction')) ||
+          !monDay.exercises.some(e => e.superset && e.superset.id === 'lower_b_leg_press_calf') ||
           savedRev !== String(CURRENT_ROUTINE_REV)
         );
 
@@ -188,6 +189,7 @@ class WorkoutApp {
     if (lower.includes('2.5') || lower.includes('2-3 min') || lower.includes('2–3 min')) return 150;
     if (lower.includes('2 min')) return 120;
     if (lower.includes('90 sec') || lower.includes('90s')) return 90;
+    if (lower.includes('45–60') || lower.includes('45-60') || lower.includes('45 sec') || lower.includes('45s')) return 45;
     if (lower.includes('60 sec') || lower.includes('60s')) return 60;
     return 90;
   }

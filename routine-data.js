@@ -320,20 +320,13 @@ const DEFAULT_ROUTINE = [
         "notes": "Feet placed high on platform; bring knees deep toward chest to load glutes and hamstrings.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+leg+press+technique",
         "isOptional": false,
-        "superset": null
-      },
-      {
-        "id": "mon__lower_b_ex3",
-        "name": "Lying Leg Curl",
-        "muscle": "Hamstrings / Glutes",
-        "sets": 3,
-        "targetReps": "10–12",
-        "startingWeight": "70–90 lbs",
-        "rest": "90 sec",
-        "notes": "Keep hips pinned flat into the pad; avoid hyperextending lower back; control the negative.",
-        "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+lying+leg+curl",
-        "isOptional": false,
-        "superset": null
+        "superset": {
+          "id": "lower_b_leg_press_calf",
+          "tag": "2A",
+          "name": "Same-Machine Superset (Quads + Calves)",
+          "tip": "⚡ Superset: Perform 1 set of Leg Press, rest 45–60s (adjust weight pin & slide feet to bottom edge), then perform Calf Press, rest 60s. Saves ~6 mins!",
+          "rest": "45–60 sec"
+        }
       },
       {
         "id": "mon__lower_b_ex5",
@@ -345,6 +338,25 @@ const DEFAULT_ROUTINE = [
         "rest": "60–90 sec",
         "notes": "Balls of feet on lower edge; achieve full ankle flexion stretch with a 2-second dead stop.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+calf+press+leg+press",
+        "isOptional": false,
+        "superset": {
+          "id": "lower_b_leg_press_calf",
+          "tag": "2B",
+          "name": "Same-Machine Superset (Quads + Calves)",
+          "tip": "⚡ Superset: Alternate with Horizontal Leg Press on the same machine. Calves work while quads rest!",
+          "rest": "60 sec"
+        }
+      },
+      {
+        "id": "mon__lower_b_ex3",
+        "name": "Lying Leg Curl",
+        "muscle": "Hamstrings / Glutes",
+        "sets": 3,
+        "targetReps": "10–12",
+        "startingWeight": "70–90 lbs",
+        "rest": "90 sec",
+        "notes": "Keep hips pinned flat into the pad; avoid hyperextending lower back; control the negative.",
+        "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+lying+leg+curl",
         "isOptional": false,
         "superset": null
       },
