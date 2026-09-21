@@ -167,6 +167,19 @@ const DEFAULT_ROUTINE = [
         }
       },
       {
+        "id": "fri___lower_a_ex_lunges",
+        "name": "Dumbbell Walking Lunges",
+        "muscle": "Quads / Glutes",
+        "sets": 3,
+        "targetReps": "10–12 / leg",
+        "startingWeight": "25–35 lbs DBs",
+        "rest": "90 sec",
+        "notes": "Torso tilted slightly forward 15–20° for deep glute load; smooth controlled strides; gentle back knee touch.",
+        "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+walking+lunges+technique",
+        "isOptional": false,
+        "superset": null
+      },
+      {
         "id": "fri___lower_a_ex4",
         "name": "Standing / Leg Press Calf Raise",
         "muscle": "Calves",
@@ -361,10 +374,23 @@ const DEFAULT_ROUTINE = [
         "superset": null
       },
       {
+        "id": "mon__lower_b_ex4",
+        "name": "Machine Hip Adduction",
+        "muscle": "Adductors / Hips",
+        "sets": 3,
+        "targetReps": "12–15",
+        "startingWeight": "80–110 lbs",
+        "rest": "60–90 sec",
+        "notes": "Wide, comfortable inner thigh stretch; smooth, controlled contraction without slamming plates.",
+        "videoUrl": "https://www.youtube.com/results?search_query=Renaissance+Periodization+hip+adduction+machine",
+        "isOptional": false,
+        "superset": null
+      },
+      {
         "id": "mon__lower_b_ex_back_ext",
         "name": "45-Degree Back Extension",
         "muscle": "Glutes / Hamstrings",
-        "sets": 2,
+        "sets": 3,
         "targetReps": "10–15",
         "startingWeight": "Bodyweight",
         "rest": "90 sec",

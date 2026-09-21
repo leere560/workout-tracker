@@ -7,14 +7,19 @@ class WorkoutApp {
       history: 'gym_history_v1',
       machineSettings: 'gym_machine_settings_v1',
       streamlineMode: 'gym_streamline_mode_v1',
-      currentSession: 'gym_current_session_v4'
+      currentSessionPrefix: 'gym_session_',
+      legacyCurrentSession: 'gym_current_session_v4',
+      lastWeights: 'gym_last_weights_v1'
     };
+
+    // Load History & Last Recorded Weights
+    this.history = this.loadHistory();
+    this.lastWeights = this.loadLastWeights();
+    this.machineSettings = this.loadMachineSettings();
+    this.streamlineMode = localStorage.getItem(this.storageKeys.streamlineMode) !== 'false'; // Default to true
 
     // Load Routine
     this.routine = this.loadRoutine();
-    this.history = this.loadHistory();
-    this.machineSettings = this.loadMachineSettings();
-    this.streamlineMode = localStorage.getItem(this.storageKeys.streamlineMode) !== 'false'; // Default to true
 
     // Active Day: determine suggested day based on current weekday
     this.activeDayIndex = this.getSuggestedDayIndex();
@@ -29,6 +34,7 @@ class WorkoutApp {
 
     // Active session logs in memory
     this.session = this.loadSession();
+    this.selectedProgressExercise = null;
 
     // Init UI
     this.initElements();
@@ -37,7 +43,7 @@ class WorkoutApp {
   }
 
   loadRoutine() {
-    const CURRENT_ROUTINE_REV = 6;
+    const CURRENT_ROUTINE_REV = 7;
     const savedRev = localStorage.getItem('gym_routine_rev');
     const saved = localStorage.getItem(this.storageKeys.routine);
     if (saved) {
@@ -52,25 +58,25 @@ class WorkoutApp {
           });
         });
 
-        // Migrate Monday Lower B to the updated routine (Hip Thrust, 45 Back Extension, Leg Press Superset)
+        // Migrate routine to include Friday Walking Lunges and Monday Hip Adduction + 3 sets Back Ext
         const monDay = parsed.find(d => d.id === 'mon__lower_b');
-        const needsMondayUpdate = monDay && (
-          monDay.exercises.some(e => e.id === 'mon__lower_b_ex1') ||
-          monDay.exercises.some(e => e.name.includes('Romanian Deadlift')) ||
-          monDay.exercises.some(e => e.name.includes('Adduction')) ||
-          !monDay.exercises.some(e => e.superset && e.superset.id === 'lower_b_leg_press_calf') ||
-          savedRev !== String(CURRENT_ROUTINE_REV)
-        );
+        const friDay = parsed.find(d => d.id === 'fri___lower_a');
+        const needsUpdate = 
+          savedRev !== String(CURRENT_ROUTINE_REV) ||
+          (monDay && !monDay.exercises.some(e => e.id === 'mon__lower_b_ex4')) ||
+          (friDay && !friDay.exercises.some(e => e.id === 'fri___lower_a_ex_lunges'));
 
-        if (needsMondayUpdate) {
+        if (needsUpdate) {
           const newMonDay = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b');
           if (newMonDay) {
             const monIdx = parsed.findIndex(d => d.id === 'mon__lower_b');
-            if (monIdx !== -1) {
-              parsed[monIdx] = JSON.parse(JSON.stringify(newMonDay));
-            }
+            if (monIdx !== -1) parsed[monIdx] = JSON.parse(JSON.stringify(newMonDay));
           }
-          localStorage.removeItem(this.storageKeys.currentSession);
+          const newFriDay = DEFAULT_ROUTINE.find(d => d.id === 'fri___lower_a');
+          if (newFriDay) {
+            const friIdx = parsed.findIndex(d => d.id === 'fri___lower_a');
+            if (friIdx !== -1) parsed[friIdx] = JSON.parse(JSON.stringify(newFriDay));
+          }
           localStorage.setItem('gym_routine_rev', String(CURRENT_ROUTINE_REV));
           localStorage.setItem(this.storageKeys.routine, JSON.stringify(parsed));
         }
@@ -98,6 +104,56 @@ class WorkoutApp {
     localStorage.setItem(this.storageKeys.history, JSON.stringify(this.history));
   }
 
+  loadLastWeights() {
+    const saved = localStorage.getItem(this.storageKeys.lastWeights);
+    let data = {};
+    if (saved) {
+      try { data = JSON.parse(saved); } catch (e) { console.error(e); }
+    }
+    // Bootstrap from history if empty
+    if (Object.keys(data).length === 0 && this.history && this.history.length > 0) {
+      this.history.forEach(h => {
+        if (h.exercises) {
+          Object.keys(h.exercises).forEach(name => {
+            const entry = h.exercises[name];
+            if (entry && entry.sets) {
+              data[name] = {
+                date: h.date,
+                sets: entry.sets.map(s => ({ setNum: s.setNum, weight: s.weight, reps: s.reps, completed: s.completed }))
+              };
+            }
+          });
+        }
+      });
+    }
+    return data;
+  }
+
+  saveLastWeights() {
+    localStorage.setItem(this.storageKeys.lastWeights, JSON.stringify(this.lastWeights));
+  }
+
+  recordExerciseWeight(exerciseName, setNum, weight, reps, completed = false) {
+    if (!this.lastWeights) this.lastWeights = {};
+    if (!this.lastWeights[exerciseName]) {
+      this.lastWeights[exerciseName] = {
+        date: new Date().toISOString(),
+        sets: []
+      };
+    }
+    this.lastWeights[exerciseName].date = new Date().toISOString();
+    while (this.lastWeights[exerciseName].sets.length < setNum) {
+      this.lastWeights[exerciseName].sets.push(null);
+    }
+    this.lastWeights[exerciseName].sets[setNum - 1] = {
+      setNum,
+      weight: parseFloat(weight) || 0,
+      reps: parseInt(reps, 10) || 0,
+      completed
+    };
+    this.saveLastWeights();
+  }
+
   loadMachineSettings() {
     const saved = localStorage.getItem(this.storageKeys.machineSettings);
     if (saved) {
@@ -110,14 +166,27 @@ class WorkoutApp {
     localStorage.setItem(this.storageKeys.machineSettings, JSON.stringify(this.machineSettings));
   }
 
-  loadSession() {
-    const saved = localStorage.getItem(this.storageKeys.currentSession);
+  getSessionKey(dayId) {
+    return `${this.storageKeys.currentSessionPrefix}${dayId}`;
+  }
+
+  loadSession(dayIndex = this.activeDayIndex) {
+    const day = this.routine[dayIndex] || this.routine[0];
+    const key = this.getSessionKey(day.id);
+    const legacy = localStorage.getItem(this.storageKeys.legacyCurrentSession);
+    let saved = localStorage.getItem(key);
+    if (!saved && legacy) {
+      try {
+        const parsedLegacy = JSON.parse(legacy);
+        if (parsedLegacy && parsedLegacy.dayId === day.id) saved = legacy;
+      } catch (e) {}
+    }
+
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        if (parsed.dayId === this.routine[this.activeDayIndex]?.id) {
-          // Ensure any newly added exercises have initialized log entries
-          const day = this.routine[this.activeDayIndex];
+        const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
+        if (parsed.dayId === day.id) {
+          // Ensure all exercises in the current routine definition have logs initialized
           if (day && day.exercises) {
             day.exercises.forEach(ex => {
               if (!parsed.logs[ex.id] || parsed.logs[ex.id].length === 0) {
@@ -139,7 +208,13 @@ class WorkoutApp {
         }
       } catch (e) { console.error(e); }
     }
-    return this.initNewSession(this.activeDayIndex);
+    return this.initNewSession(dayIndex);
+  }
+
+  saveCurrentSession() {
+    if (!this.session || !this.session.dayId) return;
+    const key = this.getSessionKey(this.session.dayId);
+    localStorage.setItem(key, JSON.stringify(this.session));
   }
 
   initNewSession(dayIndex) {
@@ -168,8 +243,13 @@ class WorkoutApp {
     return session;
   }
 
-  saveCurrentSession() {
-    localStorage.setItem(this.storageKeys.currentSession, JSON.stringify(this.session));
+  findExerciseById(exId) {
+    if (!this.routine) return null;
+    for (const day of this.routine) {
+      const found = day.exercises.find(e => e.id === exId);
+      if (found) return found;
+    }
+    return null;
   }
 
   parseInitialWeight(str) {
@@ -209,10 +289,24 @@ class WorkoutApp {
   }
 
   getPreviousExercisePerformance(exerciseName) {
+    // 1. Check persistent lastWeights store
+    if (this.lastWeights && this.lastWeights[exerciseName] && this.lastWeights[exerciseName].sets) {
+      const validSets = this.lastWeights[exerciseName].sets.filter(Boolean);
+      if (validSets.length > 0) {
+        return {
+          date: this.lastWeights[exerciseName].date,
+          sets: validSets
+        };
+      }
+    }
+    // 2. Check completed history
     for (let i = this.history.length - 1; i >= 0; i--) {
       const workout = this.history[i];
       if (workout.exercises && workout.exercises[exerciseName]) {
-        return workout.exercises[exerciseName];
+        return {
+          date: workout.date,
+          sets: workout.exercises[exerciseName].sets
+        };
       }
     }
     return null;
@@ -223,19 +317,33 @@ class WorkoutApp {
     let max1RM = 0;
     let bestReps = 0;
 
+    // Check history
     this.history.forEach(h => {
       if (h.exercises && h.exercises[exerciseName]) {
         h.exercises[exerciseName].sets.forEach(s => {
-          if (s.completed && s.weight > 0 && s.reps > 0) {
+          if (s.weight > 0) {
             if (s.weight > maxWeight) maxWeight = s.weight;
-            // Epley 1RM formula
-            const est1RM = Math.round(s.weight * (1 + s.reps / 30));
+            const reps = s.reps || 1;
+            const est1RM = Math.round(s.weight * (1 + reps / 30));
             if (est1RM > max1RM) max1RM = est1RM;
-            if (s.reps > bestReps) bestReps = s.reps;
+            if (reps > bestReps) bestReps = reps;
           }
         });
       }
     });
+
+    // Check persistent last weights
+    if (this.lastWeights && this.lastWeights[exerciseName] && this.lastWeights[exerciseName].sets) {
+      this.lastWeights[exerciseName].sets.filter(Boolean).forEach(s => {
+        if (s.weight > 0) {
+          if (s.weight > maxWeight) maxWeight = s.weight;
+          const reps = s.reps || 1;
+          const est1RM = Math.round(s.weight * (1 + reps / 30));
+          if (est1RM > max1RM) max1RM = est1RM;
+          if (reps > bestReps) bestReps = reps;
+        }
+      });
+    }
 
     return { maxWeight, max1RM, bestReps };
   }
@@ -465,6 +573,9 @@ class WorkoutApp {
               ${isBonus ? '<span class="optional-badge">⚡ Optional Bonus</span>' : ''}
             </div>
             <h3 class="exercise-name">${ex.name}</h3>
+            ${prev && prev.sets && prev.sets.length > 0 ? `
+              <div class="prev-weight-pill">⏱️ Last: ${prev.sets.filter(Boolean).map(s => `${s.weight}lbs×${s.reps}`).join(' • ')}</div>
+            ` : ''}
           </div>
           <div class="card-actions">
             ${ex.videoUrl ? `
@@ -508,7 +619,7 @@ class WorkoutApp {
             <tbody>
               ${sessionSets.map((s, sIdx) => {
                 const prevSet = prev && prev.sets && prev.sets[sIdx];
-                const prevText = prevSet && prevSet.completed ? `${prevSet.weight}×${prevSet.reps}` : '—';
+                const prevText = prevSet && prevSet.weight > 0 ? `${prevSet.weight}×${prevSet.reps}` : '—';
                 return `
                   <tr class="set-row ${s.completed ? 'completed' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}">
                     <td class="set-index-cell">${s.setNum}</td>
@@ -582,7 +693,7 @@ class WorkoutApp {
       });
     });
 
-    // Weight and Rep input changes
+    // Weight and Rep input changes - auto-save immediately to persistent store
     this.exerciseListEl.querySelectorAll('.set-weight-input').forEach(input => {
       input.addEventListener('change', () => {
         const exId = input.dataset.exid;
@@ -591,6 +702,10 @@ class WorkoutApp {
         if (this.session.logs[exId] && this.session.logs[exId][setIdx]) {
           this.session.logs[exId][setIdx].weight = val;
           this.saveCurrentSession();
+          const ex = this.findExerciseById(exId);
+          if (ex) {
+            this.recordExerciseWeight(ex.name, setIdx + 1, val, this.session.logs[exId][setIdx].reps, this.session.logs[exId][setIdx].completed);
+          }
         }
       });
     });
@@ -603,6 +718,10 @@ class WorkoutApp {
         if (this.session.logs[exId] && this.session.logs[exId][setIdx]) {
           this.session.logs[exId][setIdx].reps = val;
           this.saveCurrentSession();
+          const ex = this.findExerciseById(exId);
+          if (ex) {
+            this.recordExerciseWeight(ex.name, setIdx + 1, this.session.logs[exId][setIdx].weight, val, this.session.logs[exId][setIdx].completed);
+          }
         }
       });
     });
@@ -638,6 +757,11 @@ class WorkoutApp {
 
     setObj.completed = !setObj.completed;
     this.saveCurrentSession();
+
+    const ex = this.findExerciseById(exId);
+    if (ex) {
+      this.recordExerciseWeight(ex.name, setIdx + 1, setObj.weight, setObj.reps, setObj.completed);
+    }
 
     // Trigger Rest Timer if marking as completed
     if (setObj.completed) {
@@ -785,6 +909,9 @@ class WorkoutApp {
             completed: s.completed
           }))
         };
+        sets.forEach(s => {
+          this.recordExerciseWeight(ex.name, s.setNum, s.weight, s.reps, s.completed);
+        });
       }
     });
 
@@ -853,10 +980,78 @@ class WorkoutApp {
     this.renderWorkout();
   }
 
+  getAllUniqueExercises() {
+    const list = [];
+    const seen = new Set();
+    if (this.routine) {
+      this.routine.forEach(day => {
+        day.exercises.forEach(ex => {
+          if (!seen.has(ex.name)) {
+            seen.add(ex.name);
+            list.push({ name: ex.name, muscle: ex.muscle, dayTitle: day.title });
+          }
+        });
+      });
+    }
+    return list;
+  }
+
+  getExerciseHistoryOverTime(exerciseName) {
+    const results = [];
+    // 1. From completed history
+    this.history.forEach(h => {
+      if (h.exercises && h.exercises[exerciseName]) {
+        const entry = h.exercises[exerciseName];
+        if (entry.sets && entry.sets.length > 0) {
+          const maxW = Math.max(...entry.sets.map(s => s.weight || 0));
+          const totalVol = entry.sets.reduce((sum, s) => sum + ((s.weight || 0) * (s.reps || 0)), 0);
+          results.push({
+            date: h.date,
+            dayTitle: h.dayTitle,
+            sets: entry.sets,
+            maxWeight: maxW,
+            totalVolume: totalVol
+          });
+        }
+      }
+    });
+
+    // 2. From persistent last weights if not already present for this date
+    if (this.lastWeights && this.lastWeights[exerciseName] && this.lastWeights[exerciseName].sets) {
+      const validSets = this.lastWeights[exerciseName].sets.filter(Boolean);
+      if (validSets.length > 0) {
+        const lastDate = this.lastWeights[exerciseName].date || new Date().toISOString();
+        const alreadyInHistory = results.some(r => new Date(r.date).toDateString() === new Date(lastDate).toDateString());
+        if (!alreadyInHistory) {
+          const maxW = Math.max(...validSets.map(s => s.weight || 0));
+          const totalVol = validSets.reduce((sum, s) => sum + ((s.weight || 0) * (s.reps || 0)), 0);
+          results.push({
+            date: lastDate,
+            dayTitle: 'Recent Log',
+            sets: validSets,
+            maxWeight: maxW,
+            totalVolume: totalVol
+          });
+        }
+      }
+    }
+
+    return results.sort((a, b) => new Date(a.date) - new Date(b.date));
+  }
+
   // Analytics & History View
   renderAnalytics() {
     const totalWorkouts = this.history.length;
     const totalVolumeAllTime = this.history.reduce((sum, h) => sum + (h.totalVolume || 0), 0);
+
+    const allExercises = this.getAllUniqueExercises();
+    if (!this.selectedProgressExercise && allExercises.length > 0) {
+      this.selectedProgressExercise = allExercises[0].name;
+    }
+
+    const exHistory = this.selectedProgressExercise ? this.getExerciseHistoryOverTime(this.selectedProgressExercise) : [];
+    const prData = this.selectedProgressExercise ? this.getPersonalRecord(this.selectedProgressExercise) : { maxWeight: 0, max1RM: 0 };
+    const latestSession = exHistory.length > 0 ? exHistory[exHistory.length - 1] : null;
 
     // Group workouts for volume chart (last 7 workouts)
     const recentWorkouts = this.history.slice(-7);
@@ -864,7 +1059,7 @@ class WorkoutApp {
 
     const historyHTML = this.history.slice().reverse().map(h => {
       const d = new Date(h.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      const exNames = Object.keys(h.exercises || {}).join(', ');
+      const exEntries = Object.entries(h.exercises || {});
 
       return `
         <div class="history-item">
@@ -877,8 +1072,22 @@ class WorkoutApp {
             <span class="history-pill">⚡ ${h.totalCompletedSets || 0} sets</span>
             <span class="history-pill">⏱️ ${h.durationMins || 45} mins</span>
           </div>
-          <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 8px;">
-            ${exNames || 'No details'}
+          
+          <button class="history-expand-toggle" data-wid="${h.id}">
+            <span>View Exercise Sets ▾</span>
+          </button>
+
+          <div class="history-details-drawer" id="drawer_${h.id}">
+            ${exEntries.map(([exName, exData]) => `
+              <div style="margin-bottom: 8px;">
+                <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-primary);">${exName}</div>
+                <div class="progress-set-chips" style="margin-top: 4px;">
+                  ${(exData.sets || []).map(s => `
+                    <span class="progress-set-chip">Set ${s.setNum}: ${s.weight} lbs × ${s.reps}${s.completed ? ' ✓' : ''}</span>
+                  `).join('')}
+                </div>
+              </div>
+            `).join('')}
           </div>
         </div>
       `;
@@ -900,10 +1109,74 @@ class WorkoutApp {
         </div>
       </div>
 
+      <!-- Exercise Progress Tracker -->
+      <div class="exercise-progress-box">
+        <div class="exercise-progress-header">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <h3 style="font-size: 1.05rem; font-weight: 800; color: var(--text-primary);">📈 Progress Over Time</h3>
+            ${exHistory.length > 0 ? `<span style="font-size: 0.75rem; color: var(--accent-emerald); font-weight: 700;">🟢 ${exHistory.length} Session${exHistory.length > 1 ? 's' : ''} Tracked</span>` : ''}
+          </div>
+          <select class="exercise-select" id="progressExerciseSelect">
+            ${this.routine.map(day => `
+              <optgroup label="${day.title}">
+                ${day.exercises.map(ex => `
+                  <option value="${ex.name}" ${ex.name === this.selectedProgressExercise ? 'selected' : ''}>
+                    ${ex.name}
+                  </option>
+                `).join('')}
+              </optgroup>
+            `).join('')}
+          </select>
+        </div>
+
+        <div class="progress-kpi-grid">
+          <div class="progress-kpi-card">
+            <div class="progress-kpi-val">${prData.maxWeight > 0 ? `${prData.maxWeight} lbs` : '—'}</div>
+            <div class="progress-kpi-label">🏆 Best Weight</div>
+          </div>
+          <div class="progress-kpi-card">
+            <div class="progress-kpi-val">${prData.max1RM > 0 ? `${prData.max1RM} lbs` : '—'}</div>
+            <div class="progress-kpi-label">⚡ Est. 1-Rep Max</div>
+          </div>
+          <div class="progress-kpi-card">
+            <div class="progress-kpi-val">${latestSession ? `${latestSession.maxWeight} lbs` : '—'}</div>
+            <div class="progress-kpi-label">⏱️ Last Session</div>
+          </div>
+        </div>
+
+        ${exHistory.length > 0 ? `
+          <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px;">
+            Recorded Session Log:
+          </div>
+          <div class="progress-session-list">
+            ${exHistory.slice().reverse().map(s => {
+              const d = new Date(s.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              return `
+                <div class="progress-session-row">
+                  <div class="progress-session-top">
+                    <span class="progress-session-date">${d} (${s.dayTitle})</span>
+                    <span class="progress-session-topweight">Top: ${s.maxWeight} lbs</span>
+                  </div>
+                  <div class="progress-set-chips">
+                    ${s.sets.filter(Boolean).map(set => `
+                      <span class="progress-set-chip">Set ${set.setNum}: ${set.weight} lbs × ${set.reps}</span>
+                    `).join('')}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : `
+          <div style="text-align: center; padding: 18px 12px; color: var(--text-muted); font-size: 0.85rem; background: rgba(255,255,255,0.02); border-radius: var(--radius-md);">
+            <span>📊 Enter your weights during your workout and they will automatically build your strength progress chart here!</span>
+          </div>
+        `}
+      </div>
+
       ${recentWorkouts.length > 0 ? `
         <div class="volume-chart-container">
           <div class="chart-header">
-            <div class="chart-title">Volume Progression (lbs per session)</div>
+            <div class="chart-title">Overall Volume Progression (lbs per session)</div>
           </div>
           <div class="chart-bars">
             ${recentWorkouts.map((w, idx) => {
@@ -924,7 +1197,7 @@ class WorkoutApp {
       ` : ''}
 
       <div style="margin-top: 24px;">
-        <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 12px;">Workout History</h3>
+        <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 12px;">Full Workout History</h3>
         ${this.history.length > 0 ? historyHTML : `
           <div class="empty-state">
             <div class="empty-icon">📊</div>
@@ -933,6 +1206,27 @@ class WorkoutApp {
         `}
       </div>
     `;
+
+    // Bind exercise dropdown change
+    const exSelect = document.getElementById('progressExerciseSelect');
+    if (exSelect) {
+      exSelect.addEventListener('change', (e) => {
+        this.selectedProgressExercise = e.target.value;
+        this.renderAnalytics();
+      });
+    }
+
+    // Bind workout history expansion toggles
+    this.analyticsContentEl.querySelectorAll('.history-expand-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const wid = btn.dataset.wid;
+        const drawer = document.getElementById(`drawer_${wid}`);
+        if (drawer) {
+          const isOpen = drawer.classList.toggle('open');
+          btn.querySelector('span').textContent = isOpen ? 'Hide Exercise Sets ▴' : 'View Exercise Sets ▾';
+        }
+      });
+    });
   }
 
   // Routine & Customizer View
@@ -941,7 +1235,7 @@ class WorkoutApp {
       <div style="margin-bottom: 20px;">
         <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 8px;">Routine Customization & Time-Saving</h3>
         <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
-          Tailor your 4-Day Machine routine. You can hide or toggle optional finishers (like Friday Cable Crunches) to keep your gym sessions strictly under 45 minutes.
+          Tailor your 4-Day Machine routine. You can hide or toggle optional finishers to keep your gym sessions strictly under 45–50 minutes.
         </p>
       </div>
 
@@ -959,8 +1253,8 @@ class WorkoutApp {
 
       <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.3 (Superset Update)</div>
-          <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Monday: Hip Thrust + Leg Press / Calf Superset</div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.4 (Weight Retention & Progress Tracker)</div>
+          <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Friday: DB Walking Lunges • Monday: Hip Adduction & 3 Sets Back Ext</div>
         </div>
         <button class="primary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">
           🔄 Force Sync & Reload
@@ -996,7 +1290,11 @@ class WorkoutApp {
       }
       localStorage.removeItem(this.storageKeys.routine);
       localStorage.removeItem('gym_routine_rev');
-      localStorage.removeItem(this.storageKeys.currentSession);
+      localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'mon__lower_b');
+      localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'fri___lower_a');
+      localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'sat___upper_b');
+      localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'wed___upper_a');
+      localStorage.removeItem(this.storageKeys.legacyCurrentSession);
     } catch (e) {
       console.error(e);
     }

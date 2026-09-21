@@ -494,6 +494,7 @@ input[type="number"] {
 .tag-Calves { background: rgba(20, 184, 166, 0.15); color: #2dd4bf; }
 .tag-AbsCore { background: rgba(239, 68, 68, 0.15); color: #f87171; }
 .tag-AdductorsHips { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+.tag-QuadsGlutes { background: rgba(16, 185, 129, 0.15); color: #34d399; }
 
 .optional-badge {
   display: inline-block;
@@ -1236,4 +1237,156 @@ input[type="number"] {
 .empty-icon {
   font-size: 40px;
   margin-bottom: 10px;
+}
+
+/* Previous Performance Badge on Cards */
+.prev-weight-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  margin-top: 4px;
+}
+
+/* Progress Explorer Section */
+.exercise-progress-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-top: 20px;
+  margin-bottom: 24px;
+}
+
+.exercise-progress-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.exercise-select {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  padding: 10px 14px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+.exercise-select:focus {
+  border-color: var(--accent-blue);
+}
+
+.progress-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.progress-kpi-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+  padding: 10px 8px;
+  text-align: center;
+}
+
+.progress-kpi-val {
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--accent-emerald);
+}
+
+.progress-kpi-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+.progress-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-session-row {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+
+.progress-session-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.progress-session-date {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.progress-session-topweight {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--accent-blue);
+  font-family: var(--font-mono);
+}
+
+.progress-set-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.progress-set-chip {
+  background: var(--bg-input);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+}
+
+.history-expand-toggle {
+  background: none;
+  border: none;
+  color: var(--accent-blue);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.history-details-drawer {
+  display: none;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.history-details-drawer.open {
+  display: block;
 }
