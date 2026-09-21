@@ -37,7 +37,7 @@ class WorkoutApp {
   }
 
   loadRoutine() {
-    const CURRENT_ROUTINE_REV = 5;
+    const CURRENT_ROUTINE_REV = 6;
     const savedRev = localStorage.getItem('gym_routine_rev');
     const saved = localStorage.getItem(this.storageKeys.routine);
     if (saved) {
@@ -70,6 +70,7 @@ class WorkoutApp {
               parsed[monIdx] = JSON.parse(JSON.stringify(newMonDay));
             }
           }
+          localStorage.removeItem(this.storageKeys.currentSession);
           localStorage.setItem('gym_routine_rev', String(CURRENT_ROUTINE_REV));
           localStorage.setItem(this.storageKeys.routine, JSON.stringify(parsed));
         }
@@ -956,6 +957,16 @@ class WorkoutApp {
         `).join('')}
       </div>
 
+      <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+        <div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.3 (Superset Update)</div>
+          <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Monday: Hip Thrust + Leg Press / Calf Superset</div>
+        </div>
+        <button class="primary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">
+          🔄 Force Sync & Reload
+        </button>
+      </div>
+
       <div style="display: flex; gap: 12px; flex-wrap: wrap;">
         <button class="secondary-btn" id="exportDataBtn" style="flex: 1; min-width: 160px;">
           📥 Export Data (JSON)
@@ -966,8 +977,30 @@ class WorkoutApp {
       </div>
     `;
 
+    document.getElementById('forceUpdateBtn')?.addEventListener('click', () => this.forceAppUpdate());
     document.getElementById('exportDataBtn')?.addEventListener('click', () => this.exportData());
     document.getElementById('resetRoutineBtn')?.addEventListener('click', () => this.resetRoutine());
+  }
+
+  async forceAppUpdate() {
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (let reg of registrations) {
+          await reg.unregister();
+        }
+      }
+      localStorage.removeItem(this.storageKeys.routine);
+      localStorage.removeItem('gym_routine_rev');
+      localStorage.removeItem(this.storageKeys.currentSession);
+    } catch (e) {
+      console.error(e);
+    }
+    window.location.reload();
   }
 
   exportData() {
