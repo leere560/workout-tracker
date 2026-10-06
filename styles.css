@@ -1423,6 +1423,13 @@ input[type="number"] {
   box-shadow: 0 0 12px rgba(16, 185, 129, 0.35);
 }
 
+.progression-badge.partial {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.45);
+  color: #93c5fd;
+  box-shadow: none;
+}
+
 .progression-banner {
   background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(59, 130, 246, 0.15));
   border: 1px solid rgba(16, 185, 129, 0.45);

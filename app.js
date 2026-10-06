@@ -306,22 +306,24 @@ class WorkoutApp {
     return Math.max(...matches.map(n => parseInt(n, 10)));
   }
 
-  getPreviousProgressionFlag(exerciseName, targetRepsStr) {
+  getPreviousProgressionFlag(exerciseName, targetRepsStr, requiredSetsCount = 3) {
     const prev = this.getPreviousExercisePerformance(exerciseName);
     if (!prev || !prev.sets || prev.sets.length === 0) return { unlocked: false };
     const maxTarget = this.getMaxTargetReps(targetRepsStr);
-    const validSets = prev.sets.filter(Boolean);
-    if (validSets.length === 0) return { unlocked: false };
+    const validSets = prev.sets.filter(s => s && (s.completed !== false || s.reps > 0));
+    const targetSets = requiredSetsCount || 3;
+    if (validSets.length < targetSets) return { unlocked: false };
     
-    const allReached = validSets.every(s => (s.reps || 0) >= maxTarget);
-    const anyReached = validSets.some(s => (s.reps || 0) >= maxTarget);
+    // Weight increase flag is ONLY unlocked if top-end target reps were hit for all sets (all 3 sets)
+    const allSetsHit = validSets.every(s => (s.reps || 0) >= maxTarget);
 
-    if (allReached || anyReached) {
+    if (allSetsHit) {
       const topWeight = Math.max(...validSets.map(s => s.weight || 0));
       return {
         unlocked: true,
-        allSetsHit: allReached,
+        allSetsHit: true,
         maxReps: maxTarget,
+        setsCount: validSets.length,
         topWeight
       };
     }
@@ -609,12 +611,13 @@ class WorkoutApp {
     const cleanTag = ex.muscle.replace(/[^a-zA-Z]/g, '');
     const effectiveRest = ex.superset ? ex.superset.rest : (ex.rest || '2 min');
 
-    // Progression Flag Checks
+    // Progression Flag Checks: only unlock weight increase if top-end reps hit on ALL sets
     const maxTarget = this.getMaxTargetReps(ex.targetReps);
     const completedSets = sessionSets.filter(s => s.completed);
-    const currentHit = completedSets.some(s => s.reps >= maxTarget);
-    const allCurrentHit = completedSets.length === sessionSets.length && sessionSets.length > 0 && sessionSets.every(s => s.completed && s.reps >= maxTarget);
-    const prevProgression = this.getPreviousProgressionFlag(ex.name, ex.targetReps);
+    const setsHittingMax = completedSets.filter(s => (s.reps || 0) >= maxTarget);
+    const targetSetsCount = ex.sets || sessionSets.length || 3;
+    const allCurrentHit = sessionSets.length >= targetSetsCount && completedSets.length === sessionSets.length && completedSets.every(s => s.completed && (s.reps || 0) >= maxTarget);
+    const prevProgression = this.getPreviousProgressionFlag(ex.name, ex.targetReps, ex.sets || 3);
 
     return `
       <div class="exercise-card ${isAllDone ? 'completed' : ''} ${isBonus ? 'is-optional' : ''} ${ex.superset ? 'is-superset' : ''}" id="card_${ex.id}">
@@ -635,7 +638,7 @@ class WorkoutApp {
               <span class="muscle-tag tag-${cleanTag}">${ex.muscle}</span>
               ${ex.superset ? `<span class="superset-badge">⚡ SUPERSET ${ex.superset.tag}</span>` : ''}
               ${isBonus ? '<span class="optional-badge">⚡ Optional Bonus</span>' : ''}
-              ${allCurrentHit ? `<span class="progression-badge full">🚀 All Sets @ ${maxTarget} Reps! Increase Weight Next Time</span>` : (currentHit ? `<span class="progression-badge">🎯 Hit ${maxTarget} Reps! Ready to Bump Next Time</span>` : '')}
+              ${allCurrentHit ? `<span class="progression-badge full">🚀 All ${sessionSets.length} Sets Hit ${maxTarget} Reps! Increase Weight Next Time</span>` : (setsHittingMax.length > 0 ? `<span class="progression-badge partial">🎯 ${setsHittingMax.length}/${sessionSets.length} sets @ ${maxTarget} reps</span>` : '')}
             </div>
             <h3 class="exercise-name">${ex.name}</h3>
             ${prev && prev.sets && prev.sets.length > 0 ? `
@@ -674,11 +677,11 @@ class WorkoutApp {
             <div class="progression-banner-left">
               <span class="progression-icon">🚀</span>
               <div class="progression-text">
-                <strong>Weight Increase Flag:</strong> Hit ${prevProgression.maxReps} reps last workout! Ready to increase weight today (+5 lbs recommended).
+                <strong>Weight Increase Flag:</strong> Hit ${prevProgression.maxReps} reps on all ${prevProgression.setsCount} sets last workout! Ready to increase weight today (+5 lbs recommended).
               </div>
             </div>
             <button class="bump-weight-btn" data-exid="${ex.id}" data-bump="5" title="Add 5 lbs to all sets today">
-              +5 lbs
+              +5 lbs All Sets
             </button>
           </div>
         ` : ''}
@@ -1147,14 +1150,15 @@ class WorkoutApp {
       totalCompletedSets += completedSets.length;
       const maxTarget = this.getMaxTargetReps(ex.targetReps);
 
-      // Check double progression
-      if (completedSets.length > 0 && completedSets.some(s => (s.reps || 0) >= maxTarget)) {
-        const allHit = completedSets.length === sets.length && completedSets.every(s => (s.reps || 0) >= maxTarget);
+      // Check double progression: only unlocked if ALL sets hit top end target reps!
+      const targetSetsCount = ex.sets || sets.length || 3;
+      const allHit = completedSets.length >= targetSetsCount && completedSets.every(s => (s.reps || 0) >= maxTarget);
+      if (allHit) {
         const topW = Math.max(...completedSets.map(s => s.weight || 0));
         weightIncreaseUnlocked.push({
           name: ex.name,
           reps: maxTarget,
-          allHit,
+          setsCount: completedSets.length,
           topWeight: topW
         });
       }
@@ -1233,7 +1237,7 @@ class WorkoutApp {
           <h4>🚀 Weight Increases Unlocked for Next Workout!</h4>
           <ul>
             ${weightIncreaseUnlocked.map(item => `
-              <li><strong>${item.name}</strong>: Reached ${item.reps} reps (${item.topWeight} lbs) — ${item.allHit ? 'Ready to bump weight next session!' : 'Top set reached! Ready to bump weight.'}</li>
+              <li><strong>${item.name}</strong>: Hit ${item.reps} reps on all ${item.setsCount} sets (${item.topWeight} lbs) — Ready to increase weight (+5 lbs) next workout!</li>
             `).join('')}
           </ul>
         </div>
@@ -1534,7 +1538,7 @@ class WorkoutApp {
 
       <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.5 (Sunday DB Day, Progression Flags & Background Rest Timers)</div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.5.1 (All 3 Sets Progression Rule, Sunday DB Day & Rest Timers)</div>
           <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Wed: Upper A • Fri: Lower A • Sat: Upper B • Sun: DB Arms & Shoulders • Mon: Lower B</div>
         </div>
         <button class="primary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">
