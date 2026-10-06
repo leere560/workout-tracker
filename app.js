@@ -59,7 +59,7 @@ class WorkoutApp {
   }
 
   loadRoutine() {
-    const CURRENT_ROUTINE_REV = 8;
+    const CURRENT_ROUTINE_REV = 9;
     const savedRev = localStorage.getItem('gym_routine_rev');
     const saved = localStorage.getItem(this.storageKeys.routine);
     if (saved) {
@@ -74,7 +74,7 @@ class WorkoutApp {
           });
         });
 
-        // Migrate routine to Revision 8 (6-8 compound reps, 8-12 supplemental reps, remove lunges & adduction, add Sunday DB Arms)
+        // Migrate routine to Revision 9 (Sunday 100% bench-free home routine, 6-8 compound reps, 8-12 supplemental reps)
         const needsUpdate = 
           savedRev !== String(CURRENT_ROUTINE_REV) ||
           parsed.length < 5 ||
@@ -83,7 +83,7 @@ class WorkoutApp {
 
         if (needsUpdate) {
           // Backup previous routine in localStorage just in case
-          localStorage.setItem('gym_routine_backup_v7', JSON.stringify(parsed));
+          localStorage.setItem('gym_routine_backup_v8', JSON.stringify(parsed));
           const updatedRoutine = JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
           localStorage.setItem('gym_routine_rev', String(CURRENT_ROUTINE_REV));
           localStorage.setItem(this.storageKeys.routine, JSON.stringify(updatedRoutine));
