@@ -1,4 +1,4 @@
-// State Management & Controller for 4-Day Machine Routine Tracker
+// State Management & Controller for Hypertrophy Routine Tracker (5-Day Split)
 
 class WorkoutApp {
   constructor() {
@@ -9,7 +9,9 @@ class WorkoutApp {
       streamlineMode: 'gym_streamline_mode_v1',
       currentSessionPrefix: 'gym_session_',
       legacyCurrentSession: 'gym_current_session_v4',
-      lastWeights: 'gym_last_weights_v1'
+      lastWeights: 'gym_last_weights_v1',
+      timerTargetEnd: 'gym_timer_target_end_v1',
+      timerTotalDuration: 'gym_timer_total_duration_v1'
     };
 
     // Load History & Last Recorded Weights
@@ -24,10 +26,15 @@ class WorkoutApp {
     // Active Day: determine suggested day based on current weekday
     this.activeDayIndex = this.getSuggestedDayIndex();
 
+    // Audio & WakeLock state
+    this.audioCtx = null;
+    this.wakeLock = null;
+
     // Timer State
     this.timer = {
-      totalDuration: 90,
+      totalDuration: 120,
       remaining: 0,
+      targetEndTime: 0,
       intervalId: null,
       active: false
     };
@@ -39,11 +46,20 @@ class WorkoutApp {
     // Init UI
     this.initElements();
     this.bindEvents();
+
+    // Background App-Swap & Visibility Listeners for Rest Timer
+    document.addEventListener('visibilitychange', () => this.syncTimerFromBackground());
+    window.addEventListener('pageshow', () => this.syncTimerFromBackground());
+    window.addEventListener('focus', () => this.syncTimerFromBackground());
+
+    // Check if a rest countdown was running in background
+    this.restoreActiveTimer();
+
     this.render();
   }
 
   loadRoutine() {
-    const CURRENT_ROUTINE_REV = 7;
+    const CURRENT_ROUTINE_REV = 8;
     const savedRev = localStorage.getItem('gym_routine_rev');
     const saved = localStorage.getItem(this.storageKeys.routine);
     if (saved) {
@@ -58,34 +74,27 @@ class WorkoutApp {
           });
         });
 
-        // Migrate routine to include Friday Walking Lunges and Monday Hip Adduction + 3 sets Back Ext
-        const monDay = parsed.find(d => d.id === 'mon__lower_b');
-        const friDay = parsed.find(d => d.id === 'fri___lower_a');
+        // Migrate routine to Revision 8 (6-8 compound reps, 8-12 supplemental reps, remove lunges & adduction, add Sunday DB Arms)
         const needsUpdate = 
           savedRev !== String(CURRENT_ROUTINE_REV) ||
-          (monDay && !monDay.exercises.some(e => e.id === 'mon__lower_b_ex4')) ||
-          (friDay && !friDay.exercises.some(e => e.id === 'fri___lower_a_ex_lunges'));
+          parsed.length < 5 ||
+          !parsed.some(d => d.id === 'sun___db_arms') ||
+          parsed.some(d => d.exercises.some(e => e.id === 'fri___lower_a_ex_lunges' || e.id === 'mon__lower_b_ex4'));
 
         if (needsUpdate) {
-          const newMonDay = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b');
-          if (newMonDay) {
-            const monIdx = parsed.findIndex(d => d.id === 'mon__lower_b');
-            if (monIdx !== -1) parsed[monIdx] = JSON.parse(JSON.stringify(newMonDay));
-          }
-          const newFriDay = DEFAULT_ROUTINE.find(d => d.id === 'fri___lower_a');
-          if (newFriDay) {
-            const friIdx = parsed.findIndex(d => d.id === 'fri___lower_a');
-            if (friIdx !== -1) parsed[friIdx] = JSON.parse(JSON.stringify(newFriDay));
-          }
+          // Backup previous routine in localStorage just in case
+          localStorage.setItem('gym_routine_backup_v7', JSON.stringify(parsed));
+          const updatedRoutine = JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
           localStorage.setItem('gym_routine_rev', String(CURRENT_ROUTINE_REV));
-          localStorage.setItem(this.storageKeys.routine, JSON.stringify(parsed));
+          localStorage.setItem(this.storageKeys.routine, JSON.stringify(updatedRoutine));
+          return updatedRoutine;
         }
 
         return parsed;
       } catch (e) { console.error(e); }
     }
     localStorage.setItem('gym_routine_rev', String(CURRENT_ROUTINE_REV));
-    return DEFAULT_ROUTINE;
+    return JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
   }
 
   saveRoutine() {
@@ -265,27 +274,73 @@ class WorkoutApp {
   }
 
   parseRestSeconds(restStr) {
-    if (!restStr) return 90;
+    if (!restStr) return 120;
     const lower = restStr.toLowerCase();
-    if (lower.includes('2.5') || lower.includes('2-3 min') || lower.includes('2–3 min')) return 150;
-    if (lower.includes('2 min')) return 120;
+    if (lower.includes('3 min') || lower.includes('3m') || lower.includes('3.0')) return 180;
+    if (lower.includes('2.5–3') || lower.includes('2.5-3')) return 165;
+    if (lower.includes('2.5')) return 150;
+    if (lower.includes('2 min') || lower.includes('2m')) return 120;
     if (lower.includes('90 sec') || lower.includes('90s')) return 90;
-    if (lower.includes('45–60') || lower.includes('45-60') || lower.includes('45 sec') || lower.includes('45s')) return 45;
-    if (lower.includes('60 sec') || lower.includes('60s')) return 60;
-    return 90;
+    if (lower.includes('45–60') || lower.includes('45-60') || lower.includes('60 sec') || lower.includes('60s')) return 60;
+    if (lower.includes('45 sec') || lower.includes('45s')) return 45;
+    return 120; // Default to 2 minutes
   }
 
   getSuggestedDayIndex() {
     // Current day of week: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
     const day = new Date().getDay();
-    if (day === 3) return 0; // Wednesday -> Upper A
-    if (day === 5) return 1; // Friday -> Lower A
-    if (day === 6) return 2; // Saturday -> Upper B
-    if (day === 1) return 3; // Monday -> Lower B
-    // Off days: suggest the upcoming workout
-    if (day === 2) return 0; // Tuesday -> Wed Upper A
-    if (day === 4) return 1; // Thursday -> Fri Lower A
-    return 3; // Sunday -> Mon Lower B
+    if (day === 0) return 3; // Sunday -> Sun DB Arms & Shoulders
+    if (day === 1) return 4; // Monday -> Mon Lower B
+    if (day === 2) return 0; // Tuesday -> Wed Upper A (upcoming)
+    if (day === 3) return 0; // Wednesday -> Wed Upper A
+    if (day === 4) return 1; // Thursday -> Fri Lower A (upcoming)
+    if (day === 5) return 1; // Friday -> Fri Lower A
+    if (day === 6) return 2; // Saturday -> Sat Upper B
+    return 0;
+  }
+
+  getMaxTargetReps(targetRepsStr) {
+    if (!targetRepsStr) return 10;
+    const matches = targetRepsStr.match(/\d+/g);
+    if (!matches || matches.length === 0) return 10;
+    return Math.max(...matches.map(n => parseInt(n, 10)));
+  }
+
+  getPreviousProgressionFlag(exerciseName, targetRepsStr) {
+    const prev = this.getPreviousExercisePerformance(exerciseName);
+    if (!prev || !prev.sets || prev.sets.length === 0) return { unlocked: false };
+    const maxTarget = this.getMaxTargetReps(targetRepsStr);
+    const validSets = prev.sets.filter(Boolean);
+    if (validSets.length === 0) return { unlocked: false };
+    
+    const allReached = validSets.every(s => (s.reps || 0) >= maxTarget);
+    const anyReached = validSets.some(s => (s.reps || 0) >= maxTarget);
+
+    if (allReached || anyReached) {
+      const topWeight = Math.max(...validSets.map(s => s.weight || 0));
+      return {
+        unlocked: true,
+        allSetsHit: allReached,
+        maxReps: maxTarget,
+        topWeight
+      };
+    }
+    return { unlocked: false };
+  }
+
+  bumpExerciseWeight(exId, delta = 5) {
+    const list = this.session.logs[exId];
+    if (!list) return;
+    list.forEach((s, idx) => {
+      const cur = parseFloat(s.weight) || 0;
+      s.weight = Math.max(0, cur + delta);
+      const ex = this.findExerciseById(exId);
+      if (ex) {
+        this.recordExerciseWeight(ex.name, idx + 1, s.weight, s.reps, s.completed);
+      }
+    });
+    this.saveCurrentSession();
+    this.renderWorkout();
   }
 
   getPreviousExercisePerformance(exerciseName) {
@@ -399,7 +454,8 @@ class WorkoutApp {
     // Timer controls
     document.getElementById('timerSkipBtn')?.addEventListener('click', () => this.stopTimer());
     document.getElementById('timerPlus30Btn')?.addEventListener('click', () => this.adjustTimer(30));
-    document.getElementById('timerMinus15Btn')?.addEventListener('click', () => this.adjustTimer(-15));
+    document.getElementById('timerMinus30Btn')?.addEventListener('click', () => this.adjustTimer(-30));
+    document.getElementById('timerMinus15Btn')?.addEventListener('click', () => this.adjustTimer(-30));
 
     // Modal closes
     document.querySelectorAll('.close-modal-btn').forEach(btn => {
@@ -465,6 +521,7 @@ class WorkoutApp {
       if (day.title.includes('Wed')) { dayAbbr = 'WED'; routineName = 'Upper A'; }
       else if (day.title.includes('Fri')) { dayAbbr = 'FRI'; routineName = 'Lower A'; }
       else if (day.title.includes('Sat')) { dayAbbr = 'SAT'; routineName = 'Upper B'; }
+      else if (day.title.includes('Sun')) { dayAbbr = 'SUN'; routineName = 'DB Arms'; }
       else if (day.title.includes('Mon')) { dayAbbr = 'MON'; routineName = 'Lower B'; }
 
       const coreCount = day.exercises.filter(e => !e.isOptional).length;
@@ -501,7 +558,7 @@ class WorkoutApp {
 
     const hasSuperset = coreExercises.some(ex => ex.superset);
     const totalCoreSets = coreExercises.reduce((sum, ex) => sum + ex.sets, 0);
-    const estimatedMins = hasSuperset ? (coreExercises.length * 8) - 8 : (coreExercises.length * 8);
+    const estimatedMins = currentDay.id === 'sun___db_arms' ? 30 : (hasSuperset ? (coreExercises.length * 8) - 8 : (coreExercises.length * 8));
 
     // Clean Day Title for header
     let cleanDayTitle = currentDay.title;
@@ -550,7 +607,14 @@ class WorkoutApp {
     const isAllDone = sessionSets.length > 0 && sessionSets.every(s => s.completed);
 
     const cleanTag = ex.muscle.replace(/[^a-zA-Z]/g, '');
-    const effectiveRest = ex.superset ? ex.superset.rest : (ex.rest || '90 sec');
+    const effectiveRest = ex.superset ? ex.superset.rest : (ex.rest || '2 min');
+
+    // Progression Flag Checks
+    const maxTarget = this.getMaxTargetReps(ex.targetReps);
+    const completedSets = sessionSets.filter(s => s.completed);
+    const currentHit = completedSets.some(s => s.reps >= maxTarget);
+    const allCurrentHit = completedSets.length === sessionSets.length && sessionSets.length > 0 && sessionSets.every(s => s.completed && s.reps >= maxTarget);
+    const prevProgression = this.getPreviousProgressionFlag(ex.name, ex.targetReps);
 
     return `
       <div class="exercise-card ${isAllDone ? 'completed' : ''} ${isBonus ? 'is-optional' : ''} ${ex.superset ? 'is-superset' : ''}" id="card_${ex.id}">
@@ -571,6 +635,7 @@ class WorkoutApp {
               <span class="muscle-tag tag-${cleanTag}">${ex.muscle}</span>
               ${ex.superset ? `<span class="superset-badge">⚡ SUPERSET ${ex.superset.tag}</span>` : ''}
               ${isBonus ? '<span class="optional-badge">⚡ Optional Bonus</span>' : ''}
+              ${allCurrentHit ? `<span class="progression-badge full">🚀 All Sets @ ${maxTarget} Reps! Increase Weight Next Time</span>` : (currentHit ? `<span class="progression-badge">🎯 Hit ${maxTarget} Reps! Ready to Bump Next Time</span>` : '')}
             </div>
             <h3 class="exercise-name">${ex.name}</h3>
             ${prev && prev.sets && prev.sets.length > 0 ? `
@@ -603,6 +668,20 @@ class WorkoutApp {
                    data-exid="${ex.id}" />
           </div>
         </div>
+
+        ${prevProgression.unlocked ? `
+          <div class="progression-banner">
+            <div class="progression-banner-left">
+              <span class="progression-icon">🚀</span>
+              <div class="progression-text">
+                <strong>Weight Increase Flag:</strong> Hit ${prevProgression.maxReps} reps last workout! Ready to increase weight today (+5 lbs recommended).
+              </div>
+            </div>
+            <button class="bump-weight-btn" data-exid="${ex.id}" data-bump="5" title="Add 5 lbs to all sets today">
+              +5 lbs
+            </button>
+          </div>
+        ` : ''}
 
         <div class="sets-table-wrap">
           <table class="sets-table">
@@ -690,6 +769,15 @@ class WorkoutApp {
         const setIdx = parseInt(btn.dataset.setidx, 10);
         const rest = btn.dataset.rest;
         this.toggleSetCompletion(exId, setIdx, rest);
+      });
+    });
+
+    // Bump weight (+5 lbs) button
+    this.exerciseListEl.querySelectorAll('.bump-weight-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const exId = btn.dataset.exid;
+        const bump = parseFloat(btn.dataset.bump) || 5;
+        this.bumpExerciseWeight(exId, bump);
       });
     });
 
@@ -796,41 +884,186 @@ class WorkoutApp {
   }
 
   // Rest Timer Controller
+  primeAudioContext() {
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      if (!this.audioCtx) {
+        this.audioCtx = new AudioContextClass();
+      }
+      if (this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume();
+      }
+      // Play a 1-sample silent sound to unlock audio playback in mobile Safari
+      const buffer = this.audioCtx.createBuffer(1, 1, 22050);
+      const source = this.audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(this.audioCtx.destination);
+      source.start(0);
+    } catch (e) {
+      console.warn('Audio priming:', e);
+    }
+  }
+
+  async requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator && !this.wakeLock) {
+        this.wakeLock = await navigator.wakeLock.request('screen');
+        this.wakeLock.addEventListener('release', () => {
+          this.wakeLock = null;
+        });
+      }
+    } catch (e) {
+      // Ignore if unsupported or denied
+    }
+  }
+
+  releaseWakeLock() {
+    if (this.wakeLock) {
+      try {
+        this.wakeLock.release();
+      } catch (e) {}
+      this.wakeLock = null;
+    }
+  }
+
+  requestNotificationPermission() {
+    if ('Notification' in window && Notification.permission === 'default') {
+      try {
+        Notification.requestPermission();
+      } catch (e) {}
+    }
+  }
+
+  triggerTimerNotification() {
+    if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+      try {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.ready.then(reg => {
+            reg.showNotification('Rest Completed! 🏋️‍♂️', {
+              body: 'Time for your next set! Let\'s get it.',
+              icon: './icon-192.png',
+              badge: './icon-192.png',
+              vibrate: [250, 100, 250, 100, 400],
+              tag: 'rest-timer'
+            });
+          });
+        } else {
+          new Notification('Rest Completed! 🏋️‍♂️', {
+            body: 'Time for your next set! Let\'s get it.',
+            icon: './icon-192.png'
+          });
+        }
+      } catch (e) {}
+    }
+  }
+
   startTimer(seconds) {
-    this.stopTimer();
+    this.stopTimer(false);
+    this.primeAudioContext();
+    this.requestWakeLock();
+    this.requestNotificationPermission();
+
+    const targetEndTime = Date.now() + (seconds * 1000);
     this.timer.totalDuration = seconds;
+    this.timer.targetEndTime = targetEndTime;
     this.timer.remaining = seconds;
     this.timer.active = true;
+
+    localStorage.setItem(this.storageKeys.timerTargetEnd, String(targetEndTime));
+    localStorage.setItem(this.storageKeys.timerTotalDuration, String(seconds));
 
     this.updateTimerUI();
     this.timerDockEl.classList.add('active');
     document.body.classList.add('timer-active');
 
     this.timer.intervalId = setInterval(() => {
-      this.timer.remaining--;
-      this.updateTimerUI();
-
-      if (this.timer.remaining <= 0) {
-        this.stopTimer();
-        this.playTimerAlarm();
-      }
+      this.tickTimer();
     }, 1000);
   }
 
-  stopTimer() {
+  tickTimer() {
+    if (!this.timer.active) return;
+    const remaining = Math.max(0, Math.round((this.timer.targetEndTime - Date.now()) / 1000));
+    this.timer.remaining = remaining;
+    this.updateTimerUI();
+
+    if (remaining <= 0) {
+      this.onTimerFinished();
+    }
+  }
+
+  onTimerFinished() {
+    this.stopTimer(true);
+    this.playTimerAlarm();
+    this.showRestCompleteBanner();
+  }
+
+  syncTimerFromBackground() {
+    const savedEnd = localStorage.getItem(this.storageKeys.timerTargetEnd);
+    const savedTotal = localStorage.getItem(this.storageKeys.timerTotalDuration);
+    if (!savedEnd) return;
+
+    const targetEndTime = parseInt(savedEnd, 10);
+    const totalDuration = parseInt(savedTotal, 10) || 120;
+    const now = Date.now();
+    const remaining = Math.round((targetEndTime - now) / 1000);
+
+    if (remaining > 0) {
+      this.timer.totalDuration = totalDuration;
+      this.timer.targetEndTime = targetEndTime;
+      this.timer.remaining = remaining;
+      this.timer.active = true;
+      this.updateTimerUI();
+      this.timerDockEl.classList.add('active');
+      document.body.classList.add('timer-active');
+      this.requestWakeLock();
+      if (!this.timer.intervalId) {
+        this.timer.intervalId = setInterval(() => this.tickTimer(), 1000);
+      }
+    } else if (remaining <= 0 && this.timer.active) {
+      localStorage.removeItem(this.storageKeys.timerTargetEnd);
+      localStorage.removeItem(this.storageKeys.timerTotalDuration);
+      this.onTimerFinished();
+    }
+  }
+
+  restoreActiveTimer() {
+    const savedEnd = localStorage.getItem(this.storageKeys.timerTargetEnd);
+    if (savedEnd) {
+      const targetEndTime = parseInt(savedEnd, 10);
+      if (targetEndTime > Date.now()) {
+        this.syncTimerFromBackground();
+      } else {
+        localStorage.removeItem(this.storageKeys.timerTargetEnd);
+        localStorage.removeItem(this.storageKeys.timerTotalDuration);
+      }
+    }
+  }
+
+  stopTimer(clearStorage = true) {
     if (this.timer.intervalId) {
       clearInterval(this.timer.intervalId);
       this.timer.intervalId = null;
     }
     this.timer.active = false;
+    this.releaseWakeLock();
+    if (clearStorage) {
+      localStorage.removeItem(this.storageKeys.timerTargetEnd);
+      localStorage.removeItem(this.storageKeys.timerTotalDuration);
+    }
     this.timerDockEl.classList.remove('active');
     document.body.classList.remove('timer-active');
   }
 
   adjustTimer(delta) {
     if (!this.timer.active) return;
-    this.timer.remaining = Math.max(5, this.timer.remaining + delta);
-    this.timer.totalDuration = Math.max(this.timer.totalDuration, this.timer.remaining);
+    this.timer.targetEndTime += (delta * 1000);
+    const newRemaining = Math.max(5, Math.round((this.timer.targetEndTime - Date.now()) / 1000));
+    this.timer.remaining = newRemaining;
+    this.timer.totalDuration = Math.max(this.timer.totalDuration, newRemaining);
+    localStorage.setItem(this.storageKeys.timerTargetEnd, String(this.timer.targetEndTime));
+    localStorage.setItem(this.storageKeys.timerTotalDuration, String(this.timer.totalDuration));
     this.updateTimerUI();
   }
 
@@ -840,39 +1073,62 @@ class WorkoutApp {
     this.timerDisplayEl.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 
     const pct = ((this.timer.totalDuration - this.timer.remaining) / this.timer.totalDuration) * 100;
-    this.timerProgressBarEl.style.width = `${Math.min(100, pct)}%`;
+    this.timerProgressBarEl.style.width = `${Math.min(100, Math.max(0, pct))}%`;
   }
 
   playTimerAlarm() {
     // Vibration if available on mobile
     if (navigator.vibrate) {
-      navigator.vibrate([200, 100, 200, 100, 300]);
+      try {
+        navigator.vibrate([250, 100, 250, 100, 400]);
+      } catch (e) {}
     }
 
-    // Pleasant Web Audio Chime
+    // Audible Web Audio Chime (Ascending 3-tone chime: D5 -> G5 -> B5)
     try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) return;
-      const ctx = new AudioContext();
-      
-      const playTone = (freq, start, duration) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, ctx.currentTime + start);
-        gain.gain.setValueAtTime(0.3, ctx.currentTime + start);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + duration);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(ctx.currentTime + start);
-        osc.stop(ctx.currentTime + start + duration);
-      };
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        if (!this.audioCtx) this.audioCtx = new AudioContextClass();
+        if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
+        const ctx = this.audioCtx;
 
-      playTone(587.33, 0, 0.2); // D5
-      playTone(880, 0.2, 0.4);   // A5
+        const playTone = (freq, start, duration) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + start);
+          gain.gain.setValueAtTime(0.45, ctx.currentTime + start);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + duration);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(ctx.currentTime + start);
+          osc.stop(ctx.currentTime + start + duration);
+        };
+
+        playTone(587.33, 0, 0.2);     // D5
+        playTone(783.99, 0.22, 0.2);  // G5
+        playTone(987.77, 0.44, 0.45); // B5
+      }
     } catch (e) {
-      console.warn('AudioContext not allowed without user interaction:', e);
+      console.warn('Audio alarm chime error:', e);
     }
+
+    this.triggerTimerNotification();
+  }
+
+  showRestCompleteBanner() {
+    const existing = document.querySelector('.timer-complete-toast');
+    if (existing) existing.remove();
+
+    const banner = document.createElement('div');
+    banner.className = 'timer-complete-toast';
+    banner.innerHTML = '🔔 <strong>Rest Finished!</strong> Time to lift!';
+    document.body.appendChild(banner);
+    setTimeout(() => banner.classList.add('show'), 20);
+    setTimeout(() => {
+      banner.classList.remove('show');
+      setTimeout(() => banner.remove(), 400);
+    }, 4500);
   }
 
   // Workout Completion & Summary
@@ -881,6 +1137,7 @@ class WorkoutApp {
     let totalVolume = 0;
     let totalCompletedSets = 0;
     const newPRs = [];
+    const weightIncreaseUnlocked = [];
 
     const recordedExercises = {};
 
@@ -888,6 +1145,19 @@ class WorkoutApp {
       const sets = this.session.logs[ex.id] || [];
       const completedSets = sets.filter(s => s.completed);
       totalCompletedSets += completedSets.length;
+      const maxTarget = this.getMaxTargetReps(ex.targetReps);
+
+      // Check double progression
+      if (completedSets.length > 0 && completedSets.some(s => (s.reps || 0) >= maxTarget)) {
+        const allHit = completedSets.length === sets.length && completedSets.every(s => (s.reps || 0) >= maxTarget);
+        const topW = Math.max(...completedSets.map(s => s.weight || 0));
+        weightIncreaseUnlocked.push({
+          name: ex.name,
+          reps: maxTarget,
+          allHit,
+          topWeight: topW
+        });
+      }
 
       completedSets.forEach(s => {
         const vol = (s.weight || 0) * (s.reps || 0);
@@ -957,6 +1227,17 @@ class WorkoutApp {
           <div class="stat-label">Duration</div>
         </div>
       </div>
+
+      ${weightIncreaseUnlocked.length > 0 ? `
+        <div class="summary-progression-box">
+          <h4>🚀 Weight Increases Unlocked for Next Workout!</h4>
+          <ul>
+            ${weightIncreaseUnlocked.map(item => `
+              <li><strong>${item.name}</strong>: Reached ${item.reps} reps (${item.topWeight} lbs) — ${item.allHit ? 'Ready to bump weight next session!' : 'Top set reached! Ready to bump weight.'}</li>
+            `).join('')}
+          </ul>
+        </div>
+      ` : ''}
 
       ${newPRs.length > 0 ? `
         <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid var(--accent-emerald); border-radius: var(--radius-md); padding: 12px; margin-bottom: 20px;">
@@ -1253,8 +1534,8 @@ class WorkoutApp {
 
       <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.4 (Weight Retention & Progress Tracker)</div>
-          <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Friday: DB Walking Lunges • Monday: Hip Adduction & 3 Sets Back Ext</div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.5 (Sunday DB Day, Progression Flags & Background Rest Timers)</div>
+          <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Wed: Upper A • Fri: Lower A • Sat: Upper B • Sun: DB Arms & Shoulders • Mon: Lower B</div>
         </div>
         <button class="primary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">
           🔄 Force Sync & Reload
@@ -1293,8 +1574,11 @@ class WorkoutApp {
       localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'mon__lower_b');
       localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'fri___lower_a');
       localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'sat___upper_b');
+      localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'sun___db_arms');
       localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'wed___upper_a');
       localStorage.removeItem(this.storageKeys.legacyCurrentSession);
+      localStorage.removeItem(this.storageKeys.timerTargetEnd);
+      localStorage.removeItem(this.storageKeys.timerTotalDuration);
     } catch (e) {
       console.error(e);
     }

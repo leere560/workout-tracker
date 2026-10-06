@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Track your 4-day machine hypertrophy routine with progressive overload, rest timers, and superset pacing.">
   <title>4-Day Machine Lifting Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=8">
+  <link rel="stylesheet" href="styles.css?v=9">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
   <meta name="theme-color" content="#0a0e17">
@@ -21,7 +21,7 @@
         <div class="brand-icon">🏋️‍♂️</div>
         <div>
           <h1 class="brand-title">Machine Master</h1>
-          <div class="brand-subtitle">4-Day Hypertrophy Routine</div>
+          <div class="brand-subtitle">Hypertrophy Routine (5-Day Split)</div>
         </div>
       </div>
 
@@ -99,12 +99,12 @@
       <div class="timer-left">
         <span class="timer-icon">⏱️</span>
         <div>
-          <div class="timer-display" id="timerDisplay">1:30</div>
+          <div class="timer-display" id="timerDisplay">2:00</div>
           <div class="timer-label">Rest Countdown</div>
         </div>
       </div>
       <div class="timer-controls">
-        <button class="timer-btn" id="timerMinus15Btn">-15s</button>
+        <button class="timer-btn" id="timerMinus30Btn">-30s</button>
         <button class="timer-btn" id="timerPlus30Btn">+30s</button>
         <button class="timer-btn skip-btn" id="timerSkipBtn">Skip</button>
       </div>
@@ -125,12 +125,12 @@
   </div>
 
   <!-- Scripts -->
-  <script src="routine-data.js?v=8"></script>
-  <script src="app.js?v=8"></script>
+  <script src="routine-data.js?v=9"></script>
+  <script src="app.js?v=9"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js?v=8').then((reg) => {
+        navigator.serviceWorker.register('./sw.js?v=9').then((reg) => {
           reg.update();
         }).catch(err => {
           console.log('ServiceWorker registration skipped:', err);
