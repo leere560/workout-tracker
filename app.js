@@ -787,9 +787,9 @@ class WorkoutApp {
                     <tr class="set-row ${s.completed ? 'completed' : ''} ${isActiveNext ? 'active-next-set' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}">
                       <td class="set-index-cell">${s.setNum}</td>
                       <td class="prev-cell">${prevText}</td>
-                      <td style="font-size: 0.78rem; color: var(--text-muted);">${ex.targetReps}</td>
+                      <td class="target-cell" style="font-size: 0.78rem; color: var(--text-muted);">${ex.targetReps}</td>
                       <td>
-                        <div class="stepper-wrap">
+                        <div class="stepper-wrap weight-stepper">
                           <button type="button" class="stepper-btn minus" data-type="weight" data-delta="-5" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Decrease weight by 5 lbs">−</button>
                           <input type="number" class="set-input set-weight-input" 
                                  value="${s.weight}" 
@@ -801,7 +801,7 @@ class WorkoutApp {
                         </div>
                       </td>
                       <td>
-                        <div class="stepper-wrap">
+                        <div class="stepper-wrap reps-stepper">
                           <button type="button" class="stepper-btn minus" data-type="reps" data-delta="-1" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Decrease reps by 1">−</button>
                           <input type="number" class="set-input set-reps-input" 
                                  value="${s.reps}" 
@@ -1677,7 +1677,7 @@ class WorkoutApp {
 
       <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.6 (Quick Steppers, Auto-Collapse Cards, Active Set Focus & Live Progress)</div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.6.1 (Compact Mobile Sets Table & Steppers)</div>
           <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Wed: Upper A • Fri: Lower A • Sat: Upper B • Sun: DB Arms & Shoulders • Mon: Lower B</div>
         </div>
         <button class="primary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">

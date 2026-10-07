@@ -687,6 +687,13 @@ input[type="number"] {
   padding: 0 4px;
 }
 
+.target-cell {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  padding: 0 4px;
+}
+
 .set-input {
   background: var(--bg-input);
   border: 1px solid var(--border-color);
@@ -760,6 +767,14 @@ input[type="number"] {
   margin: 0 auto;
 }
 
+.stepper-wrap.weight-stepper {
+  max-width: 88px;
+}
+
+.stepper-wrap.reps-stepper {
+  max-width: 78px;
+}
+
 .stepper-btn {
   background: rgba(255, 255, 255, 0.05);
   border: none;
@@ -818,6 +833,69 @@ input[type="number"] {
 
 .set-row.completed .stepper-wrap .set-input {
   color: #34d399;
+}
+
+/* Mobile Compact Sets Table & Steppers */
+@media (max-width: 480px) {
+  .exercise-card {
+    padding: 14px 10px;
+  }
+
+  .sets-table th {
+    padding: 6px 2px;
+    font-size: 0.68rem;
+  }
+
+  .sets-table td {
+    padding: 4px 1px;
+  }
+
+  .set-index-cell {
+    font-size: 0.75rem;
+    width: 20px;
+    padding: 0 1px;
+  }
+
+  .prev-cell {
+    font-size: 0.72rem;
+    padding: 0 2px;
+  }
+
+  .target-cell {
+    font-size: 0.72rem !important;
+    padding: 0 2px;
+  }
+
+  .stepper-wrap {
+    height: 38px;
+  }
+
+  .stepper-wrap.weight-stepper {
+    max-width: 76px;
+  }
+
+  .stepper-wrap.reps-stepper {
+    max-width: 66px;
+  }
+
+  .stepper-btn {
+    width: 21px;
+    min-width: 21px;
+    font-size: 1rem;
+  }
+
+  .stepper-wrap .set-input {
+    width: calc(100% - 42px);
+    font-size: 0.88rem;
+  }
+
+  .set-check-btn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    font-size: 1.1rem;
+  }
 }
 
 /* Active Next Set Highlight */
