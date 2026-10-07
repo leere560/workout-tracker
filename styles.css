@@ -355,6 +355,10 @@ input[type="number"] {
   gap: 12px;
 }
 
+.session-info {
+  flex: 1;
+}
+
 .session-info h2 {
   font-size: 1.15rem;
   font-weight: 700;
@@ -740,6 +744,245 @@ input[type="number"] {
 .set-row.completed .set-input {
   border-color: rgba(16, 185, 129, 0.4);
   color: #34d399;
+}
+
+/* Inline Stepper Controls */
+.stepper-wrap {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  height: 42px;
+  width: 100%;
+  max-width: 96px;
+  margin: 0 auto;
+}
+
+.stepper-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: none;
+  color: #94a3b8;
+  font-size: 1.15rem;
+  font-weight: 700;
+  width: 26px;
+  min-width: 26px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  transition: all 0.15s ease;
+}
+
+.stepper-btn:active {
+  background: var(--accent-blue);
+  color: #ffffff;
+  transform: scale(0.92);
+}
+
+.stepper-wrap .set-input {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  width: calc(100% - 52px);
+  min-width: 30px;
+  height: 100%;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+
+.stepper-wrap .set-input::-webkit-outer-spin-button,
+.stepper-wrap .set-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.stepper-wrap:focus-within {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px var(--accent-blue-glow);
+}
+
+.set-row.completed .stepper-wrap {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.set-row.completed .stepper-wrap .set-input {
+  color: #34d399;
+}
+
+/* Active Next Set Highlight */
+.set-row.active-next-set {
+  background: rgba(59, 130, 246, 0.09);
+  position: relative;
+}
+
+.set-row.active-next-set td:first-child {
+  border-left: 3px solid var(--accent-blue);
+  border-top-left-radius: var(--radius-sm);
+  border-bottom-left-radius: var(--radius-sm);
+}
+
+.set-row.active-next-set .set-index-cell {
+  color: #60a5fa;
+  font-weight: 900;
+}
+
+/* Collapsible Setup & Form Notes */
+.form-notes-collapsible {
+  margin-top: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.form-notes-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-weight: 700;
+  color: #94a3b8;
+  user-select: none;
+  list-style: none;
+}
+
+.form-notes-summary::-webkit-details-marker {
+  display: none;
+}
+
+.form-notes-summary .chevron {
+  transition: transform 0.2s ease;
+  font-size: 0.75rem;
+}
+
+.form-notes-collapsible[open] .form-notes-summary .chevron {
+  transform: rotate(180deg);
+}
+
+.form-notes-collapsible[open] .form-notes-summary {
+  color: var(--accent-blue);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.form-notes-content {
+  padding: 8px 10px;
+  line-height: 1.45;
+  color: #cbd5e1;
+}
+
+/* Card Collapse Controls */
+.card-collapse-toggle-btn {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid var(--accent-emerald);
+  color: #6ee7b7;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.card-collapse-toggle-btn:hover {
+  background: rgba(16, 185, 129, 0.25);
+}
+
+.completed-summary-row {
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.completed-check-icon {
+  font-size: 1.25rem;
+  color: var(--accent-emerald);
+  font-weight: 900;
+}
+
+.completed-summary-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.completed-summary-text strong {
+  font-size: 0.88rem;
+  color: #a7f3d0;
+}
+
+.completed-summary-text span {
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  font-family: var(--font-mono);
+}
+
+/* Screen Flash on Timer Complete */
+.timer-complete-flash {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 185, 129, 0.35);
+  pointer-events: none;
+  z-index: 9999;
+  animation: flashPulse 1.2s ease-out forwards;
+}
+
+@keyframes flashPulse {
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Workout Progress Bar */
+.workout-progress-bar-wrap {
+  margin-top: 10px;
+  width: 100%;
+}
+
+.workout-progress-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+}
+
+.workout-progress-pct {
+  font-weight: 800;
+  color: var(--accent-emerald);
+}
+
+.workout-progress-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.workout-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #10b981);
+  border-radius: var(--radius-full);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Exclusively Optional Finishers Section */

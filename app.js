@@ -42,6 +42,7 @@ class WorkoutApp {
     // Active session logs in memory
     this.session = this.loadSession();
     this.selectedProgressExercise = null;
+    this.collapsedCards = new Set();
 
     // Init UI
     this.initElements();
@@ -345,6 +346,45 @@ class WorkoutApp {
     this.renderWorkout();
   }
 
+  updateSetWeight(exId, setIdx, newWeight) {
+    const list = this.session.logs[exId];
+    if (!list || !list[setIdx]) return;
+    const val = Math.max(0, parseFloat(newWeight) || 0);
+    list[setIdx].weight = val;
+
+    // Set 1 weight propagation: auto-update subsequent uncompleted sets!
+    if (setIdx === 0 && list.length > 1) {
+      for (let i = 1; i < list.length; i++) {
+        if (!list[i].completed) {
+          list[i].weight = val;
+        }
+      }
+    }
+
+    this.saveCurrentSession();
+    const ex = this.findExerciseById(exId);
+    if (ex) {
+      list.forEach((s, idx) => {
+        this.recordExerciseWeight(ex.name, idx + 1, s.weight, s.reps, s.completed);
+      });
+    }
+    this.renderWorkout();
+  }
+
+  updateSetReps(exId, setIdx, newReps) {
+    const list = this.session.logs[exId];
+    if (!list || !list[setIdx]) return;
+    const val = Math.max(0, parseInt(newReps, 10) || 0);
+    list[setIdx].reps = val;
+
+    this.saveCurrentSession();
+    const ex = this.findExerciseById(exId);
+    if (ex) {
+      this.recordExerciseWeight(ex.name, setIdx + 1, list[setIdx].weight, val, list[setIdx].completed);
+    }
+    this.renderWorkout();
+  }
+
   getPreviousExercisePerformance(exerciseName) {
     // 1. Check persistent lastWeights store
     if (this.lastWeights && this.lastWeights[exerciseName] && this.lastWeights[exerciseName].sets) {
@@ -560,6 +600,11 @@ class WorkoutApp {
 
     const hasSuperset = coreExercises.some(ex => ex.superset);
     const totalCoreSets = coreExercises.reduce((sum, ex) => sum + ex.sets, 0);
+    const completedCoreSets = coreExercises.reduce((sum, ex) => {
+      const logs = this.session.logs[ex.id] || [];
+      return sum + logs.filter(s => s.completed).length;
+    }, 0);
+    const progressPct = totalCoreSets > 0 ? Math.round((completedCoreSets / totalCoreSets) * 100) : 0;
     const estimatedMins = currentDay.id === 'sun___db_arms' ? 30 : (hasSuperset ? (coreExercises.length * 8) - 8 : (coreExercises.length * 8));
 
     // Clean Day Title for header
@@ -574,6 +619,15 @@ class WorkoutApp {
         <span>⚡ ${totalCoreSets} Sets</span>
         <span>•</span>
         <span>⏱️ ~${estimatedMins}m ${hasSuperset ? '<strong style="color: var(--accent-purple);">(⚡ Superset)</strong>' : ''}</span>
+      </div>
+      <div class="workout-progress-bar-wrap">
+        <div class="workout-progress-info">
+          <span>⚡ <strong>${completedCoreSets} of ${totalCoreSets}</strong> sets completed</span>
+          <span class="workout-progress-pct">${progressPct}%</span>
+        </div>
+        <div class="workout-progress-track">
+          <div class="workout-progress-fill" style="width: ${progressPct}%;"></div>
+        </div>
       </div>
     `;
 
@@ -607,6 +661,7 @@ class WorkoutApp {
     const pr = this.getPersonalRecord(ex.name);
     const machineSetting = this.machineSettings[ex.id] || '';
     const isAllDone = sessionSets.length > 0 && sessionSets.every(s => s.completed);
+    const isCollapsed = isAllDone && this.collapsedCards.has(ex.id);
 
     const cleanTag = ex.muscle.replace(/[^a-zA-Z]/g, '');
     const effectiveRest = ex.superset ? ex.superset.rest : (ex.rest || '2 min');
@@ -618,6 +673,7 @@ class WorkoutApp {
     const targetSetsCount = ex.sets || sessionSets.length || 3;
     const allCurrentHit = sessionSets.length >= targetSetsCount && completedSets.length === sessionSets.length && completedSets.every(s => s.completed && (s.reps || 0) >= maxTarget);
     const prevProgression = this.getPreviousProgressionFlag(ex.name, ex.targetReps, ex.sets || 3);
+    const nextIncompleteIdx = sessionSets.findIndex(s => !s.completed);
 
     return `
       <div class="exercise-card ${isAllDone ? 'completed' : ''} ${isBonus ? 'is-optional' : ''} ${ex.superset ? 'is-superset' : ''}" id="card_${ex.id}">
@@ -646,6 +702,11 @@ class WorkoutApp {
             ` : ''}
           </div>
           <div class="card-actions">
+            ${isAllDone ? `
+              <button type="button" class="card-collapse-toggle-btn" data-exid="${ex.id}" aria-label="Toggle exercise details">
+                ${isCollapsed ? 'Show Details ▾' : 'Collapse ▴'}
+              </button>
+            ` : ''}
             ${ex.videoUrl ? `
               <a href="${ex.videoUrl}" target="_blank" rel="noopener noreferrer" class="video-link-btn" title="Watch form guide">
                 ▶ Form
@@ -654,97 +715,126 @@ class WorkoutApp {
           </div>
         </div>
 
-        <div class="exercise-meta-box">
-          <div class="target-targets">
-            <div class="target-item"><strong>Target:</strong> ${ex.sets} sets × ${ex.targetReps} reps</div>
-            <div class="target-item"><strong>Rest:</strong> <span style="${ex.superset ? 'color: #d8b4fe; font-weight: 700;' : ''}">${effectiveRest}</span></div>
-            <div class="target-item"><strong>Start Weight:</strong> ${ex.startingWeight || 'Moderate'}</div>
-            ${pr.maxWeight > 0 ? `<div class="target-item"><strong>PR:</strong> ${pr.maxWeight} lbs</div>` : ''}
-          </div>
-          ${ex.notes ? `<div class="form-notes"><strong>Setup & Form:</strong> ${ex.notes}</div>` : ''}
-          
-          <div class="machine-settings-row">
-            <span class="machine-settings-label">⚙️ Pin / Seat:</span>
-            <input type="text" class="machine-settings-input" 
-                   placeholder="e.g. Seat #4, Pin #8" 
-                   value="${machineSetting}" 
-                   data-exid="${ex.id}" />
-          </div>
-        </div>
-
-        ${prevProgression.unlocked ? `
-          <div class="progression-banner">
-            <div class="progression-banner-left">
-              <span class="progression-icon">🚀</span>
-              <div class="progression-text">
-                <strong>Weight Increase Flag:</strong> Hit ${prevProgression.maxReps} reps on all ${prevProgression.setsCount} sets last workout! Ready to increase weight today (+5 lbs recommended).
-              </div>
+        ${isCollapsed ? `
+          <div class="completed-summary-row">
+            <span class="completed-check-icon">✓</span>
+            <div class="completed-summary-text">
+              <strong>All ${sessionSets.length} Sets Completed!</strong>
+              <span>${sessionSets.map(s => `${s.weight}lbs×${s.reps}`).join(' • ')}</span>
             </div>
-            <button class="bump-weight-btn" data-exid="${ex.id}" data-bump="5" title="Add 5 lbs to all sets today">
-              +5 lbs All Sets
-            </button>
           </div>
         ` : ''}
 
-        <div class="sets-table-wrap">
-          <table class="sets-table">
-            <thead>
-              <tr>
-                <th>Set</th>
-                <th>Prev</th>
-                <th>Target</th>
-                <th>Lbs</th>
-                <th>Reps</th>
-                <th>Done</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${sessionSets.map((s, sIdx) => {
-                const prevSet = prev && prev.sets && prev.sets[sIdx];
-                const prevText = prevSet && prevSet.weight > 0 ? `${prevSet.weight}×${prevSet.reps}` : '—';
-                return `
-                  <tr class="set-row ${s.completed ? 'completed' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}">
-                    <td class="set-index-cell">${s.setNum}</td>
-                    <td class="prev-cell">${prevText}</td>
-                    <td style="font-size: 0.78rem; color: var(--text-muted);">${ex.targetReps}</td>
-                    <td>
-                      <input type="number" class="set-input set-weight-input" 
-                             value="${s.weight}" 
-                             data-exid="${ex.id}" data-setidx="${sIdx}" 
-                             step="5" min="0" placeholder="0" 
-                             inputmode="decimal" pattern="[0-9]*"
-                             aria-label="Set ${s.setNum} weight in lbs" />
-                    </td>
-                    <td>
-                      <input type="number" class="set-input set-reps-input" 
-                             value="${s.reps}" 
-                             data-exid="${ex.id}" data-setidx="${sIdx}" 
-                             step="1" min="0" placeholder="0" 
-                             inputmode="numeric" pattern="[0-9]*"
-                             aria-label="Set ${s.setNum} reps" />
-                    </td>
-                    <td>
-                      <button class="set-check-btn" data-exid="${ex.id}" data-setidx="${sIdx}" data-rest="${effectiveRest}" aria-label="Mark set ${s.setNum} ${s.completed ? 'incomplete' : 'complete'}">
-                        ${s.completed ? '✓' : '○'}
-                      </button>
-                    </td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-
-        <div class="card-footer">
-          <button class="add-set-btn" data-exid="${ex.id}">
-            <span>+</span> Add Set
-          </button>
-          <div class="card-footer-right">
-            ${sessionSets.length > 1 ? `
-              <button class="icon-btn remove-set-btn" data-exid="${ex.id}" title="Remove last set">
-                − Remove Set
-              </button>
+        <div class="card-body-collapsible" style="display: ${isCollapsed ? 'none' : 'block'};">
+          <div class="exercise-meta-box">
+            <div class="target-targets">
+              <div class="target-item"><strong>Target:</strong> ${ex.sets} sets × ${ex.targetReps} reps</div>
+              <div class="target-item"><strong>Rest:</strong> <span style="${ex.superset ? 'color: #d8b4fe; font-weight: 700;' : ''}">${effectiveRest}</span></div>
+              <div class="target-item"><strong>Start Weight:</strong> ${ex.startingWeight || 'Moderate'}</div>
+              ${pr.maxWeight > 0 ? `<div class="target-item"><strong>PR:</strong> ${pr.maxWeight} lbs</div>` : ''}
+            </div>
+            ${ex.notes ? `
+              <details class="form-notes-collapsible">
+                <summary class="form-notes-summary">
+                  <span>ℹ️ Setup & Form Guide</span>
+                  <span class="chevron">▾</span>
+                </summary>
+                <div class="form-notes-content">${ex.notes}</div>
+              </details>
             ` : ''}
+            
+            <div class="machine-settings-row">
+              <span class="machine-settings-label">⚙️ Pin / Seat:</span>
+              <input type="text" class="machine-settings-input" 
+                     placeholder="e.g. Seat #4, Pin #8" 
+                     value="${machineSetting}" 
+                     data-exid="${ex.id}" />
+            </div>
+          </div>
+
+          ${prevProgression.unlocked ? `
+            <div class="progression-banner">
+              <div class="progression-banner-left">
+                <span class="progression-icon">🚀</span>
+                <div class="progression-text">
+                  <strong>Weight Increase Flag:</strong> Hit ${prevProgression.maxReps} reps on all ${prevProgression.setsCount} sets last workout! Ready to increase weight today (+5 lbs recommended).
+                </div>
+              </div>
+              <button class="bump-weight-btn" data-exid="${ex.id}" data-bump="5" title="Add 5 lbs to all sets today">
+                +5 lbs All Sets
+              </button>
+            </div>
+          ` : ''}
+
+          <div class="sets-table-wrap">
+            <table class="sets-table">
+              <thead>
+                <tr>
+                  <th>Set</th>
+                  <th>Prev</th>
+                  <th>Target</th>
+                  <th>Lbs</th>
+                  <th>Reps</th>
+                  <th>Done</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${sessionSets.map((s, sIdx) => {
+                  const prevSet = prev && prev.sets && prev.sets[sIdx];
+                  const prevText = prevSet && prevSet.weight > 0 ? `${prevSet.weight}×${prevSet.reps}` : '—';
+                  const isActiveNext = sIdx === nextIncompleteIdx;
+                  return `
+                    <tr class="set-row ${s.completed ? 'completed' : ''} ${isActiveNext ? 'active-next-set' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}">
+                      <td class="set-index-cell">${s.setNum}</td>
+                      <td class="prev-cell">${prevText}</td>
+                      <td style="font-size: 0.78rem; color: var(--text-muted);">${ex.targetReps}</td>
+                      <td>
+                        <div class="stepper-wrap">
+                          <button type="button" class="stepper-btn minus" data-type="weight" data-delta="-5" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Decrease weight by 5 lbs">−</button>
+                          <input type="number" class="set-input set-weight-input" 
+                                 value="${s.weight}" 
+                                 data-exid="${ex.id}" data-setidx="${sIdx}" 
+                                 step="5" min="0" placeholder="0" 
+                                 inputmode="decimal" pattern="[0-9]*"
+                                 aria-label="Set ${s.setNum} weight in lbs" />
+                          <button type="button" class="stepper-btn plus" data-type="weight" data-delta="5" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Increase weight by 5 lbs">+</button>
+                        </div>
+                      </td>
+                      <td>
+                        <div class="stepper-wrap">
+                          <button type="button" class="stepper-btn minus" data-type="reps" data-delta="-1" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Decrease reps by 1">−</button>
+                          <input type="number" class="set-input set-reps-input" 
+                                 value="${s.reps}" 
+                                 data-exid="${ex.id}" data-setidx="${sIdx}" 
+                                 step="1" min="0" placeholder="0" 
+                                 inputmode="numeric" pattern="[0-9]*"
+                                 aria-label="Set ${s.setNum} reps" />
+                          <button type="button" class="stepper-btn plus" data-type="reps" data-delta="1" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Increase reps by 1">+</button>
+                        </div>
+                      </td>
+                      <td>
+                        <button class="set-check-btn" data-exid="${ex.id}" data-setidx="${sIdx}" data-rest="${effectiveRest}" aria-label="Mark set ${s.setNum} ${s.completed ? 'incomplete' : 'complete'}">
+                          ${s.completed ? '✓' : '○'}
+                        </button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card-footer">
+            <button class="add-set-btn" data-exid="${ex.id}">
+              <span>+</span> Add Set
+            </button>
+            <div class="card-footer-right">
+              ${sessionSets.length > 1 ? `
+                <button class="icon-btn remove-set-btn" data-exid="${ex.id}" title="Remove last set">
+                  − Remove Set
+                </button>
+              ` : ''}
+            </div>
           </div>
         </div>
       </div>
@@ -764,6 +854,42 @@ class WorkoutApp {
         }
       });
     }
+
+    // Stepper (+ / -) buttons for weight and reps
+    this.exerciseListEl.querySelectorAll('.stepper-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const exId = btn.dataset.exid;
+        const setIdx = parseInt(btn.dataset.setidx, 10);
+        const type = btn.dataset.type;
+        const delta = parseFloat(btn.dataset.delta);
+        const list = this.session.logs[exId];
+        if (!list || !list[setIdx]) return;
+
+        if (type === 'weight') {
+          const cur = parseFloat(list[setIdx].weight) || 0;
+          const nextVal = Math.max(0, cur + delta);
+          this.updateSetWeight(exId, setIdx, nextVal);
+        } else if (type === 'reps') {
+          const cur = parseInt(list[setIdx].reps, 10) || 0;
+          const nextVal = Math.max(0, cur + delta);
+          this.updateSetReps(exId, setIdx, nextVal);
+        }
+      });
+    });
+
+    // Card collapse toggle buttons
+    this.exerciseListEl.querySelectorAll('.card-collapse-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const exId = btn.dataset.exid;
+        if (this.collapsedCards.has(exId)) {
+          this.collapsedCards.delete(exId);
+        } else {
+          this.collapsedCards.add(exId);
+        }
+        this.renderWorkout();
+      });
+    });
 
     // Check buttons
     this.exerciseListEl.querySelectorAll('.set-check-btn').forEach(btn => {
@@ -790,14 +916,7 @@ class WorkoutApp {
         const exId = input.dataset.exid;
         const setIdx = parseInt(input.dataset.setidx, 10);
         const val = parseFloat(input.value) || 0;
-        if (this.session.logs[exId] && this.session.logs[exId][setIdx]) {
-          this.session.logs[exId][setIdx].weight = val;
-          this.saveCurrentSession();
-          const ex = this.findExerciseById(exId);
-          if (ex) {
-            this.recordExerciseWeight(ex.name, setIdx + 1, val, this.session.logs[exId][setIdx].reps, this.session.logs[exId][setIdx].completed);
-          }
-        }
+        this.updateSetWeight(exId, setIdx, val);
       });
     });
 
@@ -806,14 +925,7 @@ class WorkoutApp {
         const exId = input.dataset.exid;
         const setIdx = parseInt(input.dataset.setidx, 10);
         const val = parseInt(input.value, 10) || 0;
-        if (this.session.logs[exId] && this.session.logs[exId][setIdx]) {
-          this.session.logs[exId][setIdx].reps = val;
-          this.saveCurrentSession();
-          const ex = this.findExerciseById(exId);
-          if (ex) {
-            this.recordExerciseWeight(ex.name, setIdx + 1, this.session.logs[exId][setIdx].weight, val, this.session.logs[exId][setIdx].completed);
-          }
-        }
+        this.updateSetReps(exId, setIdx, val);
       });
     });
 
@@ -856,8 +968,19 @@ class WorkoutApp {
 
     // Trigger Rest Timer if marking as completed
     if (setObj.completed) {
+      this.primeAudioContext();
+
+      // Check if all sets for this exercise are now completed -> auto-collapse
+      const list = this.session.logs[exId] || [];
+      if (list.length > 0 && list.every(s => s.completed)) {
+        this.collapsedCards.add(exId);
+      }
+
       const restSeconds = this.parseRestSeconds(restStr);
       this.startTimer(restSeconds);
+    } else {
+      // If unchecked, uncollapse
+      this.collapsedCards.delete(exId);
     }
 
     this.renderWorkout();
@@ -1122,6 +1245,12 @@ class WorkoutApp {
   showRestCompleteBanner() {
     const existing = document.querySelector('.timer-complete-toast');
     if (existing) existing.remove();
+
+    // Trigger visual screen flash
+    const flash = document.createElement('div');
+    flash.className = 'timer-complete-flash';
+    document.body.appendChild(flash);
+    setTimeout(() => flash.remove(), 1200);
 
     const banner = document.createElement('div');
     banner.className = 'timer-complete-toast';
@@ -1536,9 +1665,19 @@ class WorkoutApp {
         `).join('')}
       </div>
 
+      <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+        <div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-emerald);">🔔 Rest Timer Chime & Sensory Check</div>
+          <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Test the 3-tone chime through your AirPods or phone speaker.</div>
+        </div>
+        <button class="secondary-btn" id="testChimeBtn" style="padding: 6px 14px; font-size: 0.8rem; border-color: rgba(16, 185, 129, 0.4); color: #6ee7b7;">
+          🔊 Test Chime
+        </button>
+      </div>
+
       <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.5.1 (All 3 Sets Progression Rule, Sunday DB Day & Rest Timers)</div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.6 (Quick Steppers, Auto-Collapse Cards, Active Set Focus & Live Progress)</div>
           <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Wed: Upper A • Fri: Lower A • Sat: Upper B • Sun: DB Arms & Shoulders • Mon: Lower B</div>
         </div>
         <button class="primary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">
@@ -1556,6 +1695,10 @@ class WorkoutApp {
       </div>
     `;
 
+    document.getElementById('testChimeBtn')?.addEventListener('click', () => {
+      this.primeAudioContext();
+      this.playTimerAlarm();
+    });
     document.getElementById('forceUpdateBtn')?.addEventListener('click', () => this.forceAppUpdate());
     document.getElementById('exportDataBtn')?.addEventListener('click', () => this.exportData());
     document.getElementById('resetRoutineBtn')?.addEventListener('click', () => this.resetRoutine());
