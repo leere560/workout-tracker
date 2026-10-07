@@ -770,7 +770,6 @@ class WorkoutApp {
             <table class="sets-table">
               <thead>
                 <tr>
-                  <th>Set</th>
                   <th>Prev</th>
                   <th>Target</th>
                   <th>Lbs</th>
@@ -785,7 +784,6 @@ class WorkoutApp {
                   const isActiveNext = sIdx === nextIncompleteIdx;
                   return `
                     <tr class="set-row ${s.completed ? 'completed' : ''} ${isActiveNext ? 'active-next-set' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}">
-                      <td class="set-index-cell">${s.setNum}</td>
                       <td class="prev-cell">${prevText}</td>
                       <td class="target-cell" style="font-size: 0.78rem; color: var(--text-muted);">${ex.targetReps}</td>
                       <td>
@@ -1677,7 +1675,7 @@ class WorkoutApp {
 
       <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.6.1 (Compact Mobile Sets Table & Steppers)</div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.6.2 (Streamlined 5-Column Table & Quick Steppers)</div>
           <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Wed: Upper A • Fri: Lower A • Sat: Upper B • Sun: DB Arms & Shoulders • Mon: Lower B</div>
         </div>
         <button class="primary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">

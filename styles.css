@@ -671,6 +671,16 @@ input[type="number"] {
   vertical-align: middle;
 }
 
+.sets-table th:first-child,
+.sets-table td:first-child {
+  padding-left: 8px;
+}
+
+.sets-table th:last-child,
+.sets-table td:last-child {
+  padding-right: 8px;
+}
+
 .set-index-cell {
   font-size: 0.85rem;
   font-weight: 800;
@@ -842,28 +852,32 @@ input[type="number"] {
   }
 
   .sets-table th {
-    padding: 6px 2px;
-    font-size: 0.68rem;
+    padding: 6px 3px;
+    font-size: 0.70rem;
   }
 
   .sets-table td {
-    padding: 4px 1px;
+    padding: 4px 2px;
   }
 
-  .set-index-cell {
-    font-size: 0.75rem;
-    width: 20px;
-    padding: 0 1px;
+  .sets-table th:first-child,
+  .sets-table td:first-child {
+    padding-left: 6px;
+  }
+
+  .sets-table th:last-child,
+  .sets-table td:last-child {
+    padding-right: 6px;
   }
 
   .prev-cell {
-    font-size: 0.72rem;
-    padding: 0 2px;
+    font-size: 0.76rem;
+    padding: 0 3px;
   }
 
   .target-cell {
-    font-size: 0.72rem !important;
-    padding: 0 2px;
+    font-size: 0.76rem !important;
+    padding: 0 3px;
   }
 
   .stepper-wrap {
@@ -910,9 +924,9 @@ input[type="number"] {
   border-bottom-left-radius: var(--radius-sm);
 }
 
-.set-row.active-next-set .set-index-cell {
-  color: #60a5fa;
-  font-weight: 900;
+.set-row.active-next-set .prev-cell {
+  color: #93c5fd;
+  font-weight: 700;
 }
 
 /* Collapsible Setup & Form Notes */
