@@ -427,6 +427,45 @@ class WorkoutApp {
     return null;
   }
 
+  formatPreviousSetsSummary(sets) {
+    if (!sets || !Array.isArray(sets)) return null;
+    const valid = sets.filter(s => s && typeof s.weight !== 'undefined' && typeof s.reps !== 'undefined' && s.weight !== null && s.reps !== null);
+    if (valid.length === 0) return null;
+
+    const weights = valid.map(s => Number(s.weight));
+    const reps = valid.map(s => Number(s.reps));
+
+    const allSameWeight = weights.every(w => w === weights[0]);
+    const allSameReps = reps.every(r => r === reps[0]);
+
+    if (allSameWeight && allSameReps) {
+      if (valid.length === 1) {
+        return `${weights[0]} lbs × ${reps[0]}`;
+      }
+      return `${weights[0]} lbs × ${reps[0]} (all ${valid.length} sets)`;
+    }
+
+    if (allSameWeight) {
+      return `${weights[0]} lbs × [${reps.join(', ')}]`;
+    }
+
+    // Group consecutive identical sets for ultra-compact display
+    const groups = [];
+    for (let i = 0; i < valid.length; i++) {
+      const cur = valid[i];
+      if (groups.length > 0) {
+        const last = groups[groups.length - 1];
+        if (last.weight === cur.weight && last.reps === cur.reps) {
+          last.count++;
+          continue;
+        }
+      }
+      groups.push({ weight: cur.weight, reps: cur.reps, count: 1 });
+    }
+
+    return groups.map(g => `${g.weight}lbs×${g.reps}${g.count > 1 ? ` (×${g.count})` : ''}`).join(' • ');
+  }
+
   getPersonalRecord(exerciseName) {
     let maxWeight = 0;
     let max1RM = 0;
@@ -734,6 +773,7 @@ class WorkoutApp {
     const allCurrentHit = sessionSets.length >= targetSetsCount && completedSets.length === sessionSets.length && completedSets.every(s => s.completed && (s.reps || 0) >= maxTarget);
     const prevProgression = this.getPreviousProgressionFlag(ex.name, effectiveTargetReps, ex.sets || 3);
     const nextIncompleteIdx = sessionSets.findIndex(s => !s.completed);
+    const prevSummaryText = this.formatPreviousSetsSummary(prev ? prev.sets : null);
 
     return `
       <div class="exercise-card ${isAllDone ? 'completed' : ''} ${isBonus ? 'is-optional' : ''} ${ex.superset ? 'is-superset' : ''}" id="card_${ex.id}">
@@ -749,36 +789,42 @@ class WorkoutApp {
         ` : ''}
 
         <div class="card-header">
-          <div class="card-title-group">
-            <div>
+          <div class="card-meta-row">
+            <div class="card-tags-group">
               <span class="muscle-tag tag-${cleanTag}">${ex.muscle}</span>
               ${ex.superset ? `<span class="superset-badge">⚡ SUPERSET ${ex.superset.tag}</span>` : ''}
               ${isBonus ? '<span class="optional-badge">⚡ Optional Bonus</span>' : ''}
-              ${isSwapped ? '<span class="optional-badge" style="background: rgba(59, 130, 246, 0.15); color: #93c5fd; border-color: rgba(59, 130, 246, 0.35);">🔄 Alt Equipment</span>' : ''}
+              ${isSwapped ? '<span class="optional-badge alt-tag">🔄 Alt Equipment</span>' : ''}
               ${allCurrentHit ? `<span class="progression-badge full">🚀 All ${sessionSets.length} Sets Hit ${maxTarget} Reps! Increase Weight Next Time</span>` : (setsHittingMax.length > 0 ? `<span class="progression-badge partial">🎯 ${setsHittingMax.length}/${sessionSets.length} sets @ ${maxTarget} reps</span>` : '')}
             </div>
-            <h3 class="exercise-name">${displayName}</h3>
-            ${prev && prev.sets && prev.sets.length > 0 ? `
-              <button type="button" class="prev-weight-pill-btn" data-exname="${ex.name}" title="Tap to view performance log">⏱️ Last: ${prev.sets.filter(Boolean).map(s => `${s.weight}lbs×${s.reps}`).join(' • ')} ▾</button>
-            ` : ''}
+            <div class="card-meta-actions">
+              ${effectiveVideo ? `
+                <a href="${effectiveVideo}" target="_blank" rel="noopener noreferrer" class="video-link-btn" title="Watch form guide">
+                  ▶ Form
+                </a>
+              ` : ''}
+              ${isAllDone ? `
+                <button type="button" class="card-collapse-toggle-btn" data-exid="${ex.id}" aria-label="Toggle exercise details">
+                  ${isCollapsed ? 'Show Details ▾' : 'Collapse ▴'}
+                </button>
+              ` : ''}
+            </div>
           </div>
-          <div class="card-actions">
-            ${isAllDone ? `
-              <button type="button" class="card-collapse-toggle-btn" data-exid="${ex.id}" aria-label="Toggle exercise details">
-                ${isCollapsed ? 'Show Details ▾' : 'Collapse ▴'}
+
+          <h3 class="exercise-name">${displayName}</h3>
+
+          <div class="card-tools-row">
+            ${prevSummaryText ? `
+              <button type="button" class="prev-weight-pill-btn" data-exname="${ex.name}" title="Tap to view performance log">⏱️ Last: ${prevSummaryText} ▾</button>
+            ` : '<div class="card-tools-spacer"></div>'}
+            <div class="card-actions-pills">
+              <button type="button" class="action-pill-btn warmup-btn" data-exid="${ex.id}" data-exname="${displayName}" title="Calculate neural warmup ramp sets">
+                🔥 Warmup
               </button>
-            ` : ''}
-            <button type="button" class="action-pill-btn warmup-btn" data-exid="${ex.id}" data-exname="${displayName}" title="Calculate neural warmup ramp sets">
-              🔥 Warmup
-            </button>
-            <button type="button" class="action-pill-btn swap-btn" data-exid="${ex.id}" data-exname="${ex.name}" title="Swap with alternative equipment">
-              🔄 Swap
-            </button>
-            ${effectiveVideo ? `
-              <a href="${effectiveVideo}" target="_blank" rel="noopener noreferrer" class="video-link-btn" title="Watch form guide">
-                ▶ Form
-              </a>
-            ` : ''}
+              <button type="button" class="action-pill-btn swap-btn" data-exid="${ex.id}" data-exname="${ex.name}" title="Swap with alternative equipment">
+                🔄 Swap
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1186,7 +1232,7 @@ class WorkoutApp {
       this.wakeLockBadgeEl.title = 'Screen will stay awake during your workout';
     } else {
       this.wakeLockBadgeEl.classList.remove('active');
-      const label = message ? `Screen Sleep (${message})` : 'Screen Sleep';
+      const label = message && message !== 'Inactive' ? `Screen Sleep (${message})` : 'Screen Sleep';
       this.wakeLockBadgeEl.innerHTML = `🛡️ ${label}`;
       this.wakeLockBadgeEl.title = 'Screen wake lock is not active';
     }
