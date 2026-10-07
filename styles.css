@@ -765,43 +765,49 @@ input[type="number"] {
 
 /* Inline Stepper Controls */
 .stepper-wrap {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   background: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   overflow: hidden;
   height: 42px;
-  width: 100%;
-  max-width: 96px;
+  box-sizing: border-box;
   margin: 0 auto;
 }
 
 .stepper-wrap.weight-stepper {
+  width: 88px;
   max-width: 88px;
 }
 
 .stepper-wrap.reps-stepper {
-  max-width: 78px;
+  width: 84px;
+  max-width: 84px;
 }
 
 .stepper-btn {
+  flex: 0 0 26px;
+  width: 26px;
+  min-width: 26px;
+  max-width: 26px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: rgba(255, 255, 255, 0.05);
   border: none;
   color: #94a3b8;
   font-size: 1.15rem;
   font-weight: 700;
-  width: 26px;
-  min-width: 26px;
-  height: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   cursor: pointer;
   padding: 0;
+  margin: 0;
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
+  flex-shrink: 0;
+  box-sizing: border-box;
   transition: all 0.15s ease;
 }
 
@@ -812,17 +818,22 @@ input[type="number"] {
 }
 
 .stepper-wrap .set-input {
+  flex: 1 1 0px !important;
+  min-width: 0 !important;
+  width: 0 !important;
+  height: 100%;
   border: none;
   background: transparent;
   padding: 0;
+  margin: 0;
   font-size: 0.95rem;
   font-weight: 800;
   color: var(--text-primary);
-  width: calc(100% - 52px);
-  min-width: 30px;
-  height: 100%;
   text-align: center;
+  -webkit-appearance: none;
   -moz-appearance: textfield;
+  appearance: none;
+  box-sizing: border-box;
 }
 
 .stepper-wrap .set-input::-webkit-outer-spin-button,
@@ -885,22 +896,25 @@ input[type="number"] {
   }
 
   .stepper-wrap.weight-stepper {
-    max-width: 76px;
+    width: 84px;
+    max-width: 84px;
   }
 
   .stepper-wrap.reps-stepper {
-    max-width: 66px;
+    width: 80px;
+    max-width: 80px;
   }
 
   .stepper-btn {
-    width: 21px;
-    min-width: 21px;
-    font-size: 1rem;
+    flex: 0 0 24px;
+    width: 24px;
+    min-width: 24px;
+    max-width: 24px;
+    font-size: 1.05rem;
   }
 
   .stepper-wrap .set-input {
-    width: calc(100% - 42px);
-    font-size: 0.88rem;
+    font-size: 0.90rem;
   }
 
   .set-check-btn {
