@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="description" content="Track your 4-day machine hypertrophy routine with progressive overload, rest timers, and superset pacing.">
-  <title>4-Day Machine Lifting Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=15">
+  <meta name="description" content="Track your 5-day machine hypertrophy routine with progressive overload, rest timers, and superset pacing.">
+  <title>5-Day Machine Lifting Tracker</title>
+  <link rel="stylesheet" href="styles.css?v=16">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
   <meta name="theme-color" content="#0a0e17">
@@ -65,9 +65,14 @@
         <div class="session-info" id="sessionInfo">
           <!-- Populated dynamically -->
         </div>
-        <button class="finish-btn" id="finishWorkoutBtn">
-          <span>✓</span> Finish Workout
-        </button>
+        <div class="session-actions-group">
+          <div class="wake-lock-status-badge" id="wakeLockBadge" title="Screen awake status">
+            🛡️ <span class="wake-dot">●</span> Screen Awake
+          </div>
+          <button class="finish-btn" id="finishWorkoutBtn">
+            <span>✓</span> Finish Workout
+          </button>
+        </div>
       </div>
 
       <!-- Exercise Cards List -->
@@ -124,13 +129,61 @@
     </div>
   </div>
 
+  <!-- Exercise / Machine Swap Modal -->
+  <div class="modal-backdrop" id="swapModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h3 id="swapModalTitle">🔄 Equipment Swap</h3>
+          <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">Machine taken or broken? Select an alternative:</div>
+        </div>
+        <button class="close-modal-btn" id="closeSwapModalBtn">&times;</button>
+      </div>
+      <div id="swapContent">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Warmup Pyramid Calculator Modal -->
+  <div class="modal-backdrop" id="warmupModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h3 id="warmupModalTitle">🔥 Warm-Up Ramp</h3>
+          <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">Smart neural prep sets before your working weight</div>
+        </div>
+        <button class="close-modal-btn" id="closeWarmupModalBtn">&times;</button>
+      </div>
+      <div id="warmupContent">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick History Modal -->
+  <div class="modal-backdrop" id="quickHistoryModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h3 id="quickHistoryTitle">📈 Exercise Performance Log</h3>
+          <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">Past weights, reps, and all-time records</div>
+        </div>
+        <button class="close-modal-btn" id="closeQuickHistoryModalBtn">&times;</button>
+      </div>
+      <div id="quickHistoryContent">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+  </div>
+
   <!-- Scripts -->
-  <script src="routine-data.js?v=15"></script>
-  <script src="app.js?v=15"></script>
+  <script src="routine-data.js?v=16"></script>
+  <script src="app.js?v=16"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js?v=15').then((reg) => {
+        navigator.serviceWorker.register('./sw.js?v=16').then((reg) => {
           reg.update();
         }).catch(err => {
           console.log('ServiceWorker registration skipped:', err);

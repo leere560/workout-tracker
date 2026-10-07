@@ -29,6 +29,8 @@ class WorkoutApp {
     // Audio & WakeLock state
     this.audioCtx = null;
     this.wakeLock = null;
+    this.wakeLockEnabled = localStorage.getItem('gym_wake_lock_enabled') !== 'false';
+    this.activeView = 'workout';
 
     // Timer State
     this.timer = {
@@ -48,15 +50,31 @@ class WorkoutApp {
     this.initElements();
     this.bindEvents();
 
-    // Background App-Swap & Visibility Listeners for Rest Timer
-    document.addEventListener('visibilitychange', () => this.syncTimerFromBackground());
-    window.addEventListener('pageshow', () => this.syncTimerFromBackground());
-    window.addEventListener('focus', () => this.syncTimerFromBackground());
+    // Background App-Swap & Visibility Listeners for Rest Timer & Wake Lock
+    document.addEventListener('visibilitychange', () => {
+      this.syncTimerFromBackground();
+      if (document.visibilityState === 'visible' && this.wakeLockEnabled && this.activeView === 'workout') {
+        this.requestWakeLock();
+      }
+    });
+    window.addEventListener('pageshow', () => {
+      this.syncTimerFromBackground();
+      if (this.wakeLockEnabled && this.activeView === 'workout') {
+        this.requestWakeLock();
+      }
+    });
+    window.addEventListener('focus', () => {
+      this.syncTimerFromBackground();
+      if (this.wakeLockEnabled && this.activeView === 'workout') {
+        this.requestWakeLock();
+      }
+    });
 
     // Check if a rest countdown was running in background
     this.restoreActiveTimer();
 
     this.render();
+    this.requestWakeLock();
   }
 
   loadRoutine() {
@@ -462,6 +480,20 @@ class WorkoutApp {
     this.routineModalEl = document.getElementById('routineModal');
     this.routineEditorEl = document.getElementById('routineEditor');
 
+    // New Gym Power Modals
+    this.swapModalEl = document.getElementById('swapModal');
+    this.swapContentEl = document.getElementById('swapContent');
+    this.swapModalTitleEl = document.getElementById('swapModalTitle');
+    this.warmupModalEl = document.getElementById('warmupModal');
+    this.warmupContentEl = document.getElementById('warmupContent');
+    this.warmupModalTitleEl = document.getElementById('warmupModalTitle');
+    this.quickHistoryModalEl = document.getElementById('quickHistoryModal');
+    this.quickHistoryContentEl = document.getElementById('quickHistoryContent');
+    this.quickHistoryTitleEl = document.getElementById('quickHistoryTitle');
+
+    // Wake Lock Status Badge
+    this.wakeLockBadgeEl = document.getElementById('wakeLockBadge');
+
     // Time saver toggle
     this.streamlineToggleBtn = document.getElementById('streamlineToggleBtn');
   }
@@ -507,12 +539,27 @@ class WorkoutApp {
       });
     });
 
+    // Close on backdrop tap
+    document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+      backdrop.addEventListener('click', (e) => {
+        if (e.target === backdrop) backdrop.classList.remove('open');
+      });
+    });
+
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-backdrop.open').forEach(m => m.classList.remove('open'));
+      }
+    });
+
     // Export & Reset buttons
     document.getElementById('exportDataBtn')?.addEventListener('click', () => this.exportData());
     document.getElementById('resetRoutineBtn')?.addEventListener('click', () => this.resetRoutine());
   }
 
   switchMainView(view) {
+    this.activeView = view;
     const workoutView = document.getElementById('workoutView');
     const analyticsView = document.getElementById('analyticsView');
     const routineView = document.getElementById('routineView');
@@ -521,16 +568,21 @@ class WorkoutApp {
       workoutView.style.display = 'block';
       analyticsView.style.display = 'none';
       routineView.style.display = 'none';
+      if (this.wakeLockEnabled) {
+        this.requestWakeLock();
+      }
       this.renderWorkout();
     } else if (view === 'analytics') {
       workoutView.style.display = 'none';
       analyticsView.style.display = 'block';
       routineView.style.display = 'none';
+      this.releaseWakeLock();
       this.renderAnalytics();
     } else if (view === 'routine') {
       workoutView.style.display = 'none';
       analyticsView.style.display = 'none';
       routineView.style.display = 'block';
+      this.releaseWakeLock();
       this.renderRoutineEditor();
     }
   }
@@ -663,16 +715,24 @@ class WorkoutApp {
     const isAllDone = sessionSets.length > 0 && sessionSets.every(s => s.completed);
     const isCollapsed = isAllDone && this.collapsedCards.has(ex.id);
 
+    // Active equipment swap for today's session
+    const activeSub = this.session && this.session.swaps && this.session.swaps[ex.id];
+    const isSwapped = Boolean(activeSub);
+    const displayName = isSwapped ? `${activeSub.name} (Alt for ${ex.name})` : ex.name;
+    const effectiveTargetReps = isSwapped && activeSub.targetReps ? activeSub.targetReps : ex.targetReps;
+    const effectiveNotes = isSwapped && activeSub.notes ? activeSub.notes : ex.notes;
+    const effectiveVideo = isSwapped && activeSub.videoUrl ? activeSub.videoUrl : ex.videoUrl;
+
     const cleanTag = ex.muscle.replace(/[^a-zA-Z]/g, '');
     const effectiveRest = ex.superset ? ex.superset.rest : (ex.rest || '2 min');
 
     // Progression Flag Checks: only unlock weight increase if top-end reps hit on ALL sets
-    const maxTarget = this.getMaxTargetReps(ex.targetReps);
+    const maxTarget = this.getMaxTargetReps(effectiveTargetReps);
     const completedSets = sessionSets.filter(s => s.completed);
     const setsHittingMax = completedSets.filter(s => (s.reps || 0) >= maxTarget);
     const targetSetsCount = ex.sets || sessionSets.length || 3;
     const allCurrentHit = sessionSets.length >= targetSetsCount && completedSets.length === sessionSets.length && completedSets.every(s => s.completed && (s.reps || 0) >= maxTarget);
-    const prevProgression = this.getPreviousProgressionFlag(ex.name, ex.targetReps, ex.sets || 3);
+    const prevProgression = this.getPreviousProgressionFlag(ex.name, effectiveTargetReps, ex.sets || 3);
     const nextIncompleteIdx = sessionSets.findIndex(s => !s.completed);
 
     return `
@@ -694,11 +754,12 @@ class WorkoutApp {
               <span class="muscle-tag tag-${cleanTag}">${ex.muscle}</span>
               ${ex.superset ? `<span class="superset-badge">⚡ SUPERSET ${ex.superset.tag}</span>` : ''}
               ${isBonus ? '<span class="optional-badge">⚡ Optional Bonus</span>' : ''}
+              ${isSwapped ? '<span class="optional-badge" style="background: rgba(59, 130, 246, 0.15); color: #93c5fd; border-color: rgba(59, 130, 246, 0.35);">🔄 Alt Equipment</span>' : ''}
               ${allCurrentHit ? `<span class="progression-badge full">🚀 All ${sessionSets.length} Sets Hit ${maxTarget} Reps! Increase Weight Next Time</span>` : (setsHittingMax.length > 0 ? `<span class="progression-badge partial">🎯 ${setsHittingMax.length}/${sessionSets.length} sets @ ${maxTarget} reps</span>` : '')}
             </div>
-            <h3 class="exercise-name">${ex.name}</h3>
+            <h3 class="exercise-name">${displayName}</h3>
             ${prev && prev.sets && prev.sets.length > 0 ? `
-              <div class="prev-weight-pill">⏱️ Last: ${prev.sets.filter(Boolean).map(s => `${s.weight}lbs×${s.reps}`).join(' • ')}</div>
+              <button type="button" class="prev-weight-pill-btn" data-exname="${ex.name}" title="Tap to view performance log">⏱️ Last: ${prev.sets.filter(Boolean).map(s => `${s.weight}lbs×${s.reps}`).join(' • ')} ▾</button>
             ` : ''}
           </div>
           <div class="card-actions">
@@ -707,8 +768,14 @@ class WorkoutApp {
                 ${isCollapsed ? 'Show Details ▾' : 'Collapse ▴'}
               </button>
             ` : ''}
-            ${ex.videoUrl ? `
-              <a href="${ex.videoUrl}" target="_blank" rel="noopener noreferrer" class="video-link-btn" title="Watch form guide">
+            <button type="button" class="action-pill-btn warmup-btn" data-exid="${ex.id}" data-exname="${displayName}" title="Calculate neural warmup ramp sets">
+              🔥 Warmup
+            </button>
+            <button type="button" class="action-pill-btn swap-btn" data-exid="${ex.id}" data-exname="${ex.name}" title="Swap with alternative equipment">
+              🔄 Swap
+            </button>
+            ${effectiveVideo ? `
+              <a href="${effectiveVideo}" target="_blank" rel="noopener noreferrer" class="video-link-btn" title="Watch form guide">
                 ▶ Form
               </a>
             ` : ''}
@@ -728,18 +795,18 @@ class WorkoutApp {
         <div class="card-body-collapsible" style="display: ${isCollapsed ? 'none' : 'block'};">
           <div class="exercise-meta-box">
             <div class="target-targets">
-              <div class="target-item"><strong>Target:</strong> ${ex.sets} sets × ${ex.targetReps} reps</div>
+              <div class="target-item"><strong>Target:</strong> ${ex.sets} sets × ${effectiveTargetReps} reps</div>
               <div class="target-item"><strong>Rest:</strong> <span style="${ex.superset ? 'color: #d8b4fe; font-weight: 700;' : ''}">${effectiveRest}</span></div>
               <div class="target-item"><strong>Start Weight:</strong> ${ex.startingWeight || 'Moderate'}</div>
               ${pr.maxWeight > 0 ? `<div class="target-item"><strong>PR:</strong> ${pr.maxWeight} lbs</div>` : ''}
             </div>
-            ${ex.notes ? `
+            ${effectiveNotes ? `
               <details class="form-notes-collapsible">
                 <summary class="form-notes-summary">
                   <span>ℹ️ Setup & Form Guide</span>
                   <span class="chevron">▾</span>
                 </summary>
-                <div class="form-notes-content">${ex.notes}</div>
+                <div class="form-notes-content">${effectiveNotes}</div>
               </details>
             ` : ''}
             
@@ -782,10 +849,28 @@ class WorkoutApp {
                   const prevSet = prev && prev.sets && prev.sets[sIdx];
                   const prevText = prevSet && prevSet.weight > 0 ? `${prevSet.weight}×${prevSet.reps}` : '—';
                   const isActiveNext = sIdx === nextIncompleteIdx;
+
+                  // Micro-PR badge calculation
+                  let microBadge = '';
+                  if (s.completed && prevSet && prevSet.weight > 0) {
+                    const weightDiff = (s.weight || 0) - (prevSet.weight || 0);
+                    const repsDiff = (s.reps || 0) - (prevSet.reps || 0);
+                    if (weightDiff > 0) {
+                      microBadge = `<span class="micro-badge weight-pr">🚀 +${weightDiff} lbs</span>`;
+                    } else if (weightDiff === 0 && repsDiff > 0) {
+                      microBadge = `<span class="micro-badge reps-pr">🔥 +${repsDiff} rep${repsDiff > 1 ? 's' : ''}</span>`;
+                    } else if (weightDiff === 0 && repsDiff === 0) {
+                      microBadge = `<span class="micro-badge match-prev">✓ Match</span>`;
+                    }
+                  }
+
                   return `
                     <tr class="set-row ${s.completed ? 'completed' : ''} ${isActiveNext ? 'active-next-set' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}">
-                      <td class="prev-cell">${prevText}</td>
-                      <td class="target-cell" style="font-size: 0.78rem; color: var(--text-muted);">${ex.targetReps}</td>
+                      <td class="prev-cell">
+                        <div>${prevText}</div>
+                        ${microBadge ? `<div>${microBadge}</div>` : ''}
+                      </td>
+                      <td class="target-cell" style="font-size: 0.78rem; color: var(--text-muted);">${effectiveTargetReps}</td>
                       <td>
                         <div class="stepper-wrap weight-stepper">
                           <button type="button" class="stepper-btn minus" data-type="weight" data-delta="-5" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Decrease weight by 5 lbs">−</button>
@@ -852,6 +937,32 @@ class WorkoutApp {
         }
       });
     }
+
+    // Warmup ramp buttons
+    this.exerciseListEl.querySelectorAll('.warmup-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const exId = btn.dataset.exid;
+        const exName = btn.dataset.exname;
+        this.openWarmupModal(exId, exName);
+      });
+    });
+
+    // Equipment swap buttons
+    this.exerciseListEl.querySelectorAll('.swap-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const exId = btn.dataset.exid;
+        const exName = btn.dataset.exname;
+        this.openSwapModal(exId, exName);
+      });
+    });
+
+    // Prev weight pill buttons (Quick Performance Sheet)
+    this.exerciseListEl.querySelectorAll('.prev-weight-pill-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const exName = btn.dataset.exname;
+        this.openQuickHistoryModal(exName);
+      });
+    });
 
     // Stepper (+ / -) buttons for weight and reps
     this.exerciseListEl.querySelectorAll('.stepper-btn').forEach(btn => {
@@ -959,6 +1070,9 @@ class WorkoutApp {
     setObj.completed = !setObj.completed;
     this.saveCurrentSession();
 
+    // Tactile haptic pulse on completing set
+    this.triggerHaptic([40]);
+
     const ex = this.findExerciseById(exId);
     if (ex) {
       this.recordExerciseWeight(ex.name, setIdx + 1, setObj.weight, setObj.reps, setObj.completed);
@@ -1030,15 +1144,27 @@ class WorkoutApp {
   }
 
   async requestWakeLock() {
+    if (!this.wakeLockEnabled || this.activeView !== 'workout') {
+      this.updateWakeLockBadge(false, 'Disabled');
+      return;
+    }
     try {
-      if ('wakeLock' in navigator && !this.wakeLock) {
-        this.wakeLock = await navigator.wakeLock.request('screen');
-        this.wakeLock.addEventListener('release', () => {
-          this.wakeLock = null;
-        });
+      if ('wakeLock' in navigator) {
+        if (!this.wakeLock) {
+          this.wakeLock = await navigator.wakeLock.request('screen');
+          this.wakeLock.addEventListener('release', () => {
+            this.wakeLock = null;
+            this.updateWakeLockBadge(false);
+          });
+        }
+        this.updateWakeLockBadge(true);
+      } else {
+        this.updateWakeLockBadge(false, 'Unsupported');
       }
     } catch (e) {
-      // Ignore if unsupported or denied
+      console.warn('Wake Lock request error:', e);
+      this.wakeLock = null;
+      this.updateWakeLockBadge(false, 'Inactive');
     }
   }
 
@@ -1049,6 +1175,345 @@ class WorkoutApp {
       } catch (e) {}
       this.wakeLock = null;
     }
+    this.updateWakeLockBadge(false);
+  }
+
+  updateWakeLockBadge(isActive, message) {
+    if (!this.wakeLockBadgeEl) return;
+    if (isActive) {
+      this.wakeLockBadgeEl.classList.add('active');
+      this.wakeLockBadgeEl.innerHTML = '🛡️ <span class="wake-dot">●</span> Screen Awake';
+      this.wakeLockBadgeEl.title = 'Screen will stay awake during your workout';
+    } else {
+      this.wakeLockBadgeEl.classList.remove('active');
+      const label = message ? `Screen Sleep (${message})` : 'Screen Sleep';
+      this.wakeLockBadgeEl.innerHTML = `🛡️ ${label}`;
+      this.wakeLockBadgeEl.title = 'Screen wake lock is not active';
+    }
+  }
+
+  triggerHaptic(pattern = [200, 100, 200, 100, 400]) {
+    if ('vibrate' in navigator) {
+      try {
+        navigator.vibrate(pattern);
+      } catch (e) {}
+    }
+  }
+
+  showToast(message) {
+    const existing = document.querySelector('.app-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = 'app-toast timer-complete-toast show';
+    toast.style.background = '#1e293b';
+    toast.style.borderColor = 'var(--accent-blue)';
+    toast.style.color = '#fff';
+    toast.style.top = '75px';
+    toast.innerHTML = message;
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 400);
+    }, 3200);
+  }
+
+  // Equipment Swapper Controller
+  getSubstitutionsForExercise(exerciseName, exercise) {
+    if (typeof EXERCISE_SUBSTITUTIONS !== 'undefined') {
+      // 1. Direct match
+      if (EXERCISE_SUBSTITUTIONS[exerciseName]) {
+        return EXERCISE_SUBSTITUTIONS[exerciseName];
+      }
+      // 2. Partial / cleaned match
+      const cleanName = exerciseName.replace(/\s*\(alt for.*?\)/i, '').trim();
+      if (EXERCISE_SUBSTITUTIONS[cleanName]) {
+        return EXERCISE_SUBSTITUTIONS[cleanName];
+      }
+      // 3. Substring match in keys
+      for (const key of Object.keys(EXERCISE_SUBSTITUTIONS)) {
+        if (cleanName.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(cleanName.toLowerCase())) {
+          return EXERCISE_SUBSTITUTIONS[key];
+        }
+      }
+    }
+    // 4. Fallback based on muscle group
+    return [
+      { name: `Dumbbell Alternative (${exercise ? exercise.muscle : 'Lift'})`, type: 'Dumbbell', muscle: exercise ? exercise.muscle : '', targetReps: '8–12', notes: 'Perform with controlled tempo and full range of motion.', videoUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(exerciseName + ' dumbbell alternative')}` },
+      { name: `Cable Alternative (${exercise ? exercise.muscle : 'Lift'})`, type: 'Cable', muscle: exercise ? exercise.muscle : '', targetReps: '10–12', notes: 'Maintain steady cable tension throughout the movement.', videoUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(exerciseName + ' cable alternative')}` }
+    ];
+  }
+
+  openSwapModal(exId, exName) {
+    const ex = this.findExerciseById(exId);
+    const subs = this.getSubstitutionsForExercise(exName, ex);
+    const currentName = ex ? ex.name : exName;
+
+    if (this.swapModalTitleEl) {
+      this.swapModalTitleEl.textContent = `🔄 Equipment Swap: ${currentName}`;
+    }
+
+    if (this.swapContentEl) {
+      this.swapContentEl.innerHTML = `
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-md); padding: 12px; margin-bottom: 14px;">
+          <div style="font-size: 0.74rem; color: var(--text-muted); text-transform: uppercase; font-weight: 800; letter-spacing: 0.05em;">Current Exercise</div>
+          <div style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-top: 2px;">${currentName}</div>
+          <div style="font-size: 0.78rem; color: var(--accent-blue); margin-top: 2px;">Target: ${ex ? ex.targetReps : '8–12'} reps • ${ex ? ex.muscle : ''}</div>
+        </div>
+
+        <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px;">
+          Select Alternative (${subs.length} available):
+        </div>
+
+        <div class="swap-options-list">
+          ${subs.map((sub, sIdx) => `
+            <div class="swap-option-card">
+              <div class="swap-option-header">
+                <div>
+                  <span class="swap-type-badge ${sub.type.toLowerCase()}">${sub.type}</span>
+                  <div class="swap-option-name">${sub.name}</div>
+                </div>
+                ${sub.videoUrl ? `
+                  <a href="${sub.videoUrl}" target="_blank" rel="noopener noreferrer" class="video-link-btn" style="font-size: 0.7rem; padding: 3px 8px;">
+                    ▶ Form
+                  </a>
+                ` : ''}
+              </div>
+              <div class="swap-option-notes">${sub.notes || 'Target: ' + sub.targetReps + ' reps.'}</div>
+              <div class="swap-actions">
+                <button type="button" class="swap-btn-today" data-exid="${exId}" data-subidx="${sIdx}">
+                  ⚡ Today Only
+                </button>
+                <button type="button" class="swap-btn-perm" data-exid="${exId}" data-subidx="${sIdx}">
+                  💾 Replace in Routine
+                </button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      // Bind swap action buttons
+      this.swapContentEl.querySelectorAll('.swap-btn-today').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const sIdx = parseInt(btn.dataset.subidx, 10);
+          this.applyExerciseSwap(exId, subs[sIdx], 'today');
+        });
+      });
+
+      this.swapContentEl.querySelectorAll('.swap-btn-perm').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const sIdx = parseInt(btn.dataset.subidx, 10);
+          this.applyExerciseSwap(exId, subs[sIdx], 'permanent');
+        });
+      });
+    }
+
+    if (this.swapModalEl) this.swapModalEl.classList.add('open');
+  }
+
+  applyExerciseSwap(exId, sub, mode) {
+    const ex = this.findExerciseById(exId);
+    if (!ex) return;
+
+    if (mode === 'permanent') {
+      const oldName = ex.name;
+      ex.name = sub.name;
+      if (sub.targetReps) ex.targetReps = sub.targetReps;
+      if (sub.notes) ex.notes = sub.notes;
+      if (sub.videoUrl) ex.videoUrl = sub.videoUrl;
+      this.saveRoutine();
+      this.showToast(`✅ Replaced "${oldName}" with "${sub.name}" permanently in your routine!`);
+    } else {
+      // Today only: mark in session
+      if (!this.session.swaps) this.session.swaps = {};
+      this.session.swaps[exId] = sub;
+      this.saveCurrentSession();
+      this.showToast(`⚡ Swapped to "${sub.name}" for today's workout!`);
+    }
+
+    if (this.swapModalEl) this.swapModalEl.classList.remove('open');
+    this.renderWorkout();
+  }
+
+  // Warmup Pyramid Calculator Controller
+  openWarmupModal(exId, exName, targetWeight = null, targetReps = null) {
+    const ex = this.findExerciseById(exId);
+    const sessionSets = (this.session && this.session.logs && this.session.logs[exId]) || [];
+    
+    // Determine target weight
+    let weight = parseFloat(targetWeight);
+    if (!weight || isNaN(weight) || weight <= 0) {
+      if (sessionSets.length > 0 && sessionSets[0].weight > 0) {
+        weight = sessionSets[0].weight;
+      } else if (ex) {
+        weight = this.parseInitialWeight(ex.startingWeight) || 100;
+      } else {
+        weight = 100;
+      }
+    }
+
+    const repsStr = targetReps || (ex ? ex.targetReps : '8–10');
+    
+    if (this.warmupModalTitleEl) {
+      this.warmupModalTitleEl.textContent = `🔥 Warm-Up Ramp: ${ex ? ex.name : exName}`;
+    }
+
+    this.renderWarmupModalContent(exId, exName, weight, repsStr);
+    if (this.warmupModalEl) this.warmupModalEl.classList.add('open');
+  }
+
+  renderWarmupModalContent(exId, exName, workingWeight, repsStr) {
+    if (!this.warmupContentEl) return;
+
+    // Calculate smart ramp pyramid:
+    // Warmup 1: 50% for 10 reps (neural prep & synovial fluid)
+    const w1 = Math.max(10, Math.round((workingWeight * 0.50) / 5) * 5);
+    // Warmup 2: 70% for 5 reps (grooving motor pathway)
+    const w2 = Math.max(15, Math.round((workingWeight * 0.70) / 5) * 5);
+    // Warmup 3: 85% for 2 reps (neural potentiation, acclimation)
+    const w3 = Math.max(20, Math.round((workingWeight * 0.85) / 5) * 5);
+
+    this.warmupContentEl.innerHTML = `
+      <div class="warmup-target-box">
+        <div>
+          <div style="font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em; color: #fbbf24; font-weight: 800;">Target Working Weight</div>
+          <div style="font-size: 1.15rem; font-weight: 800; color: #fff;">${workingWeight} lbs <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted);">(${repsStr} reps)</span></div>
+        </div>
+        <div class="warmup-target-input-group">
+          <button type="button" class="stepper-btn" id="warmupMinus5" style="width: 36px; height: 36px;">−5</button>
+          <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); padding: 0 4px;">Adjust</span>
+          <button type="button" class="stepper-btn" id="warmupPlus5" style="width: 36px; height: 36px;">+5</button>
+        </div>
+      </div>
+
+      <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px;">
+        Prep Ramp (3 Neural Acclimation Sets):
+      </div>
+
+      <div class="warmup-step-card">
+        <div class="warmup-step-badge">Ramp 1</div>
+        <div class="warmup-step-info">
+          <div class="warmup-step-title">
+            <span>${w1} lbs × 10 reps</span>
+            <span style="font-size: 0.75rem; color: #fbbf24; font-weight: 700;">(50%)</span>
+          </div>
+          <div class="warmup-step-desc">Neural activation & synovial fluid flow. Move with brisk cadence.</div>
+        </div>
+      </div>
+
+      <div class="warmup-step-card">
+        <div class="warmup-step-badge">Ramp 2</div>
+        <div class="warmup-step-info">
+          <div class="warmup-step-title">
+            <span>${w2} lbs × 5 reps</span>
+            <span style="font-size: 0.75rem; color: #fbbf24; font-weight: 700;">(70%)</span>
+          </div>
+          <div class="warmup-step-desc">Motor pattern grooving. Crisp form, moderate speed.</div>
+        </div>
+      </div>
+
+      <div class="warmup-step-card">
+        <div class="warmup-step-badge">Ramp 3</div>
+        <div class="warmup-step-info">
+          <div class="warmup-step-title">
+            <span>${w3} lbs × 2 reps</span>
+            <span style="font-size: 0.75rem; color: #fbbf24; font-weight: 700;">(85%)</span>
+          </div>
+          <div class="warmup-step-desc">Heavy neural potentiation. Zero fatigue build-up.</div>
+        </div>
+      </div>
+
+      <div class="warmup-step-card" style="border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.05);">
+        <div class="warmup-step-badge working">Working</div>
+        <div class="warmup-step-info">
+          <div class="warmup-step-title" style="color: #34d399;">
+            <span>${workingWeight} lbs × ${repsStr} reps</span>
+            <span style="font-size: 0.75rem; color: #34d399; font-weight: 700;">(100%)</span>
+          </div>
+          <div class="warmup-step-desc" style="color: #a7f3d0;">Your working sets! Track progress on table below.</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 14px; text-align: center;">
+        <button type="button" class="primary-btn" id="closeWarmupModalBtnInner" style="width: 100%;">
+          Got it, Ready to Lift!
+        </button>
+      </div>
+    `;
+
+    document.getElementById('warmupMinus5')?.addEventListener('click', () => {
+      const nextW = Math.max(10, workingWeight - 5);
+      this.renderWarmupModalContent(exId, exName, nextW, repsStr);
+    });
+
+    document.getElementById('warmupPlus5')?.addEventListener('click', () => {
+      const nextW = workingWeight + 5;
+      this.renderWarmupModalContent(exId, exName, nextW, repsStr);
+    });
+
+    document.getElementById('closeWarmupModalBtnInner')?.addEventListener('click', () => {
+      if (this.warmupModalEl) this.warmupModalEl.classList.remove('open');
+    });
+  }
+
+  // Quick Performance History Controller
+  openQuickHistoryModal(exerciseName) {
+    if (this.quickHistoryTitleEl) {
+      this.quickHistoryTitleEl.textContent = `📈 ${exerciseName}`;
+    }
+
+    const pr = this.getPersonalRecord(exerciseName);
+    const historyList = this.getExerciseHistoryOverTime(exerciseName);
+
+    if (this.quickHistoryContentEl) {
+      this.quickHistoryContentEl.innerHTML = `
+        <div class="quick-pr-card">
+          <div>
+            <div style="font-size: 0.75rem; color: #f59e0b; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;">All-Time Records</div>
+            <div style="font-size: 1.25rem; font-weight: 800; color: #fff; margin-top: 2px;">
+              ${pr.maxWeight > 0 ? `${pr.maxWeight} lbs` : '—'} 
+              <span style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted);">(Est 1RM: ${pr.max1RM > 0 ? pr.max1RM + ' lbs' : '—'})</span>
+            </div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 0.75rem; color: var(--text-muted);">Best Reps</div>
+            <div style="font-size: 1.1rem; font-weight: 800; color: var(--accent-emerald);">${pr.bestReps > 0 ? pr.bestReps : '—'}</div>
+          </div>
+        </div>
+
+        <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px;">
+          Session History (${historyList.length} recorded):
+        </div>
+
+        <div class="quick-history-list">
+          ${historyList.length === 0 ? `
+            <div style="text-align: center; padding: 24px 12px; color: var(--text-muted); font-size: 0.85rem;">
+              No completed sessions recorded for this exercise yet. Your sets today will be saved when you finish!
+            </div>
+          ` : historyList.slice(-8).reverse().map(item => {
+            const dateStr = new Date(item.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+            return `
+              <div class="quick-history-session-card">
+                <div class="quick-history-session-header">
+                  <div class="quick-history-date">📅 ${dateStr}</div>
+                  <div class="quick-history-day">${item.dayTitle || ''}</div>
+                </div>
+                <div style="font-size: 0.85rem; font-weight: 700; color: var(--accent-blue); margin-bottom: 4px;">
+                  ${item.sets ? item.sets.filter(Boolean).map(s => `${s.weight}lbs×${s.reps}`).join(' • ') : '—'}
+                </div>
+                <div style="font-size: 0.74rem; color: var(--text-muted);">
+                  Top Weight: ${item.maxWeight} lbs • Volume: ${item.totalVolume.toLocaleString()} lbs
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    if (this.quickHistoryModalEl) this.quickHistoryModalEl.classList.add('open');
   }
 
   requestNotificationPermission() {
@@ -1516,8 +1981,8 @@ class WorkoutApp {
           <div class="stat-label">Total Volume (lbs)</div>
         </div>
         <div class="stat-box">
-          <div class="stat-val">4-Day</div>
-          <div class="stat-label">Machine Split</div>
+          <div class="stat-val">5-Day</div>
+          <div class="stat-label">Split (Wed–Mon)</div>
         </div>
       </div>
 
@@ -1647,8 +2112,19 @@ class WorkoutApp {
       <div style="margin-bottom: 20px;">
         <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 8px;">Routine Customization & Time-Saving</h3>
         <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
-          Tailor your 4-Day Machine routine. You can hide or toggle optional finishers to keep your gym sessions strictly under 45–50 minutes.
+          Tailor your 5-Day Machine & Dumbbell Split. You can hide or toggle optional finishers to keep your gym sessions strictly under 45–50 minutes.
         </p>
+      </div>
+
+      <div class="setting-row">
+        <div>
+          <div style="font-weight: 700; font-size: 0.95rem; color: #fff;">🛡️ Keep Screen Awake</div>
+          <p>Prevent your phone screen from dimming or sleeping during active workouts.</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="wakeLockSettingToggle" ${this.wakeLockEnabled ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
       </div>
 
       <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 20px;">
@@ -1665,17 +2141,17 @@ class WorkoutApp {
 
       <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-emerald);">🔔 Rest Timer Chime & Sensory Check</div>
-          <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Test the 3-tone chime through your AirPods or phone speaker.</div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-emerald);">🔔 Rest Timer Chime & Haptic Check</div>
+          <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Test the 3-tone chime & tactile vibration pattern.</div>
         </div>
         <button class="secondary-btn" id="testChimeBtn" style="padding: 6px 14px; font-size: 0.8rem; border-color: rgba(16, 185, 129, 0.4); color: #6ee7b7;">
-          🔊 Test Chime
+          🔊 Test Chime & Vibrate
         </button>
       </div>
 
       <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.6.3 (Symmetrical Non-Clipping Steppers & 5-Column Table)</div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-blue);">⚡ App Version 1.7.0 (Screen Wake Lock, Haptics, Swapper & Warm-up Ramp)</div>
           <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Wed: Upper A • Fri: Lower A • Sat: Upper B • Sun: DB Arms & Shoulders • Mon: Lower B</div>
         </div>
         <button class="primary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">
@@ -1693,8 +2169,20 @@ class WorkoutApp {
       </div>
     `;
 
+    document.getElementById('wakeLockSettingToggle')?.addEventListener('change', (e) => {
+      this.wakeLockEnabled = e.target.checked;
+      localStorage.setItem('gym_wake_lock_enabled', String(this.wakeLockEnabled));
+      if (this.wakeLockEnabled && this.activeView === 'workout') {
+        this.requestWakeLock();
+      } else {
+        this.releaseWakeLock();
+      }
+      this.showToast(this.wakeLockEnabled ? '🛡️ Screen Wake Lock enabled' : '🛡️ Screen Wake Lock disabled');
+    });
+
     document.getElementById('testChimeBtn')?.addEventListener('click', () => {
       this.primeAudioContext();
+      this.triggerHaptic([150, 80, 250]);
       this.playTimerAlarm();
     });
     document.getElementById('forceUpdateBtn')?.addEventListener('click', () => this.forceAppUpdate());
@@ -1741,7 +2229,7 @@ class WorkoutApp {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `4-Day_Machine_Lifting_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `5-Day_Machine_Lifting_Backup_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
