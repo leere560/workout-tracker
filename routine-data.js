@@ -239,55 +239,30 @@ const DEFAULT_ROUTINE = [
         "superset": null
       },
       {
+        "id": "sat___upper_b_ex_cable_row",
+        "name": "Neutral-Grip Seated Cable Row",
+        "muscle": "Back / Lats",
+        "sets": 3,
+        "targetReps": "8–12",
+        "startingWeight": "90–120 lbs",
+        "rest": "2 min",
+        "notes": "Sit tall with chest proud; pull attachment into navel; pause 1s at contraction; slow stretch.",
+        "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+seated+cable+row+technique",
+        "isOptional": false,
+        "superset": null
+      },
+      {
         "id": "sat___upper_b_ex4",
         "name": "Machine Pec Deck Flye",
         "muscle": "Chest",
-        "sets": 2,
+        "sets": 3,
         "targetReps": "8–12",
         "startingWeight": "70–90 lbs",
         "rest": "2 min",
         "notes": "Soft bend in elbows; squeeze chest together without shrugging shoulders forward; deep stretch.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+chest+flye+pec+deck",
-        "isOptional": true,
+        "isOptional": false,
         "superset": null
-      },
-      {
-        "id": "sat___upper_b_ex5",
-        "name": "Overhead Cable Triceps Extension",
-        "muscle": "Triceps",
-        "sets": 3,
-        "targetReps": "8–12",
-        "startingWeight": "35–45 lbs",
-        "rest": "2 min",
-        "notes": "Top cable setting; face away from stack; stretch long head of triceps fully behind neck.",
-        "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+overhead+cable+tricep+extension",
-        "isOptional": false,
-        "superset": {
-          "id": "upper_b_arms",
-          "tag": "5A",
-          "name": "Cable Arm Superset (Long-head Triceps + Lengthened Biceps)",
-          "tip": "⚡ Superset: Same cable station! Do Overhead Extension, rest 45s, do Bayonet Curl, rest 60s. Saves ~6 mins!",
-          "rest": "45–60 sec"
-        }
-      },
-      {
-        "id": "sat___upper_b_ex6",
-        "name": "Incline / Bayonet Cable Curl",
-        "muscle": "Biceps",
-        "sets": 3,
-        "targetReps": "8–12",
-        "startingWeight": "25–35 lbs",
-        "rest": "2 min",
-        "notes": "Pulley at mid-height; step forward so cables pull arms behind torso for deep lengthened stretch.",
-        "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+behind+the+back+cable+curl",
-        "isOptional": false,
-        "superset": {
-          "id": "upper_b_arms",
-          "tag": "5B",
-          "name": "Cable Arm Superset (Long-head Triceps + Lengthened Biceps)",
-          "tip": "⚡ Superset: Alternate with Overhead Triceps Extensions. Saves ~6 mins!",
-          "rest": "60 sec"
-        }
       }
     ]
   },
@@ -296,19 +271,6 @@ const DEFAULT_ROUTINE = [
     "title": "Sun - DB Arms & Shoulders",
     "tag": "Arms / Shoulders",
     "exercises": [
-      {
-        "id": "sun___db_arms_ex1",
-        "name": "Standing Dumbbell Overhead Press",
-        "muscle": "Shoulders",
-        "sets": 3,
-        "targetReps": "6–8",
-        "startingWeight": "25–35 lbs DBs",
-        "rest": "2.5–3 min",
-        "notes": "Stand tall (or sit in a standard chair) with core braced; elbows tucked 30–45° into scapular plane; press smoothly overhead without arching lower back. Zero bench needed!",
-        "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+standing+dumbbell+shoulder+press",
-        "isOptional": false,
-        "superset": null
-      },
       {
         "id": "sun___db_arms_ex2",
         "name": "Standing Dumbbell Lateral Raise",
@@ -319,6 +281,19 @@ const DEFAULT_ROUTINE = [
         "rest": "2 min",
         "notes": "Stand with slight forward torso hinge; raise dumbbells out leading with your elbows; control the 2-second negative. Zero bench needed!",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+lateral+raise",
+        "isOptional": false,
+        "superset": null
+      },
+      {
+        "id": "sun___db_arms_ex5",
+        "name": "Standing Bent-Over DB Rear Delt Flye",
+        "muscle": "Shoulders",
+        "sets": 3,
+        "targetReps": "8–12",
+        "startingWeight": "15–20 lbs DBs",
+        "rest": "90 sec",
+        "notes": "Hinge at the hips with soft knees and a flat back; sweep dumbbells out wide leading with pinkies to isolate rear delts. Zero bench needed!",
+        "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+rear+delt+flye",
         "isOptional": false,
         "superset": null
       },
@@ -335,7 +310,7 @@ const DEFAULT_ROUTINE = [
         "isOptional": false,
         "superset": {
           "id": "sun_db_arm_superset",
-          "tag": "3A",
+          "tag": "2A",
           "name": "Dumbbell Arm Superset (Biceps + Triceps)",
           "tip": "⚡ Superset: Perform 1 set of Curls, rest 45–60s, then perform 1 set of Overhead Triceps Extensions, rest 60s. Saves ~7 mins!",
           "rest": "45–60 sec"
@@ -354,24 +329,11 @@ const DEFAULT_ROUTINE = [
         "isOptional": false,
         "superset": {
           "id": "sun_db_arm_superset",
-          "tag": "3B",
+          "tag": "2B",
           "name": "Dumbbell Arm Superset (Biceps + Triceps)",
           "tip": "⚡ Superset: Alternate with Standing Biceps Curls. Fits your 30-min window at home!",
           "rest": "60 sec"
         }
-      },
-      {
-        "id": "sun___db_arms_ex5",
-        "name": "Standing Bent-Over DB Rear Delt Flye",
-        "muscle": "Shoulders",
-        "sets": 2,
-        "targetReps": "8–12",
-        "startingWeight": "15–20 lbs DBs",
-        "rest": "90 sec",
-        "notes": "Hinge at the hips with soft knees and a flat back; sweep dumbbells out wide leading with pinkies to isolate rear delts. Zero bench needed!",
-        "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+rear+delt+flye",
-        "isOptional": true,
-        "superset": null
       }
     ]
   },
