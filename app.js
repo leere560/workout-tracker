@@ -78,7 +78,7 @@ class WorkoutApp {
   }
 
   loadRoutine() {
-    const CURRENT_ROUTINE_REV = 10;
+    const CURRENT_ROUTINE_REV = 11;
     const savedRev = localStorage.getItem('gym_routine_rev');
     const saved = localStorage.getItem(this.storageKeys.routine);
     if (saved) {
@@ -93,18 +93,19 @@ class WorkoutApp {
           });
         });
 
-        // Migrate routine to Revision 10 (Option 2: Rebalanced weekend - Saturday pure torso, Sunday home arms & delts)
+        // Migrate routine to Revision 11 (Dedicated Standing DB Reverse Curl forearm finisher for Sunday)
         const needsUpdate = 
           savedRev !== String(CURRENT_ROUTINE_REV) ||
           parsed.length < 5 ||
           !parsed.some(d => d.id === 'sun___db_arms') ||
           parsed.some(d => d.exercises.some(e => e.id === 'fri___lower_a_ex_lunges' || e.id === 'mon__lower_b_ex4')) ||
           parsed.find(d => d.id === 'sat___upper_b')?.exercises.some(e => e.id === 'sat___upper_b_ex5') ||
-          parsed.find(d => d.id === 'sun___db_arms')?.exercises.some(e => e.id === 'sun___db_arms_ex1');
+          parsed.find(d => d.id === 'sun___db_arms')?.exercises.some(e => e.id === 'sun___db_arms_ex1') ||
+          !parsed.find(d => d.id === 'sun___db_arms')?.exercises.some(e => e.id === 'sun___db_arms_ex_forearms');
 
         if (needsUpdate) {
           // Backup previous routine in localStorage just in case
-          localStorage.setItem('gym_routine_backup_v9', JSON.stringify(parsed));
+          localStorage.setItem('gym_routine_backup_v10', JSON.stringify(parsed));
           const updatedRoutine = JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
           localStorage.setItem('gym_routine_rev', String(CURRENT_ROUTINE_REV));
           localStorage.setItem(this.storageKeys.routine, JSON.stringify(updatedRoutine));

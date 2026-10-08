@@ -1,11 +1,11 @@
 // Service Worker for offline gym tracking
-const CACHE_NAME = 'machinemaster-v18';
+const CACHE_NAME = 'machinemaster-v19';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './styles.css?v=18',
-  './app.js?v=18',
-  './routine-data.js?v=18',
+  './styles.css?v=19',
+  './app.js?v=19',
+  './routine-data.js?v=19',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'

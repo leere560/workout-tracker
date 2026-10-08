@@ -575,6 +575,8 @@ input[type="number"] {
 .tag-AbsCore { background: rgba(239, 68, 68, 0.15); color: #f87171; }
 .tag-AdductorsHips { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
 .tag-QuadsGlutes { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+.tag-Forearms { background: rgba(249, 115, 22, 0.15); color: #fb923c; }
+.tag-BicepsForearms { background: rgba(249, 115, 22, 0.15); color: #fb923c; }
 
 .optional-badge {
   display: inline-block;

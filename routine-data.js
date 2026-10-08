@@ -334,6 +334,19 @@ const DEFAULT_ROUTINE = [
           "tip": "⚡ Superset: Alternate with Standing Biceps Curls. Fits your 30-min window at home!",
           "rest": "60 sec"
         }
+      },
+      {
+        "id": "sun___db_arms_ex_forearms",
+        "name": "Standing Dumbbell Reverse Curl",
+        "muscle": "Forearms",
+        "sets": 3,
+        "targetReps": "10–12",
+        "startingWeight": "15–25 lbs DBs",
+        "rest": "60–90 sec",
+        "notes": "Pronated overhand grip (palms down/knuckles forward); lock wrists straight; controlled 2–3s negative to blast the brachioradialis and forearm extensors. Zero bench needed!",
+        "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+reverse+curl+technique",
+        "isOptional": false,
+        "superset": null
       }
     ]
   },
@@ -600,6 +613,7 @@ const EXERCISE_SUBSTITUTIONS = {
     { name: "Leaning Dumbbell Lateral Raise", type: "Dumbbell", muscle: "Shoulders", targetReps: "10–12", notes: "Hold pole/rack with one hand; lean away 15° to alter resistance curve.", videoUrl: "https://www.youtube.com/results?search_query=leaning+dumbbell+lateral+raise" }
   ],
   "Standing Dumbbell Biceps / Hammer Curl": [
+    { name: "Standing Dumbbell Zottman Curl", type: "Dumbbell", muscle: "Biceps / Forearms", targetReps: "10–12", notes: "Curl up with supinated grip; rotate wrists down at the peak; lower slowly on the negative.", videoUrl: "https://www.youtube.com/results?search_query=zottman+curl+technique" },
     { name: "Cable Biceps Curl", type: "Cable", muscle: "Biceps", targetReps: "8–12", notes: "Straight bar or rope; maintain strict elbow position.", videoUrl: "https://www.youtube.com/results?search_query=cable+bicep+curl" },
     { name: "Incline Dumbbell Curl", type: "Dumbbell", muscle: "Biceps", targetReps: "8–12", notes: "Incline bench 45°; maximum stretch on bicep head.", videoUrl: "https://www.youtube.com/results?search_query=incline+dumbbell+curl" },
     { name: "Preacher Curl Machine", type: "Machine", muscle: "Biceps", targetReps: "8–12", notes: "Armpits over pad; eliminate shoulder momentum.", videoUrl: "https://www.youtube.com/results?search_query=preacher+curl" }
@@ -645,6 +659,11 @@ const EXERCISE_SUBSTITUTIONS = {
     { name: "Kneeling Cable Crunch", type: "Cable", muscle: "Abs / Core", targetReps: "10–12", notes: "Anchor hips in place; actively round ribcage down into pelvis.", videoUrl: "https://www.youtube.com/results?search_query=kneeling+cable+crunch" },
     { name: "Hanging Knee / Leg Raise", type: "Bodyweight", muscle: "Abs / Core", targetReps: "10–12", notes: "Hang from pull-up bar; curl pelvis up towards sternum.", videoUrl: "https://www.youtube.com/results?search_query=hanging+knee+raise" },
     { name: "Decline Bench Sit-Up", type: "Bodyweight", muscle: "Abs / Core", targetReps: "12–15", notes: "Cross arms on chest; round spine smoothly as you curl up.", videoUrl: "https://www.youtube.com/results?search_query=decline+sit+up" }
+  ],
+  "Standing Dumbbell Reverse Curl": [
+    { name: "Seated DB Wrist Curl (on Thighs)", type: "Dumbbell", muscle: "Forearms", targetReps: "12–15", notes: "Forearms resting on thighs or chair, palms facing up; curl wrists upward for deep wrist flexor thickness.", videoUrl: "https://www.youtube.com/results?search_query=dumbbell+wrist+curl+technique" },
+    { name: "Standing Dumbbell Zottman Curl", type: "Dumbbell", muscle: "Biceps / Forearms", targetReps: "10–12", notes: "Supinated curl up (biceps overload), rotate palms down at top, slow controlled pronated negative (brachioradialis).", videoUrl: "https://www.youtube.com/results?search_query=zottman+curl+technique" },
+    { name: "Dumbbell Hammer Finger Curl", type: "Dumbbell", muscle: "Forearms", targetReps: "12–15", notes: "Hold dumbbells in neutral grip; let fingers open down to fingertips, then curl fingers closed into strong squeeze.", videoUrl: "https://www.youtube.com/results?search_query=dumbbell+finger+curls+forearms" }
   ]
 };
 
