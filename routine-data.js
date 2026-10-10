@@ -667,6 +667,37 @@ const EXERCISE_SUBSTITUTIONS = {
   ]
 };
 
+// Evidence-based Hypertrophy Volume Landmarks (sets / week)
+// Based on Dr. Mike Israetel & modern hypertrophy research:
+// MEV = Minimum Effective Volume, MAV = Maximum Adaptive Volume (Growth Sweet Spot), MRV = Maximum Recoverable Volume
+const VOLUME_LANDMARKS = {
+  "Chest": { mev: 8, mavMin: 10, mavMax: 16, mrv: 22 },
+  "Back / Lats": { mev: 10, mavMin: 12, mavMax: 18, mrv: 24 },
+  "Shoulders": { mev: 8, mavMin: 10, mavMax: 16, mrv: 22 },
+  "Biceps": { mev: 6, mavMin: 8, mavMax: 14, mrv: 20 },
+  "Triceps": { mev: 6, mavMin: 8, mavMax: 14, mrv: 20 },
+  "Forearms": { mev: 4, mavMin: 6, mavMax: 12, mrv: 18 },
+  "Quads": { mev: 8, mavMin: 10, mavMax: 16, mrv: 22 },
+  "Hamstrings / Glutes": { mev: 8, mavMin: 10, mavMax: 16, mrv: 22 },
+  "Calves": { mev: 6, mavMin: 8, mavMax: 14, mrv: 20 },
+  "Abs / Core": { mev: 4, mavMin: 6, mavMax: 12, mrv: 18 }
+};
+
+// Secondary muscle contributions (0.5 set credit for compound synergists)
+const SECONDARY_MUSCLE_CONTRIBUTIONS = {
+  "Converging Machine Chest Press": { "Triceps": 0.5, "Shoulders": 0.5 },
+  "Smith Machine Incline Press": { "Triceps": 0.5, "Shoulders": 0.5 },
+  "Machine Pec Deck Flye": { "Shoulders": 0.25 },
+  "Neutral-Grip Lat Pulldown": { "Biceps": 0.5, "Forearms": 0.5 },
+  "Half-Kneeling Single-Arm Lat Pulldown": { "Biceps": 0.5, "Forearms": 0.5 },
+  "Chest-Supported Machine Row": { "Biceps": 0.5, "Forearms": 0.5, "Shoulders": 0.5 },
+  "Neutral-Grip Seated Cable Row": { "Biceps": 0.5, "Forearms": 0.5, "Shoulders": 0.5 },
+  "Machine Overhead Shoulder Press": { "Triceps": 0.5 },
+  "Horizontal Leg Press": { "Hamstrings / Glutes": 0.5 },
+  "Machine Hip Thrust / Glute Drive": { "Hamstrings / Glutes": 0.5 },
+  "Standing Dumbbell Biceps / Hammer Curl": { "Forearms": 0.5 }
+};
+
 if (typeof module !== "undefined") { 
-  module.exports = { DEFAULT_ROUTINE, EXERCISE_SUBSTITUTIONS }; 
+  module.exports = { DEFAULT_ROUTINE, EXERCISE_SUBSTITUTIONS, VOLUME_LANDMARKS, SECONDARY_MUSCLE_CONTRIBUTIONS }; 
 }

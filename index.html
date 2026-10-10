@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Track your 5-day machine hypertrophy routine with progressive overload, rest timers, and superset pacing.">
   <title>5-Day Machine Lifting Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=19">
+  <link rel="stylesheet" href="styles.css?v=20">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
   <meta name="theme-color" content="#0a0e17">
@@ -97,6 +97,16 @@
 
   </main>
 
+  <!-- Persistent Now-Lifting Dock -->
+  <div class="now-lifting-dock" id="nowLiftingDock" style="display: none;">
+    <div class="now-lifting-left">
+      <div class="now-lifting-pulse"></div>
+      <div class="now-lifting-title" id="nowLiftingTitle">Next Lift</div>
+      <div class="now-lifting-meta" id="nowLiftingMeta">Set 1</div>
+    </div>
+    <button type="button" class="now-lifting-jump-btn" id="nowLiftingJumpBtn">Go to Lift ▾</button>
+  </div>
+
   <!-- Floating Rest Timer Dock -->
   <div class="rest-timer-dock" id="timerDock">
     <div class="timer-progress-bar" id="timerProgressBar"></div>
@@ -177,13 +187,16 @@
     </div>
   </div>
 
+  <!-- Hidden file input for backup restore -->
+  <input type="file" id="importFileInput" accept=".json,application/json" style="display: none;">
+
   <!-- Scripts -->
-  <script src="routine-data.js?v=19"></script>
-  <script src="app.js?v=19"></script>
+  <script src="routine-data.js?v=20"></script>
+  <script src="app.js?v=20"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js?v=19').then((reg) => {
+        navigator.serviceWorker.register('./sw.js?v=20').then((reg) => {
           reg.update();
         }).catch(err => {
           console.log('ServiceWorker registration skipped:', err);
