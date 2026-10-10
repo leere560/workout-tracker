@@ -87,7 +87,7 @@ class WorkoutApp {
   }
 
   loadRoutine() {
-    const CURRENT_ROUTINE_REV = 11;
+    const CURRENT_ROUTINE_REV = 12;
     const savedRev = localStorage.getItem('gym_routine_rev');
     const saved = localStorage.getItem(this.storageKeys.routine);
     if (saved) {
@@ -102,7 +102,7 @@ class WorkoutApp {
           });
         });
 
-        // Migrate routine to Revision 11 (Dedicated Standing DB Reverse Curl forearm finisher for Sunday)
+        // Migrate routine to Revision 12 (Added sets: pec deck, leg extension, both calf raises)
         const needsUpdate = 
           savedRev !== String(CURRENT_ROUTINE_REV) ||
           parsed.length < 5 ||
@@ -114,7 +114,7 @@ class WorkoutApp {
 
         if (needsUpdate) {
           // Backup previous routine in localStorage just in case
-          localStorage.setItem('gym_routine_backup_v10', JSON.stringify(parsed));
+          localStorage.setItem('gym_routine_backup_v11', JSON.stringify(parsed));
           const updatedRoutine = JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
           localStorage.setItem('gym_routine_rev', String(CURRENT_ROUTINE_REV));
           localStorage.setItem(this.storageKeys.routine, JSON.stringify(updatedRoutine));
@@ -2454,6 +2454,24 @@ class WorkoutApp {
     `;
   }
 
+  mapMuscleToLandmark(muscleStr) {
+    if (!muscleStr || typeof muscleStr !== 'string') return null;
+    const tokens = muscleStr.toLowerCase().split('/').map(t => t.trim()).filter(Boolean);
+    for (const token of tokens) {
+      if (token === 'glutes' || token === 'hamstrings') return 'Hamstrings / Glutes';
+      if (token === 'quads') return 'Quads';
+      if (token === 'back' || token === 'lats') return 'Back / Lats';
+      if (token === 'chest') return 'Chest';
+      if (token === 'shoulders' || token === 'delts') return 'Shoulders';
+      if (token === 'biceps') return 'Biceps';
+      if (token === 'triceps') return 'Triceps';
+      if (token === 'forearms') return 'Forearms';
+      if (token === 'calves') return 'Calves';
+      if (token === 'abs' || token === 'core') return 'Abs / Core';
+    }
+    return null;
+  }
+
   generateWeeklyVolumeLandmarksHTML() {
     if (typeof VOLUME_LANDMARKS === 'undefined') return '';
 
@@ -2469,23 +2487,18 @@ class WorkoutApp {
     if (this.routine) {
       this.routine.forEach(day => {
         (day.exercises || []).forEach(ex => {
+          if (ex.isOptional === true) return;
           const sets = ex.sets || 3;
           // Direct muscle
-          if (muscleDirectSets[ex.muscle] !== undefined) {
-            muscleDirectSets[ex.muscle] += sets;
-          } else {
-            for (const key of Object.keys(VOLUME_LANDMARKS)) {
-              if (key.toLowerCase().includes((ex.muscle || '').toLowerCase()) || (ex.muscle || '').toLowerCase().includes(key.toLowerCase())) {
-                muscleDirectSets[key] += sets;
-                break;
-              }
-            }
+          const landmarkKey = this.mapMuscleToLandmark(ex.muscle);
+          if (landmarkKey && muscleDirectSets[landmarkKey] !== undefined) {
+            muscleDirectSets[landmarkKey] += sets;
           }
 
           // Synergist secondary muscle credits
           if (typeof SECONDARY_MUSCLE_CONTRIBUTIONS !== 'undefined') {
-            for (const [subKey, contribs] of Object.entries(SECONDARY_MUSCLE_CONTRIBUTIONS)) {
-              if (ex.name.toLowerCase().includes(subKey.toLowerCase()) || subKey.toLowerCase().includes(ex.name.toLowerCase())) {
+            for (const [key, contribs] of Object.entries(SECONDARY_MUSCLE_CONTRIBUTIONS)) {
+              if (ex.name === key || ex.name.startsWith(key)) {
                 Object.entries(contribs).forEach(([targetMuscle, creditFraction]) => {
                   if (muscleSecondarySets[targetMuscle] !== undefined) {
                     muscleSecondarySets[targetMuscle] += creditFraction * sets;
@@ -2505,16 +2518,22 @@ class WorkoutApp {
       const totalSets = Math.round((direct + secondary) * 10) / 10;
 
       let statusClass = 'optimal';
-      let statusText = 'MAV (Optimal)';
+      let statusText = 'Growth Sweet Spot';
       if (totalSets < bounds.mev) {
         statusClass = 'under';
         statusText = 'Below MEV';
-      } else if (totalSets > bounds.mrv) {
-        statusClass = 'over';
-        statusText = 'Over MRV';
-      } else if (totalSets >= bounds.mavMin && totalSets <= bounds.mavMax) {
+      } else if (totalSets < bounds.mavMin) {
+        statusClass = 'near';
+        statusText = 'Above MEV — room to grow';
+      } else if (totalSets <= bounds.mavMax) {
         statusClass = 'optimal';
         statusText = 'Growth Sweet Spot';
+      } else if (totalSets <= bounds.mrv) {
+        statusClass = 'high';
+        statusText = 'High Volume';
+      } else {
+        statusClass = 'over';
+        statusText = 'Over MRV';
       }
 
       const pct = Math.min(100, Math.round((totalSets / bounds.mrv) * 100));

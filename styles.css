@@ -2594,6 +2594,12 @@ input:checked + .slider:before {
 .volume-bar-fill.optimal {
   background: linear-gradient(90deg, #10b981, #34d399);
 }
+.volume-bar-fill.near {
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+}
+.volume-bar-fill.high {
+  background: linear-gradient(90deg, #eab308, #facc15);
+}
 .volume-bar-fill.under {
   background: linear-gradient(90deg, #64748b, #94a3b8);
 }
@@ -2609,6 +2615,14 @@ input:checked + .slider:before {
 .volume-status-tag.optimal {
   background: rgba(16, 185, 129, 0.15);
   color: #34d399;
+}
+.volume-status-tag.near {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+.volume-status-tag.high {
+  background: rgba(234, 179, 8, 0.15);
+  color: #facc15;
 }
 .volume-status-tag.under {
   background: rgba(100, 116, 139, 0.2);
