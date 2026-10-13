@@ -641,7 +641,7 @@ class WorkoutApp {
       if (h.exercises && h.exercises[exerciseName]) {
         h.exercises[exerciseName].sets.forEach(s => {
           if (s.weight > 0) {
-            if (s.weight > maxWeight) maxWeight = s.weight;
+             (effectiveName === key || effectiveName.startsWith(key)) {
             const reps = s.reps || 1;
             const est1RM = Math.round(s.weight * (1 + reps / 30));
             if (est1RM > max1RM) max1RM = est1RM;
@@ -655,7 +655,7 @@ class WorkoutApp {
     if (this.lastWeights && this.lastWeights[exerciseName] && this.lastWeights[exerciseName].sets) {
       this.lastWeights[exerciseName].sets.filter(Boolean).forEach(s => {
         if (s.weight > 0) {
-          if (s.weight > maxWeight) maxWeight = s.weight;
+           (effectiveName === key || effectiveName.startsWith(key)) {
           const reps = s.reps || 1;
           const est1RM = Math.round(s.weight * (1 + reps / 30));
           if (est1RM > max1RM) max1RM = est1RM;
@@ -733,9 +733,7 @@ class WorkoutApp {
     document.getElementById('timerSkipBtn')?.addEventListener('click', () => this.stopTimer());
     document.getElementById('timerPlus30Btn')?.addEventListener('click', () => this.adjustTimer(30));
     document.getElementById('timerMinus30Btn')?.addEventListener('click', () => this.adjustTimer(-30));
-    document.getElementById('timerMinus15Btn')?.addEventListener('click', () => this.adjustTimer(-30));
-
-    // Modal closes
+    document.getElementById('timerMinus15Btn')?.addEventListener('click', () => this.adjustTimer(-15));    // Modal closes
     document.querySelectorAll('.close-modal-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const modal = btn.closest('.modal-backdrop');
@@ -2487,7 +2485,7 @@ class WorkoutApp {
     if (this.routine) {
       this.routine.forEach(day => {
         (day.exercises || []).forEach(ex => {
-          if (ex.isOptional === true) return;
+          
           const sets = ex.sets || 3;
           // Direct muscle
           const landmarkKey = this.mapMuscleToLandmark(ex.muscle);
@@ -2498,7 +2496,7 @@ class WorkoutApp {
           // Synergist secondary muscle credits
           if (typeof SECONDARY_MUSCLE_CONTRIBUTIONS !== 'undefined') {
             for (const [key, contribs] of Object.entries(SECONDARY_MUSCLE_CONTRIBUTIONS)) {
-              if (ex.name === key || ex.name.startsWith(key)) {
+              const effectiveName = (this.swappedExercises && this.swappedExercises[ex.id]) ? this.swappedExercises[ex.id] : ex.name; if (effectiveName === key || effectiveName.startsWith(key)) {
                 Object.entries(contribs).forEach(([targetMuscle, creditFraction]) => {
                   if (muscleSecondarySets[targetMuscle] !== undefined) {
                     muscleSecondarySets[targetMuscle] += creditFraction * sets;
