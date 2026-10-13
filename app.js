@@ -15,7 +15,9 @@ class WorkoutApp {
       legacyCurrentSession: 'gym_current_session_v4',
       lastWeights: 'gym_last_weights_v1',
       timerTargetEnd: 'gym_timer_target_end_v1',
-      timerTotalDuration: 'gym_timer_total_duration_v1'
+      timerTotalDuration: 'gym_timer_total_duration_v1',
+      wakeLockEnabled: 'gym_wake_lock_enabled',
+      routineRev: 'gym_routine_rev'
     };
 
     // Load History, Notes, & Last Recorded Weights
@@ -38,7 +40,7 @@ class WorkoutApp {
     // Audio & WakeLock state
     this.audioCtx = null;
     this.wakeLock = null;
-    this.wakeLockEnabled = localStorage.getItem('gym_wake_lock_enabled') !== 'false';
+    this.wakeLockEnabled = localStorage.getItem(this.storageKeys.wakeLockEnabled) !== 'false';
     this.activeView = 'workout';
 
     // Timer State
@@ -88,7 +90,7 @@ class WorkoutApp {
 
   loadRoutine() {
     const CURRENT_ROUTINE_REV = 12;
-    const savedRev = localStorage.getItem('gym_routine_rev');
+    const savedRev = localStorage.getItem(this.storageKeys.routineRev);
     const saved = localStorage.getItem(this.storageKeys.routine);
     if (saved) {
       try {
@@ -116,7 +118,7 @@ class WorkoutApp {
           // Backup previous routine in localStorage just in case
           localStorage.setItem('gym_routine_backup_v11', JSON.stringify(parsed));
           const updatedRoutine = JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
-          localStorage.setItem('gym_routine_rev', String(CURRENT_ROUTINE_REV));
+          localStorage.setItem(this.storageKeys.routineRev, String(CURRENT_ROUTINE_REV));
           localStorage.setItem(this.storageKeys.routine, JSON.stringify(updatedRoutine));
           return updatedRoutine;
         }
@@ -124,7 +126,7 @@ class WorkoutApp {
         return parsed;
       } catch (e) { console.error(e); }
     }
-    localStorage.setItem('gym_routine_rev', String(CURRENT_ROUTINE_REV));
+    localStorage.setItem(this.storageKeys.routineRev, String(CURRENT_ROUTINE_REV));
     return JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
   }
 
@@ -641,11 +643,15 @@ class WorkoutApp {
       if (h.exercises && h.exercises[exerciseName]) {
         h.exercises[exerciseName].sets.forEach(s => {
           if (s.weight > 0) {
-             (effectiveName === key || effectiveName.startsWith(key)) {
             const reps = s.reps || 1;
             const est1RM = Math.round(s.weight * (1 + reps / 30));
             if (est1RM > max1RM) max1RM = est1RM;
-            if (reps > bestReps) bestReps = reps;
+            if (s.weight > maxWeight) {
+              maxWeight = s.weight;
+              bestReps = reps;
+            } else if (s.weight === maxWeight && reps > bestReps) {
+              bestReps = reps;
+            }
           }
         });
       }
@@ -655,11 +661,15 @@ class WorkoutApp {
     if (this.lastWeights && this.lastWeights[exerciseName] && this.lastWeights[exerciseName].sets) {
       this.lastWeights[exerciseName].sets.filter(Boolean).forEach(s => {
         if (s.weight > 0) {
-           (effectiveName === key || effectiveName.startsWith(key)) {
           const reps = s.reps || 1;
           const est1RM = Math.round(s.weight * (1 + reps / 30));
           if (est1RM > max1RM) max1RM = est1RM;
-          if (reps > bestReps) bestReps = reps;
+          if (s.weight > maxWeight) {
+            maxWeight = s.weight;
+            bestReps = reps;
+          } else if (s.weight === maxWeight && reps > bestReps) {
+            bestReps = reps;
+          }
         }
       });
     }
@@ -906,7 +916,7 @@ class WorkoutApp {
 
     this.sessionInfoEl.innerHTML = `
       ${deloadBannerHTML}
-      <h2>${cleanDayTitle}</h2>
+      <h2>${this.escapeHtml(cleanDayTitle)}</h2>
       <div class="session-meta">
         <span>🏋️ ${coreExercises.length} Core Lifts</span>
         <span>•</span>
@@ -1014,17 +1024,17 @@ class WorkoutApp {
             </div>
           </div>
 
-          <h3 class="exercise-name">${displayName}</h3>
+          <h3 class="exercise-name">${this.escapeHtml(displayName)}</h3>
 
           <div class="card-tools-row">
             ${prevSummaryText ? `
-              <button type="button" class="prev-weight-pill-btn" data-exname="${ex.name}" title="Tap to view performance log">⏱️ Last: ${prevSummaryText} ▾</button>
+              <button type="button" class="prev-weight-pill-btn" data-exname="${this.escapeHtml(ex.name)}" title="Tap to view performance log">⏱️ Last: ${prevSummaryText} ▾</button>
             ` : '<div class="card-tools-spacer"></div>'}
             <div class="card-actions-pills">
-              <button type="button" class="action-pill-btn warmup-btn" data-exid="${ex.id}" data-exname="${displayName}" title="Calculate neural warmup ramp sets">
+              <button type="button" class="action-pill-btn warmup-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(displayName)}" title="Calculate neural warmup ramp sets">
                 🔥 Warmup
               </button>
-              <button type="button" class="action-pill-btn swap-btn" data-exid="${ex.id}" data-exname="${ex.name}" title="Swap with alternative equipment">
+              <button type="button" class="action-pill-btn swap-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(ex.name)}" title="Swap with alternative equipment">
                 🔄 Swap
               </button>
             </div>
@@ -1063,7 +1073,7 @@ class WorkoutApp {
               <span class="machine-settings-label">⚙️ Pin / Seat:</span>
               <input type="text" class="machine-settings-input" 
                      placeholder="e.g. Seat #4, Pin #8" 
-                     value="${machineSetting}" 
+                     value="${this.escapeHtml(machineSetting)}" 
                      data-exid="${ex.id}" />
             </div>
 
@@ -1633,7 +1643,7 @@ class WorkoutApp {
       this.swapContentEl.innerHTML = `
         <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-md); padding: 12px; margin-bottom: 14px;">
           <div style="font-size: 0.74rem; color: var(--text-muted); text-transform: uppercase; font-weight: 800; letter-spacing: 0.05em;">Current Exercise</div>
-          <div style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-top: 2px;">${currentName}</div>
+          <div style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-top: 2px;">${this.escapeHtml(currentName)}</div>
           <div style="font-size: 0.78rem; color: var(--accent-blue); margin-top: 2px;">Target: ${ex ? ex.targetReps : '8–12'} reps • ${ex ? ex.muscle : ''}</div>
         </div>
 
@@ -1647,7 +1657,7 @@ class WorkoutApp {
               <div class="swap-option-header">
                 <div>
                   <span class="swap-type-badge ${sub.type.toLowerCase()}">${sub.type}</span>
-                  <div class="swap-option-name">${sub.name}</div>
+                  <div class="swap-option-name">${this.escapeHtml(sub.name)}</div>
                 </div>
                 ${sub.videoUrl ? `
                   <a href="${sub.videoUrl}" target="_blank" rel="noopener noreferrer" class="video-link-btn" style="font-size: 0.7rem; padding: 3px 8px;">
@@ -1655,7 +1665,7 @@ class WorkoutApp {
                   </a>
                 ` : ''}
               </div>
-              <div class="swap-option-notes">${sub.notes || 'Target: ' + sub.targetReps + ' reps.'}</div>
+              <div class="swap-option-notes">${this.escapeHtml(sub.notes || 'Target: ' + sub.targetReps + ' reps.')}</div>
               <div class="swap-actions">
                 <button type="button" class="swap-btn-today" data-exid="${exId}" data-subidx="${sIdx}">
                   ⚡ Today Only
@@ -2187,7 +2197,7 @@ class WorkoutApp {
       <div style="text-align: center; margin-bottom: 20px;">
         <div style="font-size: 50px;">🏆</div>
         <h2 style="font-size: 1.5rem; font-weight: 800; color: var(--accent-emerald);">Workout Complete!</h2>
-        <p style="color: var(--text-secondary);">${currentDay.title}</p>
+        <p style="color: var(--text-secondary);">${this.escapeHtml(currentDay.title)}</p>
       </div>
 
       <div class="stats-grid" style="margin-bottom: 20px;">
@@ -2210,7 +2220,7 @@ class WorkoutApp {
           <h4>🚀 Weight Increases Unlocked for Next Workout!</h4>
           <ul>
             ${weightIncreaseUnlocked.map(item => `
-              <li><strong>${item.name}</strong>: Hit ${item.reps} reps on all ${item.setsCount} sets (${item.topWeight} lbs) — Ready to increase weight (+5 lbs) next workout!</li>
+              <li><strong>${this.escapeHtml(item.name)}</strong>: Hit ${item.reps} reps on all ${item.setsCount} sets (${item.topWeight} lbs) — Ready to increase weight (+5 lbs) next workout!</li>
             `).join('')}
           </ul>
         </div>
@@ -2220,7 +2230,7 @@ class WorkoutApp {
         <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid var(--accent-emerald); border-radius: var(--radius-md); padding: 12px; margin-bottom: 20px;">
           <h4 style="color: var(--accent-emerald); font-weight: 700; margin-bottom: 6px;">🎉 New Records Hit!</h4>
           <ul style="padding-left: 20px; font-size: 0.85rem; color: #e2e8f0;">
-            ${newPRs.map(pr => `<li>${pr}</li>`).join('')}
+            ${newPRs.map(pr => `<li>${this.escapeHtml(pr)}</li>`).join('')}
           </ul>
         </div>
       ` : ''}
@@ -2485,7 +2495,6 @@ class WorkoutApp {
     if (this.routine) {
       this.routine.forEach(day => {
         (day.exercises || []).forEach(ex => {
-          
           const sets = ex.sets || 3;
           // Direct muscle
           const landmarkKey = this.mapMuscleToLandmark(ex.muscle);
@@ -2495,8 +2504,9 @@ class WorkoutApp {
 
           // Synergist secondary muscle credits
           if (typeof SECONDARY_MUSCLE_CONTRIBUTIONS !== 'undefined') {
+            const effectiveName = (this.swappedExercises && this.swappedExercises[ex.id]) ? this.swappedExercises[ex.id] : ex.name;
             for (const [key, contribs] of Object.entries(SECONDARY_MUSCLE_CONTRIBUTIONS)) {
-              const effectiveName = (this.swappedExercises && this.swappedExercises[ex.id]) ? this.swappedExercises[ex.id] : ex.name; if (effectiveName === key || effectiveName.startsWith(key)) {
+              if (effectiveName === key || effectiveName.startsWith(key)) {
                 Object.entries(contribs).forEach(([targetMuscle, creditFraction]) => {
                   if (muscleSecondarySets[targetMuscle] !== undefined) {
                     muscleSecondarySets[targetMuscle] += creditFraction * sets;
@@ -2900,7 +2910,7 @@ class WorkoutApp {
 
     document.getElementById('wakeLockSettingToggle')?.addEventListener('change', (e) => {
       this.wakeLockEnabled = e.target.checked;
-      localStorage.setItem('gym_wake_lock_enabled', String(this.wakeLockEnabled));
+      localStorage.setItem(this.storageKeys.wakeLockEnabled, String(this.wakeLockEnabled));
       if (this.wakeLockEnabled && this.activeView === 'workout') {
         this.requestWakeLock();
       } else {
@@ -2936,7 +2946,7 @@ class WorkoutApp {
         }
       }
       localStorage.removeItem(this.storageKeys.routine);
-      localStorage.removeItem('gym_routine_rev');
+      localStorage.removeItem(this.storageKeys.routineRev);
       localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'mon__lower_b');
       localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'fri___lower_a');
       localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'sat___upper_b');
@@ -2959,6 +2969,8 @@ class WorkoutApp {
       machineSettings: this.machineSettings,
       exerciseNotes: this.exerciseNotes,
       lastWeights: this.lastWeights,
+      wakeLockEnabled: this.wakeLockEnabled,
+      routineRev: localStorage.getItem(this.storageKeys.routineRev) || '12',
       exportedAt: new Date().toISOString()
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -3009,6 +3021,15 @@ class WorkoutApp {
         localStorage.setItem(this.storageKeys.lastWeights, JSON.stringify(this.lastWeights));
       }
 
+      if (typeof data.wakeLockEnabled === 'boolean') {
+        this.wakeLockEnabled = data.wakeLockEnabled;
+        localStorage.setItem(this.storageKeys.wakeLockEnabled, String(this.wakeLockEnabled));
+      }
+
+      if (data.routineRev !== undefined && data.routineRev !== null) {
+        localStorage.setItem(this.storageKeys.routineRev, String(data.routineRev));
+      }
+
       if (Array.isArray(data.routine) && data.routine.length > 0) {
         if (confirm('Do you also want to restore routine configurations from this backup? Click OK to restore routine, or Cancel to keep your current routine.')) {
           this.routine = data.routine;
@@ -3024,6 +3045,7 @@ class WorkoutApp {
       alert('Could not restore backup file: ' + (e.message || 'Invalid format'));
     }
   }
+
 
   resetRoutine() {
     if (confirm('Reset your routine to the original spreadsheet defaults?')) {

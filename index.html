@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Track your 5-day machine hypertrophy routine with progressive overload, rest timers, and superset pacing.">
   <title>5-Day Machine Lifting Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=21">
+  <link rel="stylesheet" href="styles.css?v=22">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
   <meta name="theme-color" content="#0a0e17">
@@ -114,7 +114,7 @@
       <div class="timer-left">
         <span class="timer-icon">⏱️</span>
         <div>
-          <div class="timer-display" id="timerDisplay">2:00</div>
+          <div class="timer-display" id="timerDisplay" aria-live="polite">2:00</div>
           <div class="timer-label">Rest Countdown</div>
         </div>
       </div>
@@ -127,7 +127,7 @@
   </div>
 
   <!-- Workout Summary Modal -->
-  <div class="modal-backdrop" id="summaryModal">
+  <div class="modal-backdrop" id="summaryModal" role="dialog" aria-modal="true">
     <div class="modal-content">
       <div class="modal-header">
         <h3>Session Completed</h3>
@@ -140,7 +140,7 @@
   </div>
 
   <!-- Exercise / Machine Swap Modal -->
-  <div class="modal-backdrop" id="swapModal">
+  <div class="modal-backdrop" id="swapModal" role="dialog" aria-modal="true">
     <div class="modal-content">
       <div class="modal-header">
         <div>
@@ -156,7 +156,7 @@
   </div>
 
   <!-- Warmup Pyramid Calculator Modal -->
-  <div class="modal-backdrop" id="warmupModal">
+  <div class="modal-backdrop" id="warmupModal" role="dialog" aria-modal="true">
     <div class="modal-content">
       <div class="modal-header">
         <div>
@@ -172,7 +172,7 @@
   </div>
 
   <!-- Quick History Modal -->
-  <div class="modal-backdrop" id="quickHistoryModal">
+  <div class="modal-backdrop" id="quickHistoryModal" role="dialog" aria-modal="true">
     <div class="modal-content">
       <div class="modal-header">
         <div>
@@ -191,12 +191,12 @@
   <input type="file" id="importFileInput" accept=".json,application/json" style="display: none;">
 
   <!-- Scripts -->
-  <script src="routine-data.js?v=21"></script>
-  <script src="app.js?v=21"></script>
+  <script src="routine-data.js?v=22"></script>
+  <script src="app.js?v=22"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js?v=21').then((reg) => {
+        navigator.serviceWorker.register('./sw.js?v=22').then((reg) => {
           reg.update();
         }).catch(err => {
           console.log('ServiceWorker registration skipped:', err);

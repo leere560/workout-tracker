@@ -1,9 +1,45 @@
 import openpyxl
 import json
 import re
+import os
 
-wb = openpyxl.load_workbook('routine.xlsx', data_only=False)
+file_path = "routine.xlsx"
+wb = openpyxl.load_workbook(file_path, data_only=False)
 routine_data = []
+
+sheet_day_map = {
+    'Wed - Upper A': {'id': 'wed___upper_a', 'title': 'Wed - Upper A', 'tag': 'Upper'},
+    'Fri - Lower A': {'id': 'fri___lower_a', 'title': 'Fri - Lower A', 'tag': 'Lower'},
+    'Sat - Upper B': {'id': 'sat___upper_b', 'title': 'Sat - Upper B', 'tag': 'Upper'},
+    'Mon- Lower B': {'id': 'mon__lower_b', 'title': 'Mon - Lower B', 'tag': 'Lower'},
+    'Mon - Lower B': {'id': 'mon__lower_b', 'title': 'Mon - Lower B', 'tag': 'Lower'},
+    'Sun - DB Arms & Shoulders': {'id': 'sun___db_arms', 'title': 'Sun - DB Arms & Shoulders', 'tag': 'Arms / Shoulders'}
+}
+
+# Load existing routine-data.js metadata before writing
+existing_routine = []
+existing_metadata = {}
+trailing_js = ""
+
+if os.path.exists('routine-data.js'):
+    with open('routine-data.js', 'r', encoding='utf-8') as f:
+        existing_js = f.read()
+    
+    m = re.search(r'const DEFAULT_ROUTINE = (\[[\s\S]*?\]);\s*(?:\n([\s\S]*))?$', existing_js)
+    if m:
+        try:
+            existing_routine = json.loads(m.group(1))
+            trailing_js = m.group(2) or ""
+        except Exception as e:
+            print("Warning: could not parse existing DEFAULT_ROUTINE JSON:", e)
+    
+    for day in existing_routine:
+        for ex in day.get('exercises', []):
+            name_key = ex.get('name')
+            if name_key:
+                existing_metadata[(day.get('id'), name_key)] = ex
+                if name_key not in existing_metadata:
+                    existing_metadata[name_key] = ex
 
 def clean_text(s):
     if s is None:
@@ -19,15 +55,20 @@ def clean_text(s):
 
 for sname in wb.sheetnames:
     ws = wb[sname]
-    # create a clean id
-    day_id = re.sub(r'[^a-zA-Z0-9]', '_', sname.lower()).strip('_')
     
-    # Determine target focus and icon
-    day_tag = 'Upper' if 'Upper' in sname else 'Lower'
+    if sname in sheet_day_map:
+        day_info = sheet_day_map[sname]
+        day_id = day_info['id']
+        day_title = day_info['title']
+        day_tag = day_info['tag']
+    else:
+        day_id = re.sub(r'[^a-zA-Z0-9]', '_', sname.lower()).strip('_')
+        day_title = sname
+        day_tag = 'Upper' if 'Upper' in sname else 'Lower'
     
     day_obj = {
         'id': day_id,
-        'title': sname,
+        'title': day_title,
         'tag': day_tag,
         'exercises': []
     }
@@ -169,8 +210,16 @@ for sname in wb.sheetnames:
                     'rest': '60 sec'
                 }
 
-        day_obj['exercises'].append({
-            'id': f'{day_id}_ex{r-1}',
+        # Check existing metadata preservation
+        meta = existing_metadata.get((day_id, clean_name)) or existing_metadata.get(clean_name)
+        ex_id = meta.get('id') if meta and meta.get('id') else f'{day_id}_ex{r-1}'
+        if meta and meta.get('superset') is not None:
+            superset = meta.get('superset')
+        if meta and 'isOptional' in meta:
+            is_optional = meta.get('isOptional')
+
+        ex_obj = {
+            'id': ex_id,
             'name': clean_name,
             'muscle': muscle,
             'sets': sets,
@@ -181,12 +230,17 @@ for sname in wb.sheetnames:
             'videoUrl': video_url,
             'isOptional': is_optional,
             'superset': superset
-        })
+        }
+        if meta and 'alternatives' in meta:
+            ex_obj['alternatives'] = meta['alternatives']
 
-    # Add dedicated optional finisher for Wed Upper A
-    if 'wed' in day_id:
+        day_obj['exercises'].append(ex_obj)
+
+    # Add dedicated optional finisher for Wed Upper A if not already present
+    if 'wed' in day_id and not any('opt_facepull' in e.get('id', '') for e in day_obj['exercises']):
+        meta = existing_metadata.get((day_id, 'Cable Face Pull (Rear Delts & Posture)'))
         day_obj['exercises'].append({
-            'id': f'{day_id}_opt_facepull',
+            'id': meta.get('id') if meta else f'{day_id}_opt_facepull',
             'name': 'Cable Face Pull (Rear Delts & Posture)',
             'muscle': 'Shoulders',
             'sets': 2,
@@ -195,18 +249,31 @@ for sname in wb.sheetnames:
             'rest': '60 sec',
             'notes': 'Set pulley to eye level; thumbs back; pull rope toward forehead while pulling elbows back to build healthy shoulders.',
             'videoUrl': 'https://www.youtube.com/results?search_query=Jeff+Nippard+face+pull+technique',
-            'isOptional': True,
+            'isOptional': meta.get('isOptional', False) if meta else False,
             'superset': None
         })
 
     routine_data.append(day_obj)
 
+# Preserve Sunday DB Arms & Shoulders from existing routine if not present in Excel workbook
+existing_sunday = next((d for d in existing_routine if d.get('id') == 'sun___db_arms'), None)
+if existing_sunday and not any(d.get('id') == 'sun___db_arms' for d in routine_data):
+    mon_idx = next((i for i, d in enumerate(routine_data) if 'mon' in d.get('id', '')), -1)
+    if mon_idx != -1:
+        routine_data.insert(mon_idx, existing_sunday)
+    else:
+        routine_data.append(existing_sunday)
+
 with open('routine-data.js', 'w', encoding='utf-8') as f:
-    f.write('// Pre-loaded routine parsed from 4-Day_Machine_lifting_routine.xlsx\n')
+    f.write('// Pre-loaded routine parsed from routine.xlsx + Sunday DB Arms & Shoulders\n')
     f.write('const DEFAULT_ROUTINE = ')
     f.write(json.dumps(routine_data, indent=2, ensure_ascii=False))
-    f.write(';\n\nif (typeof module !== "undefined") { module.exports = { DEFAULT_ROUTINE }; }\n')
+    f.write(';\n\n')
+    if trailing_js.strip():
+        f.write(trailing_js.strip() + '\n')
+    else:
+        f.write('if (typeof module !== "undefined") { module.exports = { DEFAULT_ROUTINE }; }\n')
 
 print(f"Generated routine-data.js with {len(routine_data)} workout days.")
 for d in routine_data:
-    print(f" - {d['title']}: {len(d['exercises'])} exercises (Optional: {[e['name'] for e in d['exercises'] if e['isOptional']]})")
+    print(f" - {d['title']}: {len(d['exercises'])} exercises (Optional: {[e['name'] for e in d['exercises'] if e.get('isOptional')]})")

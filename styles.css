@@ -69,6 +69,11 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
+/* Touch Manipulation Polish to prevent double-tap zoom on rapid taps */
+.btn, .btn-sm, .icon-btn, .nav-btn, .timer-pill, .timer-btn, .stepper-btn {
+  touch-action: manipulation;
+}
+
 /* App Header */
 .app-header {
   background: rgba(19, 27, 46, 0.94);

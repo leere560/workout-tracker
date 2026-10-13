@@ -230,10 +230,10 @@ const DEFAULT_ROUTINE = [
         "name": "Machine Overhead Shoulder Press",
         "muscle": "Shoulders",
         "sets": 3,
-        "targetReps": 8-10",
+        "targetReps": "8–10",
         "startingWeight": "70–90 lbs",
         "rest": "3 min",
-        "notes": "Set seat low so handles start level with ears; drive straight up without hyper-arching lower back. Keep 2 reps in reserve to stay fresh for Sunday DB shoulders & arms. shoulders & arms.", Keep 2 reps in reserve to stay fresh for Sunday DB shoulders & arms. shoulders & arms.", Keep 2 reps in reserve to stay fresh for Sunday DB shoulders & arms.",
+        "notes": "Set seat low so handles start level with ears; drive straight up without hyper-arching lower back. Keep 2 reps in reserve to stay fresh for Sunday DB shoulders & arms.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+shoulder+press+technique",
         "isOptional": false,
         "superset": null
@@ -603,7 +603,7 @@ const EXERCISE_SUBSTITUTIONS = {
     { name: "Standing Alternating DB Curl", type: "Dumbbell", muscle: "Biceps", targetReps: "8–12", notes: "Supinate wrists as you curl up; squeeze biceps hard at peak.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+bicep+curl" }
   ],
   "Standing Dumbbell Overhead Press": [
-    { name: "Machine Overhead Shoulder Press", type: "Machine", muscle: "Shoulders", targetReps: "8–10", notes: "Set seat low; drive straight up without hyper-arching lower back. Keep 2 reps in reserve to stay fresh for Sunday DB shoulders & arms. shoulders & arms.",", videoUrl: "https://www.youtube.com/results?search_query=machine+overhead+press" },
+    { name: "Machine Overhead Shoulder Press", type: "Machine", muscle: "Shoulders", targetReps: "8–10", notes: "Set seat low; drive straight up without hyper-arching lower back. Keep 2 reps in reserve to stay fresh for Sunday DB shoulders & arms.", videoUrl: "https://www.youtube.com/results?search_query=machine+overhead+press" },
     { name: "Seated Dumbbell Shoulder Press", type: "Dumbbell", muscle: "Shoulders", targetReps: "8–10", notes: "Seated on bench/chair; press dumbbells overhead with control.", videoUrl: "https://www.youtube.com/results?search_query=seated+dumbbell+shoulder+press" },
     { name: "Smith Machine Overhead Press", type: "Machine", muscle: "Shoulders", targetReps: "8–10", notes: "Bar clears nose; elbows tucked 30° into scapular plane.", videoUrl: "https://www.youtube.com/results?search_query=smith+machine+overhead+press" }
   ],
