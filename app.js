@@ -56,6 +56,7 @@ class WorkoutApp {
     this.session = this.loadSession();
     this.selectedProgressExercise = null;
     this.collapsedCards = new Set();
+    this.expandedOptionalDays = new Set();
 
     // Init UI
     this.initElements();
@@ -939,6 +940,7 @@ class WorkoutApp {
     const coreHTML = coreExercises.map(ex => this.renderExerciseCard(ex, false)).join('');
 
     // Render Dedicated Optional Drawer
+    const isOptionalOpen = this.expandedOptionalDays.has(currentDay.id);
     const optionalHTML = optionalExercises.length > 0 ? `
       <div class="optional-section-wrap">
         <div class="optional-section-header" id="optionalToggleHeader">
@@ -947,9 +949,9 @@ class WorkoutApp {
             <div class="optional-section-title">${optionalExercises.length} Bonus Finisher${optionalExercises.length > 1 ? 's' : ''}</div>
             <div class="optional-section-subtitle">Only do this if you have 10+ mins left on your 60m timer!</div>
           </div>
-          <span class="optional-toggle-pill" id="optionalTogglePill">View Finisher (+5m) ▾</span>
+          <span class="optional-toggle-pill" id="optionalTogglePill">${isOptionalOpen ? 'Hide Finisher ▴' : 'View Finisher (+5m) ▾'}</span>
         </div>
-        <div class="optional-cards-list" id="optionalCardsList">
+        <div class="optional-cards-list ${isOptionalOpen ? 'open' : ''}" id="optionalCardsList">
           ${optionalExercises.map(ex => this.renderExerciseCard(ex, true)).join('')}
         </div>
       </div>
@@ -1218,6 +1220,13 @@ class WorkoutApp {
     if (optHeader && optList) {
       optHeader.addEventListener('click', () => {
         const isOpen = optList.classList.toggle('open');
+        // Keep the drawer state when set edits rebuild the workout cards.
+        const dayId = this.routine[this.activeDayIndex].id;
+        if (isOpen) {
+          this.expandedOptionalDays.add(dayId);
+        } else {
+          this.expandedOptionalDays.delete(dayId);
+        }
         if (optPill) {
           optPill.textContent = isOpen ? 'Hide Finisher ▴' : 'View Finisher (+5m) ▾';
         }
