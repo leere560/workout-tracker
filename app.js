@@ -3106,8 +3106,8 @@ class WorkoutApp {
       <!-- Version & Cache Reset -->
       <div style="background: rgba(148, 163, 184, 0.08); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0;">⚡ MachineMaster v2.0 (Next-Level Upgrade)</div>
-          <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Data Shield • Deload Engine • SVG 1RM Curve • Volume Radar • Sticky Notes • Active HUD</div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0;">⚡ MachineMaster v2.4 <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;">(Build v24 • Rev ${localStorage.getItem(this.storageKeys.routineRev) || '13'})</span></div>
+          <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Smart +10/+5lb Auto-Bump • Core-Only Split • Deload Engine • SVG 1RM Curve • Active HUD</div>
         </div>
         <button class="secondary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">
           🔄 Force Sync & Reload
@@ -3185,15 +3185,16 @@ class WorkoutApp {
       localStorage.removeItem(this.storageKeys.legacyCurrentSession);
       localStorage.removeItem(this.storageKeys.timerTargetEnd);
       localStorage.removeItem(this.storageKeys.timerTotalDuration);
+      await fetch(window.location.pathname, { cache: 'reload' }).catch(() => {});
     } catch (e) {
       console.error(e);
     }
-    window.location.reload();
+    window.location.replace(window.location.pathname + '?v=' + Date.now());
   }
 
   exportData() {
     const data = {
-      version: '2.0',
+      version: '2.4',
       routine: this.routine,
       history: this.history,
       machineSettings: this.machineSettings,

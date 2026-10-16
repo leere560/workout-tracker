@@ -1,11 +1,11 @@
 // Service Worker for offline gym tracking
-const CACHE_NAME = 'workout-tracker-v23';
+const CACHE_NAME = 'workout-tracker-v24';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './styles.css?v=23',
-  './app.js?v=23',
-  './routine-data.js?v=23',
+  './styles.css?v=24',
+  './app.js?v=24',
+  './routine-data.js?v=24',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
