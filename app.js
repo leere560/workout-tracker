@@ -359,24 +359,44 @@ class WorkoutApp {
       };
     }
 
-    const validPrevSets = prev.sets.filter(s => s && (s.completed !== false || s.reps > 0));
-    const targetSetsCount = ex.sets || 3;
-    const prevSet = validPrevSets[setIdx] || validPrevSets[0] || {};
-    let baseWeight = prevSet.weight || 0;
-    const prevReps = prevSet.reps || minTarget;
+    const validPrevSets = prev.sets.filter(s => s && s.completed !== false && (s.reps > 0 || s.weight > 0));
+    if (validPrevSets.length === 0) {
+      const parsedStart = this.parseInitialWeight(ex.startingWeight);
+      const targetWeight = this.deloadActive ? Math.max(0, Math.round((parsedStart * 0.9) / 5) * 5) : parsedStart;
+      return {
+        targetWeight,
+        targetReps: minTarget,
+        targetRepsDisplay: effectiveTargetReps,
+        targetWeightDisplay: targetWeight > 0 ? `${targetWeight}` : '—',
+        isProgressionIncrease: false,
+        note: 'Baseline set'
+      };
+    }
 
-    const allSetsHitMax = !this.deloadActive && validPrevSets.length >= targetSetsCount && validPrevSets.every(s => (s.reps || 0) >= maxTarget);
+    const targetSetsCount = ex.sets || 3;
+    const exactPrevSet = validPrevSets[setIdx];
+    const fallbackWeightSet = validPrevSets[validPrevSets.length - 1] || validPrevSets[0] || {};
+    let baseWeight = exactPrevSet ? (exactPrevSet.weight || 0) : (fallbackWeightSet.weight || 0);
+    const topPrevWeight = Math.max(...validPrevSets.map(s => s.weight || 0));
+
+    // Only unlock weight increase if ALL required sets were completed AND every set hit maxTarget at the working weight
+    const allSetsHitMax = !this.deloadActive &&
+      validPrevSets.length >= targetSetsCount &&
+      validPrevSets.every(s => (s.reps || 0) >= maxTarget && (topPrevWeight === 0 || (s.weight || 0) >= topPrevWeight));
 
     let targetWeight = baseWeight;
-    let targetReps = prevReps;
+    let targetReps = minTarget;
     let isProgressionIncrease = false;
 
-    if (allSetsHitMax && baseWeight > 0) {
-      targetWeight = baseWeight + increment;
+    if (allSetsHitMax && topPrevWeight > 0) {
+      targetWeight = topPrevWeight + increment;
       targetReps = minTarget;
       isProgressionIncrease = true;
-    } else {
+    } else if (exactPrevSet) {
+      const prevReps = exactPrevSet.reps || minTarget;
       targetReps = Math.min(maxTarget, prevReps >= maxTarget ? maxTarget : prevReps + 1);
+    } else {
+      targetReps = minTarget;
     }
 
     if (this.deloadActive) {
@@ -424,11 +444,12 @@ class WorkoutApp {
         if (parsed.dayId === day.id) {
           if (!parsed.swaps) parsed.swaps = {};
           
-          const hasAnyCompleted = Object.values(parsed.logs || {}).some(sets => Array.isArray(sets) && sets.some(s => s && s.completed));
-          if (!hasAnyCompleted) {
-            // Zero completed sets: refresh uncompleted set targets from getSetTarget()
-            if (day && day.exercises) {
-              day.exercises.forEach(ex => {
+          if (day && day.exercises) {
+            day.exercises.forEach(ex => {
+              const existingSets = parsed.logs && parsed.logs[ex.id];
+              const exHasCompleted = Array.isArray(existingSets) && existingSets.some(s => s && s.completed);
+              if (!exHasCompleted) {
+                // Refresh uncompleted exercise targets from getSetTarget()
                 const activeSub = parsed.swaps && parsed.swaps[ex.id];
                 const effectiveName = activeSub ? activeSub.name : ex.name;
                 const targetSetsCount = this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets;
@@ -443,30 +464,8 @@ class WorkoutApp {
                     rir: null
                   });
                 }
-              });
-            }
-          } else {
-            // Ensure all exercises in the current routine definition have logs initialized
-            if (day && day.exercises) {
-              day.exercises.forEach(ex => {
-                if (!parsed.logs[ex.id] || parsed.logs[ex.id].length === 0) {
-                  const activeSub = parsed.swaps && parsed.swaps[ex.id];
-                  const effectiveName = activeSub ? activeSub.name : ex.name;
-                  const targetSetsCount = this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets;
-                  parsed.logs[ex.id] = [];
-                  for (let i = 1; i <= targetSetsCount; i++) {
-                    const target = this.getSetTarget(ex, i - 1, effectiveName);
-                    parsed.logs[ex.id].push({
-                      setNum: i,
-                      weight: target.targetWeight,
-                      reps: target.targetReps,
-                      completed: false,
-                      rir: null
-                    });
-                  }
-                }
-              });
-            }
+              }
+            });
           }
           return parsed;
         }
@@ -563,15 +562,15 @@ class WorkoutApp {
     const prev = this.getPreviousExercisePerformance(exerciseName);
     if (!prev || !prev.sets || prev.sets.length === 0) return { unlocked: false };
     const maxTarget = this.getMaxTargetReps(targetRepsStr);
-    const validSets = prev.sets.filter(s => s && (s.completed !== false || s.reps > 0));
+    const validSets = prev.sets.filter(s => s && s.completed !== false && (s.reps > 0 || s.weight > 0));
     const targetSets = requiredSetsCount || 3;
     if (validSets.length < targetSets) return { unlocked: false };
     
-    // Weight increase flag is ONLY unlocked if top-end target reps were hit for all sets
-    const allSetsHit = validSets.every(s => (s.reps || 0) >= maxTarget);
+    const topWeight = Math.max(...validSets.map(s => s.weight || 0));
+    // Weight increase flag is ONLY unlocked if top-end target reps were hit for all sets at the working weight
+    const allSetsHit = validSets.every(s => (s.reps || 0) >= maxTarget && (topWeight === 0 || (s.weight || 0) >= topWeight));
 
     if (allSetsHit) {
-      const topWeight = Math.max(...validSets.map(s => s.weight || 0));
       const increment = this.getExerciseIncrement(ex, exerciseName);
       return {
         unlocked: true,
@@ -641,7 +640,7 @@ class WorkoutApp {
       for (let i = this.history.length - 1; i >= 0; i--) {
         const workout = this.history[i];
         if (workout.exercises && workout.exercises[exerciseName] && Array.isArray(workout.exercises[exerciseName].sets)) {
-          const validSets = workout.exercises[exerciseName].sets.filter(s => s && (s.completed || s.reps > 0 || s.weight > 0));
+          const validSets = workout.exercises[exerciseName].sets.filter(s => s && s.completed !== false && (s.reps > 0 || s.weight > 0));
           if (validSets.length > 0) {
             historyEntry = {
               date: workout.date,
@@ -653,25 +652,18 @@ class WorkoutApp {
       }
     }
 
-    // 2. Check persistent lastWeights store as fallback
-    let lastWeightsEntry = null;
-    if (this.lastWeights && this.lastWeights[exerciseName] && Array.isArray(this.lastWeights[exerciseName].sets)) {
-      const validSets = this.lastWeights[exerciseName].sets.filter(s => s && (s.completed || s.reps > 0 || s.weight > 0));
+    // 2. Check persistent lastWeights store only if no history entry exists
+    if (!historyEntry && this.lastWeights && this.lastWeights[exerciseName] && Array.isArray(this.lastWeights[exerciseName].sets)) {
+      const validSets = this.lastWeights[exerciseName].sets.filter(s => s && s.completed !== false && (s.reps > 0 || s.weight > 0));
       if (validSets.length > 0) {
-        lastWeightsEntry = {
+        return {
           date: this.lastWeights[exerciseName].date,
           sets: validSets
         };
       }
     }
 
-    if (historyEntry && lastWeightsEntry) {
-      const histTime = new Date(historyEntry.date).getTime();
-      const lastTime = new Date(lastWeightsEntry.date).getTime();
-      return (lastTime > histTime) ? lastWeightsEntry : historyEntry;
-    }
-
-    return historyEntry || lastWeightsEntry || null;
+    return historyEntry;
   }
 
   formatPreviousSetsSummary(sets) {
@@ -719,7 +711,7 @@ class WorkoutApp {
     let bestReps = 0;
 
     const processSet = (s) => {
-      if (!s) return;
+      if (!s || s.completed === false) return;
       const weight = parseFloat(s.weight) || 0;
       const reps = parseInt(s.reps, 10) || 0;
       if (weight > 0) {
@@ -1029,9 +1021,10 @@ class WorkoutApp {
     // Progression Flag Checks: only unlock weight increase if top-end reps hit on ALL sets
     const maxTarget = this.getMaxTargetReps(effectiveTargetReps);
     const completedSets = sessionSets.filter(s => s.completed);
-    const setsHittingMax = completedSets.filter(s => (s.reps || 0) >= maxTarget);
+    const topCurrentWeight = completedSets.length > 0 ? Math.max(...completedSets.map(s => s.weight || 0)) : 0;
+    const setsHittingMax = completedSets.filter(s => (s.reps || 0) >= maxTarget && (topCurrentWeight === 0 || (s.weight || 0) >= topCurrentWeight));
     const targetSetsCount = (this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets) || sessionSets.length || 3;
-    const allCurrentHit = !this.deloadActive && sessionSets.length >= targetSetsCount && completedSets.length === sessionSets.length && completedSets.every(s => s.completed && (s.reps || 0) >= maxTarget);
+    const allCurrentHit = !this.deloadActive && sessionSets.length >= targetSetsCount && completedSets.length === sessionSets.length && completedSets.every(s => s.completed && (s.reps || 0) >= maxTarget && (topCurrentWeight === 0 || (s.weight || 0) >= topCurrentWeight));
     const prevProgression = this.getPreviousProgressionFlag(effectiveName, effectiveTargetReps, targetSetsCount, ex);
     const nextIncompleteIdx = sessionSets.findIndex(s => !s.completed);
     const prevSummaryText = this.formatPreviousSetsSummary(prev ? prev.sets : null);
@@ -2278,9 +2271,9 @@ class WorkoutApp {
       const maxTarget = this.getMaxTargetReps(effectiveTargetReps);
       const targetSetsCount = (this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets) || sets.length || 3;
 
-      // Check double progression: only unlocked if ALL sets hit top end target reps and NOT deloading!
-      if (!this.deloadActive && completedSets.length >= targetSetsCount && completedSets.every(s => (s.reps || 0) >= maxTarget)) {
-        const topW = Math.max(...completedSets.map(s => s.weight || 0));
+      // Check double progression: only unlocked if ALL sets hit top end target reps at working weight and NOT deloading!
+      const topW = Math.max(...completedSets.map(s => s.weight || 0));
+      if (!this.deloadActive && completedSets.length >= targetSetsCount && completedSets.every(s => (s.reps || 0) >= maxTarget && (topW === 0 || (s.weight || 0) >= topW))) {
         const increment = this.getExerciseIncrement(ex, effectiveName);
         weightIncreaseUnlocked.push({
           name: effectiveName,
@@ -2315,22 +2308,28 @@ class WorkoutApp {
 
       recordedExercises[effectiveName] = {
         swappedFrom: isSwapped ? ex.name : null,
-        sets: sets.map(s => ({
-          setNum: s.setNum,
+        sets: completedSets.map((s, idx) => ({
+          setNum: idx + 1,
           weight: s.weight,
           reps: s.reps,
-          completed: s.completed,
+          completed: true,
           rir: typeof s.rir === 'number' ? s.rir : null,
           type: s.type || 'working'
         }))
       };
 
-      // Record to lastWeights NOW as workout is completed
-      sets.forEach(s => {
-        if (s.completed) {
-          this.recordExerciseWeight(effectiveName, s.setNum, s.weight, s.reps, true);
-        }
-      });
+      // Record to lastWeights NOW as workout is completed (replace stale sets cleanly)
+      if (!this.lastWeights) this.lastWeights = {};
+      this.lastWeights[effectiveName] = {
+        date: new Date().toISOString(),
+        sets: completedSets.map((s, idx) => ({
+          setNum: idx + 1,
+          weight: parseFloat(s.weight) || 0,
+          reps: parseInt(s.reps, 10) || 0,
+          completed: true
+        }))
+      };
+      this.saveLastWeights();
     });
 
     // Save to history
@@ -2430,13 +2429,14 @@ class WorkoutApp {
     this.history.forEach(h => {
       if (h.exercises && h.exercises[exerciseName]) {
         const entry = h.exercises[exerciseName];
-        if (entry.sets && entry.sets.length > 0) {
-          const maxW = Math.max(...entry.sets.map(s => s.weight || 0));
-          const totalVol = entry.sets.reduce((sum, s) => sum + ((s.weight || 0) * (s.reps || 0)), 0);
+        const completedEntrySets = (entry.sets || []).filter(s => s && s.completed !== false);
+        if (completedEntrySets.length > 0) {
+          const maxW = Math.max(...completedEntrySets.map(s => s.weight || 0));
+          const totalVol = completedEntrySets.reduce((sum, s) => sum + ((s.weight || 0) * (s.reps || 0)), 0);
           results.push({
             date: h.date,
             dayTitle: h.dayTitle,
-            sets: entry.sets,
+            sets: completedEntrySets,
             maxWeight: maxW,
             totalVolume: totalVol
           });
@@ -2446,7 +2446,7 @@ class WorkoutApp {
 
     // 2. From persistent last weights if not already present for this date
     if (this.lastWeights && this.lastWeights[exerciseName] && this.lastWeights[exerciseName].sets) {
-      const validSets = this.lastWeights[exerciseName].sets.filter(Boolean);
+      const validSets = this.lastWeights[exerciseName].sets.filter(s => s && s.completed !== false);
       if (validSets.length > 0) {
         const lastDate = this.lastWeights[exerciseName].date || new Date().toISOString();
         const alreadyInHistory = results.some(r => new Date(r.date).toDateString() === new Date(lastDate).toDateString());
@@ -3106,7 +3106,7 @@ class WorkoutApp {
       <!-- Version & Cache Reset -->
       <div style="background: rgba(148, 163, 184, 0.08); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0;">⚡ MachineMaster v2.4 <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;">(Build v24 • Rev ${localStorage.getItem(this.storageKeys.routineRev) || '13'})</span></div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0;">⚡ MachineMaster v2.5 <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;">(Build v25 • Rev ${localStorage.getItem(this.storageKeys.routineRev) || '13'})</span></div>
           <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Smart +10/+5lb Auto-Bump • Core-Only Split • Deload Engine • SVG 1RM Curve • Active HUD</div>
         </div>
         <button class="secondary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">
