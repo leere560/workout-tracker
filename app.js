@@ -88,7 +88,7 @@ class WorkoutApp {
   }
 
   loadRoutine() {
-    const CURRENT_ROUTINE_REV = 13;
+    const CURRENT_ROUTINE_REV = 14;
     const savedRev = localStorage.getItem(this.storageKeys.routineRev);
     const saved = localStorage.getItem(this.storageKeys.routine);
     if (saved) {
@@ -100,6 +100,9 @@ class WorkoutApp {
             if (ex.name.toLowerCase().includes('calf') && ex.muscle === 'Quads') {
               ex.muscle = 'Calves';
             }
+            if (ex.name.toLowerCase().includes('incline') && ex.name.toLowerCase().includes('press')) {
+              ex.targetReps = '6–8';
+            }
             ex.isOptional = false;
             if (typeof ex.increment !== 'number') {
               ex.increment = this.getExerciseIncrement(ex, ex.name);
@@ -107,7 +110,7 @@ class WorkoutApp {
           });
         });
 
-        // Migrate routine to Revision 13 (Double progression increments, no optional finishers)
+        // Migrate routine to Revision 14 (Double progression increments, no optional finishers, 6-8 incline press)
         const needsUpdate = 
           savedRev !== String(CURRENT_ROUTINE_REV) ||
           parsed.length < 5 ||
@@ -407,7 +410,7 @@ class WorkoutApp {
     return {
       targetWeight,
       targetReps,
-      targetRepsDisplay: `${targetReps}`,
+      targetRepsDisplay: effectiveTargetReps,
       targetWeightDisplay: targetWeight > 0 ? `${targetWeight}` : '—',
       isProgressionIncrease,
       note: isProgressionIncrease ? `+${increment} lbs unlocked!` : `Target: ${targetReps} reps`
@@ -443,6 +446,11 @@ class WorkoutApp {
         const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
         if (parsed.dayId === day.id) {
           if (!parsed.swaps) parsed.swaps = {};
+          Object.values(parsed.swaps).forEach(sub => {
+            if (sub && sub.name && sub.name.toLowerCase().includes('incline') && sub.name.toLowerCase().includes('press')) {
+              sub.targetReps = '6–8';
+            }
+          });
           
           if (day && day.exercises) {
             day.exercises.forEach(ex => {
@@ -3106,7 +3114,7 @@ class WorkoutApp {
       <!-- Version & Cache Reset -->
       <div style="background: rgba(148, 163, 184, 0.08); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0;">⚡ MachineMaster v2.5 <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;">(Build v25 • Rev ${localStorage.getItem(this.storageKeys.routineRev) || '13'})</span></div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0;">⚡ MachineMaster v2.6 <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;">(Build v26 • Rev ${localStorage.getItem(this.storageKeys.routineRev) || '14'})</span></div>
           <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Smart +10/+5lb Auto-Bump • Core-Only Split • Deload Engine • SVG 1RM Curve • Active HUD</div>
         </div>
         <button class="secondary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">

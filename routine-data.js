@@ -480,10 +480,10 @@ const DEFAULT_ROUTINE = [
 // Biomechanically equivalent substitutions for machine availability & variety
 const EXERCISE_SUBSTITUTIONS = {
   "Converging Machine Chest Press": [
-    { name: "Incline Dumbbell Bench Press", type: "Dumbbell", muscle: "Chest", targetReps: "8–10", notes: "Set bench to 30°; lower dumbbells under control; press up and slightly inward.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+incline+dumbbell+press" },
-    { name: "Flat Dumbbell Bench Press", type: "Dumbbell", muscle: "Chest", targetReps: "8–10", notes: "Tuck elbows 45–60°; arch upper back; squeeze chest at top.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+bench+press" },
+    { name: "Incline Dumbbell Bench Press", type: "Dumbbell", muscle: "Chest", targetReps: "6–8", notes: "Set bench to 30°; lower dumbbells under control; press up and slightly inward.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+incline+dumbbell+press" },
+    { name: "Flat Dumbbell Bench Press", type: "Dumbbell", muscle: "Chest", targetReps: "6–8", notes: "Tuck elbows 45–60°; arch upper back; squeeze chest at top.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+bench+press" },
     { name: "Pec Fly Machine", type: "Machine", muscle: "Chest", targetReps: "10–12", notes: "Seat height so handles line up with mid-chest; feel full horizontal adduction stretch.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+pec+deck+fly" },
-    { name: "Smith Machine Chest Press", type: "Machine", muscle: "Chest", targetReps: "8–10", notes: "Bar tracks directly to mid-chest; full control on 2–3s negative.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+smith+machine+bench+press" }
+    { name: "Smith Machine Chest Press", type: "Machine", muscle: "Chest", targetReps: "6–8", notes: "Bar tracks directly to mid-chest; full control on 2–3s negative.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+smith+machine+bench+press" }
   ],
   "Neutral-Grip Lat Pulldown": [
     { name: "Wide-Grip Lat Pulldown", type: "Cable", muscle: "Back / Lats", targetReps: "8–10", notes: "Grip just outside shoulder width; lean back 10–15°; pull bar to upper clavicle.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+wide+grip+lat+pulldown" },
@@ -601,9 +601,9 @@ const EXERCISE_SUBSTITUTIONS = {
     { name: "Decline Bench Sit-Up", type: "Bodyweight", muscle: "Abs / Core", targetReps: "12–15", notes: "Cross arms on chest; round spine smoothly as you curl up.", videoUrl: "https://www.youtube.com/results?search_query=decline+sit+up+technique" }
   ],
   "Smith Machine Incline Press (30°)": [
-    { name: "Incline Dumbbell Bench Press", type: "Dumbbell", muscle: "Chest", targetReps: "8–10", notes: "Set bench to 30°; lower DBs under control; press up and slightly inward.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+incline+dumbbell+press" },
-    { name: "Converging Machine Incline Press", type: "Machine", muscle: "Chest", targetReps: "8–10", notes: "Seat height so handles line up with upper chest; full extension at top.", videoUrl: "https://www.youtube.com/results?search_query=incline+chest+press+machine" },
-    { name: "Flat Dumbbell Bench Press", type: "Dumbbell", muscle: "Chest", targetReps: "8–10", notes: "Tuck elbows 45–60°; arch upper back; squeeze chest at top.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+bench+press" }
+    { name: "Incline Dumbbell Bench Press", type: "Dumbbell", muscle: "Chest", targetReps: "6–8", notes: "Set bench to 30°; lower DBs under control; press up and slightly inward.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+incline+dumbbell+press" },
+    { name: "Converging Machine Incline Press", type: "Machine", muscle: "Chest", targetReps: "6–8", notes: "Seat height so handles line up with upper chest; full extension at top.", videoUrl: "https://www.youtube.com/results?search_query=incline+chest+press+machine" },
+    { name: "Flat Dumbbell Bench Press", type: "Dumbbell", muscle: "Chest", targetReps: "6–8", notes: "Tuck elbows 45–60°; arch upper back; squeeze chest at top.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+bench+press" }
   ],
   "Half-Kneeling Single-Arm Pulldown": [
     { name: "Neutral-Grip Lat Pulldown", type: "Cable", muscle: "Back / Lats", targetReps: "8–10", notes: "Close grip attachment; pull elbows into sides.", videoUrl: "https://www.youtube.com/results?search_query=neutral+grip+lat+pulldown" },
