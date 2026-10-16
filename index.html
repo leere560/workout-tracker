@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Track your 5-day machine hypertrophy routine with progressive overload, rest timers, and superset pacing.">
   <title>5-Day Machine Lifting Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=22">
+  <link rel="stylesheet" href="styles.css?v=23">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
   <meta name="theme-color" content="#0a0e17">
@@ -56,7 +56,7 @@
       <div class="time-saver-banner">
         <span style="font-size: 1.1rem;">⏱️</span>
         <div class="time-saver-text">
-          <strong>60-Min Gym Cap:</strong> Core lifts & supersets take ~32m. Bonus finishers at the bottom are 100% optional!
+          <strong>60-Min Gym Cap:</strong> Antagonist & same-machine supersets keep full sessions around ~35–45m while hitting every target muscle group!
         </div>
       </div>
 
@@ -127,11 +127,11 @@
   </div>
 
   <!-- Workout Summary Modal -->
-  <div class="modal-backdrop" id="summaryModal" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" id="summaryModal" role="dialog" aria-modal="true" aria-labelledby="summaryModalTitle">
     <div class="modal-content">
       <div class="modal-header">
-        <h3>Session Completed</h3>
-        <button class="close-modal-btn">&times;</button>
+        <h3 id="summaryModalTitle">Session Completed</h3>
+        <button class="close-modal-btn" aria-label="Close modal">&times;</button>
       </div>
       <div id="summaryContent">
         <!-- Populated dynamically -->
@@ -140,14 +140,14 @@
   </div>
 
   <!-- Exercise / Machine Swap Modal -->
-  <div class="modal-backdrop" id="swapModal" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" id="swapModal" role="dialog" aria-modal="true" aria-labelledby="swapModalTitle">
     <div class="modal-content">
       <div class="modal-header">
         <div>
           <h3 id="swapModalTitle">🔄 Equipment Swap</h3>
           <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">Machine taken or broken? Select an alternative:</div>
         </div>
-        <button class="close-modal-btn" id="closeSwapModalBtn">&times;</button>
+        <button class="close-modal-btn" id="closeSwapModalBtn" aria-label="Close modal">&times;</button>
       </div>
       <div id="swapContent">
         <!-- Populated dynamically -->
@@ -156,14 +156,14 @@
   </div>
 
   <!-- Warmup Pyramid Calculator Modal -->
-  <div class="modal-backdrop" id="warmupModal" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" id="warmupModal" role="dialog" aria-modal="true" aria-labelledby="warmupModalTitle">
     <div class="modal-content">
       <div class="modal-header">
         <div>
           <h3 id="warmupModalTitle">🔥 Warm-Up Ramp</h3>
           <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">Smart neural prep sets before your working weight</div>
         </div>
-        <button class="close-modal-btn" id="closeWarmupModalBtn">&times;</button>
+        <button class="close-modal-btn" id="closeWarmupModalBtn" aria-label="Close modal">&times;</button>
       </div>
       <div id="warmupContent">
         <!-- Populated dynamically -->
@@ -172,14 +172,14 @@
   </div>
 
   <!-- Quick History Modal -->
-  <div class="modal-backdrop" id="quickHistoryModal" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" id="quickHistoryModal" role="dialog" aria-modal="true" aria-labelledby="quickHistoryTitle">
     <div class="modal-content">
       <div class="modal-header">
         <div>
           <h3 id="quickHistoryTitle">📈 Exercise Performance Log</h3>
           <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">Past weights, reps, and all-time records</div>
         </div>
-        <button class="close-modal-btn" id="closeQuickHistoryModalBtn">&times;</button>
+        <button class="close-modal-btn" id="closeQuickHistoryModalBtn" aria-label="Close modal">&times;</button>
       </div>
       <div id="quickHistoryContent">
         <!-- Populated dynamically -->
@@ -191,12 +191,12 @@
   <input type="file" id="importFileInput" accept=".json,application/json" style="display: none;">
 
   <!-- Scripts -->
-  <script src="routine-data.js?v=22"></script>
-  <script src="app.js?v=22"></script>
+  <script src="routine-data.js?v=23"></script>
+  <script src="app.js?v=23"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js?v=22').then((reg) => {
+        navigator.serviceWorker.register('./sw.js?v=23').then((reg) => {
           reg.update();
         }).catch(err => {
           console.log('ServiceWorker registration skipped:', err);

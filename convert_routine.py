@@ -103,14 +103,8 @@ for sname in wb.sheetnames:
         clean_name = clean_text(name)
         lower_name = clean_name.lower()
         
-        # Determine if it's an exclusively optional finisher
+        # All exercises are core exercises
         is_optional = False
-        if 'crunch' in lower_name or 'knee raise' in lower_name:
-            is_optional = True
-        elif 'sat' in day_id and 'pec deck' in lower_name:
-            is_optional = True
-        elif 'mon' in day_id and 'adduction' in lower_name:
-            is_optional = True
             
         # Target muscle category
         muscle = 'Full Body'
@@ -120,14 +114,14 @@ for sname in wb.sheetnames:
             muscle = 'Chest'
         elif any(w in lower_name for w in ['pulldown', 'row', 'lat pulldown']):
             muscle = 'Back / Lats'
-        elif any(w in lower_name for w in ['hack squat', 'leg extension']):
-            muscle = 'Quads'
-        elif any(w in lower_name for w in ['leg press']):
-            muscle = 'Quads'
-        elif any(w in lower_name for w in ['leg curl', 'rdl', 'deadlift']):
-            muscle = 'Hamstrings / Glutes'
         elif any(w in lower_name for w in ['calf']):
             muscle = 'Calves'
+        elif any(w in lower_name for w in ['hack squat', 'leg extension', 'leg press']):
+            muscle = 'Quads'
+        elif any(w in lower_name for w in ['leg curl', 'rdl', 'deadlift', 'back extension']):
+            muscle = 'Hamstrings / Glutes'
+        elif any(w in lower_name for w in ['hip thrust', 'glute drive']):
+            muscle = 'Glutes'
         elif any(w in lower_name for w in ['adduction', 'abduction']):
             muscle = 'Adductors / Hips'
         elif any(w in lower_name for w in ['crunch', 'knee raise', 'core']):
@@ -213,10 +207,47 @@ for sname in wb.sheetnames:
         # Check existing metadata preservation
         meta = existing_metadata.get((day_id, clean_name)) or existing_metadata.get(clean_name)
         ex_id = meta.get('id') if meta and meta.get('id') else f'{day_id}_ex{r-1}'
+        if meta and meta.get('muscle'):
+            muscle = meta.get('muscle')
         if meta and meta.get('superset') is not None:
             superset = meta.get('superset')
-        if meta and 'isOptional' in meta:
-            is_optional = meta.get('isOptional')
+        if meta and meta.get('sets') is not None:
+            sets = meta.get('sets')
+        if meta and meta.get('targetReps'):
+            reps = meta.get('targetReps')
+        if meta and meta.get('notes'):
+            notes = meta.get('notes')
+        if meta and meta.get('startingWeight'):
+            weight = meta.get('startingWeight')
+        if meta and meta.get('rest'):
+            rest = meta.get('rest')
+        if meta and meta.get('videoUrl'):
+            video_url = meta.get('videoUrl')
+        
+        # Calculate or preserve increment (+10 for compounds, +5 for isolation)
+        isolation_keywords = [
+            'dumbbell', 'db ', 'single-arm', 'single-leg', 'one-arm', 'lateral raise',
+            'rear delt', 'face pull', 'pec deck', 'fly', 'crossover', 'leg extension',
+            'leg curl', 'sissy squat', 'goblet squat', 'split squat', 'curl', 'tricep',
+            'pushdown', 'skull crusher', 'extension', 'crunch', 'knee raise', 'sit-up',
+            'pull-through', 'pullover', 'adduction', 'abduction'
+        ]
+        compound_keywords = [
+            'hack squat', 'leg press', 'smith machine squat', 'hip thrust', 'glute drive',
+            'barbell romanian', 'smith machine romanian', 'calf raise', 'calf press',
+            'machine chest press', 'machine incline press', 'smith machine incline press',
+            'smith machine chest press', 'machine overhead', 'machine shoulder press',
+            'smith machine overhead', 'smith machine shoulder', 'lat pulldown',
+            'machine row', 'seated cable row', 't-bar row'
+        ]
+        if meta and meta.get('increment') is not None:
+            increment = meta.get('increment')
+        elif any(kw in lower_name for kw in isolation_keywords):
+            increment = 5
+        elif any(kw in lower_name for kw in compound_keywords):
+            increment = 10
+        else:
+            increment = 5
 
         ex_obj = {
             'id': ex_id,
@@ -228,29 +259,47 @@ for sname in wb.sheetnames:
             'rest': rest,
             'notes': notes,
             'videoUrl': video_url,
-            'isOptional': is_optional,
-            'superset': superset
+            'isOptional': False,
+            'superset': superset,
+            'increment': increment
         }
         if meta and 'alternatives' in meta:
             ex_obj['alternatives'] = meta['alternatives']
 
         day_obj['exercises'].append(ex_obj)
 
-    # Add dedicated optional finisher for Wed Upper A if not already present
-    if 'wed' in day_id and not any('opt_facepull' in e.get('id', '') for e in day_obj['exercises']):
+    # Preserve customized day exercise list from existing routine-data.js if present
+    existing_day = next((d for d in existing_routine if d.get('id') == day_id), None)
+    if existing_day and existing_day.get('exercises'):
+        preserved_exercises = []
+        for ex in existing_day['exercises']:
+            ex_copy = dict(ex)
+            ex_copy['isOptional'] = False
+            if 'increment' not in ex_copy:
+                lname = ex_copy.get('name', '').lower()
+                if any(kw in lname for kw in isolation_keywords):
+                    ex_copy['increment'] = 5
+                elif any(kw in lname for kw in compound_keywords):
+                    ex_copy['increment'] = 10
+                else:
+                    ex_copy['increment'] = 5
+            preserved_exercises.append(ex_copy)
+        day_obj['exercises'] = preserved_exercises
+    elif 'wed' in day_id and not any('opt_facepull' in e.get('id', '') or 'Face Pull' in e.get('name', '') for e in day_obj['exercises']):
         meta = existing_metadata.get((day_id, 'Cable Face Pull (Rear Delts & Posture)'))
         day_obj['exercises'].append({
             'id': meta.get('id') if meta else f'{day_id}_opt_facepull',
             'name': 'Cable Face Pull (Rear Delts & Posture)',
             'muscle': 'Shoulders',
             'sets': 2,
-            'targetReps': '12–15',
+            'targetReps': '10–12',
             'startingWeight': '30–40 lbs',
-            'rest': '60 sec',
+            'rest': '90 sec',
             'notes': 'Set pulley to eye level; thumbs back; pull rope toward forehead while pulling elbows back to build healthy shoulders.',
             'videoUrl': 'https://www.youtube.com/results?search_query=Jeff+Nippard+face+pull+technique',
-            'isOptional': meta.get('isOptional', False) if meta else False,
-            'superset': None
+            'isOptional': False,
+            'superset': None,
+            'increment': 5
         })
 
     routine_data.append(day_obj)
@@ -258,6 +307,8 @@ for sname in wb.sheetnames:
 # Preserve Sunday DB Arms & Shoulders from existing routine if not present in Excel workbook
 existing_sunday = next((d for d in existing_routine if d.get('id') == 'sun___db_arms'), None)
 if existing_sunday and not any(d.get('id') == 'sun___db_arms' for d in routine_data):
+    for ex in existing_sunday.get('exercises', []):
+        ex['isOptional'] = False
     mon_idx = next((i for i, d in enumerate(routine_data) if 'mon' in d.get('id', '')), -1)
     if mon_idx != -1:
         routine_data.insert(mon_idx, existing_sunday)

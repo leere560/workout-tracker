@@ -1,4 +1,4 @@
-// Pre-loaded routine parsed from 4-Day_Machine_lifting_routine.xlsx + Sunday DB Arms & Shoulders
+// Pre-loaded routine parsed from routine.xlsx + Sunday DB Arms & Shoulders
 const DEFAULT_ROUTINE = [
   {
     "id": "wed___upper_a",
@@ -16,7 +16,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Seat height so handles align with mid-chest; elbows at 45–60°; 2–3s negative.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+machine+chest+press+technique",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 10
       },
       {
         "id": "wed___upper_a_ex2",
@@ -29,7 +30,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Clamp thigh pads down tightly to brace your frame; let lats stretch fully at the top.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+lat+pulldown+technique",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 10
       },
       {
         "id": "wed___upper_a_ex3",
@@ -42,7 +44,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Adjust chest pad forward so arms fully extend; flare elbows 45–60° for upper back and rear delts.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+chest+supported+row+technique",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 10
       },
       {
         "id": "wed___upper_a_ex4",
@@ -55,7 +58,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Set pulley to wrist height; stand slightly sideways; lead with your elbows to isolate side delts.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+cable+lateral+raise",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 5
       },
       {
         "id": "wed___upper_a_ex5",
@@ -74,7 +78,8 @@ const DEFAULT_ROUTINE = [
           "name": "Arm Finisher Superset (Triceps + Biceps)",
           "tip": "⚡ Superset: Perform 1 set of Triceps, rest 45–60s, then perform 1 set of Biceps, rest 60s. Saves ~6 mins!",
           "rest": "45–60 sec"
-        }
+        },
+        "increment": 5
       },
       {
         "id": "wed___upper_a_ex6",
@@ -93,7 +98,8 @@ const DEFAULT_ROUTINE = [
           "name": "Arm Finisher Superset (Triceps + Biceps)",
           "tip": "⚡ Superset: Alternate with Triceps Rope Pushdown. Saves ~6 mins!",
           "rest": "60 sec"
-        }
+        },
+        "increment": 5
       },
       {
         "id": "wed___upper_a_opt_facepull",
@@ -106,7 +112,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Set pulley to eye level; thumbs back; pull rope toward forehead while pulling elbows back to build healthy shoulders.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+face+pull+technique",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 5
       }
     ]
   },
@@ -126,7 +133,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Feet mid-to-low and shoulder-width; descend to deep knee bend; keep lower back/glutes glued to pad.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+hack+squat+technique",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 10
       },
       {
         "id": "fri___lower_a_ex2",
@@ -145,7 +153,8 @@ const DEFAULT_ROUTINE = [
           "name": "Antagonist Superset (Quads + Hamstrings)",
           "tip": "⚡ Superset: Perform 1 set of Leg Extensions, rest 60s, then perform 1 set of Seated Leg Curls, rest 60s. Saves ~8 mins!",
           "rest": "60 sec"
-        }
+        },
+        "increment": 5
       },
       {
         "id": "fri___lower_a_ex3",
@@ -164,7 +173,8 @@ const DEFAULT_ROUTINE = [
           "name": "Antagonist Superset (Quads + Hamstrings)",
           "tip": "⚡ Superset: Alternate with Leg Extensions. Quads rest while hamstrings work!",
           "rest": "60–75 sec"
-        }
+        },
+        "increment": 5
       },
       {
         "id": "fri___lower_a_ex4",
@@ -177,7 +187,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Full 2-second dead pause at bottom stretch to eliminate Achilles elastic rebound.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+calf+raise+technique",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 10
       },
       {
         "id": "fri___lower_a_ex5",
@@ -190,7 +201,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Anchor hips in place; actively round ribcage down into your pelvis like rolling up a mat.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+cable+crunch+technique",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 5
       }
     ]
   },
@@ -210,7 +222,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Bench at ~30°; bar lowers directly to clavicle/upper chest; tuck elbows 45°; 2–3s descent.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+smith+machine+incline+press",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 10
       },
       {
         "id": "sat___upper_b_ex2",
@@ -223,7 +236,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Set pulley high; kneel on mat; drive elbow straight down to hip pocket for pure lat focus.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+single+arm+lat+pulldown",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 5
       },
       {
         "id": "sat___upper_b_ex3",
@@ -236,7 +250,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Set seat low so handles start level with ears; drive straight up without hyper-arching lower back. Keep 2 reps in reserve to stay fresh for Sunday DB shoulders & arms.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+shoulder+press+technique",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 10
       },
       {
         "id": "sat___upper_b_ex_cable_row",
@@ -249,7 +264,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Sit tall with chest proud; pull attachment into navel; pause 1s at contraction; slow stretch.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+seated+cable+row+technique",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 10
       },
       {
         "id": "sat___upper_b_ex4",
@@ -262,7 +278,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Soft bend in elbows; squeeze chest together without shrugging shoulders forward; deep stretch.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+chest+flye+pec+deck",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 5
       }
     ]
   },
@@ -282,7 +299,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Stand with slight forward torso hinge; raise dumbbells out leading with your elbows; control the 2-second negative. Zero bench needed!",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+lateral+raise",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 5
       },
       {
         "id": "sun___db_arms_ex5",
@@ -295,7 +313,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Hinge at the hips with soft knees and a flat back; sweep dumbbells out wide leading with pinkies to isolate rear delts. Zero bench needed!",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+rear+delt+flye",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 5
       },
       {
         "id": "sun___db_arms_ex3",
@@ -314,7 +333,8 @@ const DEFAULT_ROUTINE = [
           "name": "Dumbbell Arm Superset (Biceps + Triceps)",
           "tip": "⚡ Superset: Perform 1 set of Curls, rest 45–60s, then perform 1 set of Overhead Triceps Extensions, rest 60s. Saves ~7 mins!",
           "rest": "45–60 sec"
-        }
+        },
+        "increment": 5
       },
       {
         "id": "sun___db_arms_ex4",
@@ -333,7 +353,8 @@ const DEFAULT_ROUTINE = [
           "name": "Dumbbell Arm Superset (Biceps + Triceps)",
           "tip": "⚡ Superset: Alternate with Standing Biceps Curls. Fits your 30-min window at home!",
           "rest": "60 sec"
-        }
+        },
+        "increment": 5
       },
       {
         "id": "sun___db_arms_ex_forearms",
@@ -346,7 +367,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Pronated overhand grip (palms down/knuckles forward); lock wrists straight; controlled 2–3s negative to blast the brachioradialis and forearm extensors. Zero bench needed!",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+reverse+curl+technique",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 5
       }
     ]
   },
@@ -366,7 +388,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Position the belt/pad across the hips, brace, and raise the hips without arching the lower back. Lower under control. Effort: finish with 2–3 reps in reserve.",
         "videoUrl": "https://www.youtube.com/results?search_query=machine+hip+thrust+glute+drive+technique",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 10
       },
       {
         "id": "mon__lower_b_ex2",
@@ -376,7 +399,7 @@ const DEFAULT_ROUTINE = [
         "targetReps": "6–8",
         "startingWeight": "180–230 lbs",
         "rest": "3 min",
-        "notes": "Feet placed low-to-mid and shoulder-width on platform; maximize knee flexion depth to target quads while keeping hips glued to the pad.; bring knees deep toward chest to load glutes and hamstrings.",
+        "notes": "Feet placed low-to-mid and shoulder-width on platform; maximize knee flexion depth to target quads while keeping hips glued to the pad.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+leg+press+technique",
         "isOptional": false,
         "superset": {
@@ -385,7 +408,8 @@ const DEFAULT_ROUTINE = [
           "name": "Same-Machine Superset (Quads + Calves)",
           "tip": "⚡ Superset: Perform 1 set of Leg Press, rest 45–60s (adjust weight pin & slide feet to bottom edge), then perform Calf Press, rest 60s. Saves ~6 mins!",
           "rest": "45–60 sec"
-        }
+        },
+        "increment": 10
       },
       {
         "id": "mon__lower_b_ex5",
@@ -404,7 +428,8 @@ const DEFAULT_ROUTINE = [
           "name": "Same-Machine Superset (Quads + Calves)",
           "tip": "⚡ Superset: Alternate with Horizontal Leg Press on the same machine. Calves work while quads rest!",
           "rest": "60 sec"
-        }
+        },
+        "increment": 10
       },
       {
         "id": "mon__lower_b_ex3",
@@ -417,7 +442,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Keep hips pinned flat into the pad; avoid hyperextending lower back; control the negative.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+lying+leg+curl",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 5
       },
       {
         "id": "mon__lower_b_ex_back_ext",
@@ -430,7 +456,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Pad just below the hip crease, feet secured, hinge slowly at the hips while keeping the spine comfortably steady. Rise until torso and legs align; don’t swing or arch backward. Effort: finish with 3–4 clean reps in reserve.",
         "videoUrl": "https://www.youtube.com/results?search_query=45+degree+back+extension+for+glutes+technique",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 5
       },
       {
         "id": "mon__lower_b_ex6",
@@ -443,7 +470,8 @@ const DEFAULT_ROUTINE = [
         "notes": "Forearms locked on pads; pull knees up while actively rolling pelvis toward your chest.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+hanging+knee+raise+technique",
         "isOptional": false,
-        "superset": null
+        "superset": null,
+        "increment": 5
       }
     ]
   }
@@ -650,6 +678,11 @@ const EXERCISE_SUBSTITUTIONS = {
     { name: "45° Back Extension (Glute & Hamstring Focus)", type: "Machine", muscle: "Glutes / Hamstrings", targetReps: "10–12", notes: "Hinge at hips; round upper back slightly to maximize glute contraction.", videoUrl: "https://www.youtube.com/results?search_query=45+degree+back+extension+for+glutes" },
     { name: "Cable Pull-Through", type: "Cable", muscle: "Glutes / Hamstrings", targetReps: "10–12", notes: "Face away from low pulley; hinge hips back; snap hips forward into lockout.", videoUrl: "https://www.youtube.com/results?search_query=cable+pull+through" }
   ],
+  "45-Degree Back Extension": [
+    { name: "Standing Dumbbell Romanian Deadlift (RDL)", type: "Dumbbell", muscle: "Glutes / Hamstrings", targetReps: "8–10", notes: "Push hips back; keep back flat; feel deep stretch in hamstrings and glutes.", videoUrl: "https://www.youtube.com/results?search_query=dumbbell+rdl" },
+    { name: "Seated Leg Curl", type: "Machine", muscle: "Hamstrings", targetReps: "8–12", notes: "Thigh pad firmly clamped; curl heels smoothly under seat.", videoUrl: "https://www.youtube.com/results?search_query=seated+leg+curl" },
+    { name: "Cable Pull-Through", type: "Cable", muscle: "Glutes / Hamstrings", targetReps: "10–12", notes: "Hinge hips back with rope between legs; extend hips forward.", videoUrl: "https://www.youtube.com/results?search_query=cable+pull+through" }
+  ],
   "45° Back Extension (Glute & Hamstring Focus)": [
     { name: "Standing Dumbbell Romanian Deadlift (RDL)", type: "Dumbbell", muscle: "Glutes / Hamstrings", targetReps: "8–10", notes: "Push hips back; keep back flat; feel deep stretch in hamstrings and glutes.", videoUrl: "https://www.youtube.com/results?search_query=dumbbell+rdl" },
     { name: "Seated Leg Curl", type: "Machine", muscle: "Hamstrings", targetReps: "8–12", notes: "Thigh pad firmly clamped; curl heels smoothly under seat.", videoUrl: "https://www.youtube.com/results?search_query=seated+leg+curl" },
@@ -692,6 +725,7 @@ const SECONDARY_MUSCLE_CONTRIBUTIONS = {
   "Chest-Supported Machine Row": { "Biceps": 0.5, "Forearms": 0.5, "Shoulders": 0.25 },
   "Neutral-Grip Seated Cable Row": { "Biceps": 0.5, "Forearms": 0.5, "Shoulders": 0.25 },
   "Machine Overhead Shoulder Press": { "Triceps": 0.5 },
+  "Hack Squat (or 45° Leg Press)": { "Hamstrings / Glutes": 0.5 },
   "Horizontal Leg Press": { "Hamstrings / Glutes": 0.5 },
   "Machine Hip Thrust / Glute Drive": { "Hamstrings / Glutes": 0.5 },
   "Standing Dumbbell Biceps / Hammer Curl": { "Forearms": 0.5 }

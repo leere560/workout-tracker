@@ -51,12 +51,12 @@ body {
   overflow-x: clip;
   max-width: 100%;
   width: 100%;
-  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
   transition: padding-bottom 0.25s ease;
 }
 
 body.timer-active {
-  padding-bottom: calc(115px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Hide browser spin buttons on number inputs */
@@ -1593,6 +1593,25 @@ input[type="number"] {
   color: var(--text-muted);
 }
 
+.history-delete-btn {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #f87171;
+  font-size: 0.85rem;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  line-height: 1;
+}
+
+.history-delete-btn:hover,
+.history-delete-btn:active {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.5);
+  transform: scale(1.05);
+}
+
 .history-pills {
   display: flex;
   gap: 8px;
@@ -1989,6 +2008,17 @@ input[type="number"] {
   transform: scale(0.96);
 }
 
+.bump-weight-btn.revert {
+  background: rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  box-shadow: none;
+}
+
+.bump-weight-btn.revert:hover {
+  background: rgba(148, 163, 184, 0.35);
+}
+
 /* Rest Timer Complete Toast Notification */
 .timer-complete-toast {
   position: fixed;
@@ -2149,6 +2179,18 @@ input[type="number"] {
   background: rgba(16, 185, 129, 0.15);
   color: #34d399;
   border-color: rgba(16, 185, 129, 0.35);
+}
+
+.swap-type-badge.barbell {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.swap-type-badge.free-weight {
+  background: rgba(234, 179, 8, 0.15);
+  color: #fde047;
+  border-color: rgba(234, 179, 8, 0.35);
 }
 
 .swap-option-notes,
@@ -2641,7 +2683,7 @@ input:checked + .slider:before {
 /* Persistent Now-Lifting HUD bar */
 .now-lifting-dock {
   position: fixed;
-  bottom: 84px;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   width: calc(100% - 24px);
@@ -2658,6 +2700,10 @@ input:checked + .slider:before {
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 0 15px rgba(59, 130, 246, 0.15);
   z-index: 95;
   transition: all 0.25s ease;
+}
+
+body.timer-active .now-lifting-dock {
+  bottom: calc(88px + env(safe-area-inset-bottom, 0px));
 }
 .now-lifting-left {
   display: flex;

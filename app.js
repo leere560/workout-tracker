@@ -10,7 +10,6 @@ class WorkoutApp {
       deloadActive: 'gym_deload_active',
       deloadStartDate: 'gym_deload_start_date',
       lastBackupTime: 'gym_last_backup_time',
-      streamlineMode: 'gym_streamline_mode_v1',
       currentSessionPrefix: 'gym_session_',
       legacyCurrentSession: 'gym_current_session_v4',
       lastWeights: 'gym_last_weights_v1',
@@ -29,7 +28,6 @@ class WorkoutApp {
     this.deloadStartDate = parseInt(localStorage.getItem(this.storageKeys.deloadStartDate) || '0', 10);
     this.checkDeloadExpiry();
     this.initStoragePersistence();
-    this.streamlineMode = localStorage.getItem(this.storageKeys.streamlineMode) !== 'false'; // Default to true
 
     // Load Routine
     this.routine = this.loadRoutine();
@@ -90,22 +88,26 @@ class WorkoutApp {
   }
 
   loadRoutine() {
-    const CURRENT_ROUTINE_REV = 12;
+    const CURRENT_ROUTINE_REV = 13;
     const savedRev = localStorage.getItem(this.storageKeys.routineRev);
     const saved = localStorage.getItem(this.storageKeys.routine);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Correct any legacy muscle tags for calves
+        // Correct any legacy muscle tags for calves & ensure all exercises are core
         parsed.forEach(day => {
           day.exercises.forEach(ex => {
             if (ex.name.toLowerCase().includes('calf') && ex.muscle === 'Quads') {
               ex.muscle = 'Calves';
             }
+            ex.isOptional = false;
+            if (typeof ex.increment !== 'number') {
+              ex.increment = this.getExerciseIncrement(ex, ex.name);
+            }
           });
         });
 
-        // Migrate routine to Revision 12 (Added sets: pec deck, leg extension, both calf raises)
+        // Migrate routine to Revision 13 (Double progression increments, no optional finishers)
         const needsUpdate = 
           savedRev !== String(CURRENT_ROUTINE_REV) ||
           parsed.length < 5 ||
@@ -117,8 +119,21 @@ class WorkoutApp {
 
         if (needsUpdate) {
           // Backup previous routine in localStorage just in case
-          localStorage.setItem('gym_routine_backup_v11', JSON.stringify(parsed));
+          localStorage.setItem('gym_routine_backup_v12', JSON.stringify(parsed));
           const updatedRoutine = JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
+          // Preserve any custom starting weights or notes from parsed if matched
+          parsed.forEach(oldDay => {
+            const newDay = updatedRoutine.find(d => d.id === oldDay.id);
+            if (newDay && oldDay.exercises) {
+              oldDay.exercises.forEach(oldEx => {
+                const newEx = newDay.exercises.find(e => e.id === oldEx.id || e.name === oldEx.name);
+                if (newEx) {
+                  if (oldEx.notes && !oldEx.notes.includes('pad.;')) newEx.notes = oldEx.notes;
+                  if (oldEx.startingWeight) newEx.startingWeight = oldEx.startingWeight;
+                }
+              });
+            }
+          });
           localStorage.setItem(this.storageKeys.routineRev, String(CURRENT_ROUTINE_REV));
           localStorage.setItem(this.storageKeys.routine, JSON.stringify(updatedRoutine));
           return updatedRoutine;
@@ -277,27 +292,59 @@ class WorkoutApp {
     return found ? found.name : '';
   }
 
-  getExerciseIncrement(ex) {
+  getExerciseIncrement(ex, effectiveName) {
+    const rawName = (effectiveName || (ex ? ex.name : '') || '').toLowerCase();
+    
+    // 1. Isolation, dumbbell, bodyweight, or unilateral movement (+5 lbs)
+    const isolationKeywords = [
+      'dumbbell', 'db ', 'single-arm', 'single-leg', 'one-arm', 'lateral raise', 
+      'rear delt', 'face pull', 'pec deck', 'fly', 'crossover', 'leg extension', 
+      'leg curl', 'sissy squat', 'goblet squat', 'split squat', 'curl', 'tricep', 
+      'pushdown', 'skull crusher', 'extension', 'crunch', 'knee raise', 'sit-up', 
+      'pull-through', 'pullover', 'adduction', 'abduction'
+    ];
+    if (isolationKeywords.some(kw => rawName.includes(kw))) {
+      return 5;
+    }
+
+    // 2. Bigger bilateral machine / barbell / cable compounds (+10 lbs)
+    const compoundKeywords = [
+      'hack squat', 'leg press', 'smith machine squat', 'hip thrust', 'glute drive', 
+      'barbell romanian', 'smith machine romanian', 'calf raise', 'calf press', 
+      'machine chest press', 'machine incline press', 'smith machine incline press', 
+      'smith machine chest press', 'machine overhead', 'machine shoulder press', 
+      'smith machine overhead', 'smith machine shoulder', 'lat pulldown', 
+      'machine row', 'seated cable row', 't-bar row'
+    ];
+    if (compoundKeywords.some(kw => rawName.includes(kw))) {
+      return 10;
+    }
+
     if (ex && typeof ex.increment === 'number') return ex.increment;
-    const name = (ex ? ex.name : '').toLowerCase();
-    const muscle = (ex ? ex.muscle : '').toLowerCase();
-    if (name.includes('leg press') || name.includes('hip thrust') || name.includes('calf') || muscle.includes('quad')) return 10;
-    if (name.includes('lateral raise') || name.includes('rear delt') || name.includes('curl')) return 5;
     return 5;
   }
 
   getMinTargetReps(targetRepsStr) {
     if (!targetRepsStr) return 8;
-    const matches = targetRepsStr.match(/\d+/g);
+    const matches = String(targetRepsStr).match(/\d+/g);
     if (!matches || matches.length === 0) return 8;
     return Math.min(...matches.map(n => parseInt(n, 10)));
   }
 
+  getMaxTargetReps(targetRepsStr) {
+    if (!targetRepsStr) return 12;
+    const matches = String(targetRepsStr).match(/\d+/g);
+    if (!matches || matches.length === 0) return 12;
+    return Math.max(...matches.map(n => parseInt(n, 10)));
+  }
+
   getSetTarget(ex, setIdx, effectiveName) {
-    const minTarget = this.getMinTargetReps(ex.targetReps);
-    const maxTarget = this.getMaxTargetReps(ex.targetReps);
-    const increment = this.getExerciseIncrement(ex);
-    const prev = this.getPreviousExercisePerformance(effectiveName);
+    const activeSubName = effectiveName || this.getEffectiveExerciseName(ex.id, ex);
+    const effectiveTargetReps = (this.session && this.session.swaps && this.session.swaps[ex.id]?.targetReps) || ex.targetReps;
+    const minTarget = this.getMinTargetReps(effectiveTargetReps);
+    const maxTarget = this.getMaxTargetReps(effectiveTargetReps);
+    const increment = this.getExerciseIncrement(ex, activeSubName);
+    const prev = this.getPreviousExercisePerformance(activeSubName);
 
     if (!prev || !prev.sets || prev.sets.length === 0) {
       const parsedStart = this.parseInitialWeight(ex.startingWeight);
@@ -305,7 +352,7 @@ class WorkoutApp {
       return {
         targetWeight,
         targetReps: minTarget,
-        targetRepsDisplay: ex.targetReps,
+        targetRepsDisplay: effectiveTargetReps,
         targetWeightDisplay: targetWeight > 0 ? `${targetWeight}` : '—',
         isProgressionIncrease: false,
         note: 'Baseline set'
@@ -318,7 +365,7 @@ class WorkoutApp {
     let baseWeight = prevSet.weight || 0;
     const prevReps = prevSet.reps || minTarget;
 
-    const allSetsHitMax = validPrevSets.length >= targetSetsCount && validPrevSets.every(s => (s.reps || 0) >= maxTarget);
+    const allSetsHitMax = !this.deloadActive && validPrevSets.length >= targetSetsCount && validPrevSets.every(s => (s.reps || 0) >= maxTarget);
 
     let targetWeight = baseWeight;
     let targetReps = prevReps;
@@ -376,10 +423,12 @@ class WorkoutApp {
         const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
         if (parsed.dayId === day.id) {
           if (!parsed.swaps) parsed.swaps = {};
-          // Ensure all exercises in the current routine definition have logs initialized
-          if (day && day.exercises) {
-            day.exercises.forEach(ex => {
-              if (!parsed.logs[ex.id] || parsed.logs[ex.id].length === 0) {
+          
+          const hasAnyCompleted = Object.values(parsed.logs || {}).some(sets => Array.isArray(sets) && sets.some(s => s && s.completed));
+          if (!hasAnyCompleted) {
+            // Zero completed sets: refresh uncompleted set targets from getSetTarget()
+            if (day && day.exercises) {
+              day.exercises.forEach(ex => {
                 const activeSub = parsed.swaps && parsed.swaps[ex.id];
                 const effectiveName = activeSub ? activeSub.name : ex.name;
                 const targetSetsCount = this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets;
@@ -394,8 +443,30 @@ class WorkoutApp {
                     rir: null
                   });
                 }
-              }
-            });
+              });
+            }
+          } else {
+            // Ensure all exercises in the current routine definition have logs initialized
+            if (day && day.exercises) {
+              day.exercises.forEach(ex => {
+                if (!parsed.logs[ex.id] || parsed.logs[ex.id].length === 0) {
+                  const activeSub = parsed.swaps && parsed.swaps[ex.id];
+                  const effectiveName = activeSub ? activeSub.name : ex.name;
+                  const targetSetsCount = this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets;
+                  parsed.logs[ex.id] = [];
+                  for (let i = 1; i <= targetSetsCount; i++) {
+                    const target = this.getSetTarget(ex, i - 1, effectiveName);
+                    parsed.logs[ex.id].push({
+                      setNum: i,
+                      weight: target.targetWeight,
+                      reps: target.targetReps,
+                      completed: false,
+                      rir: null
+                    });
+                  }
+                }
+              });
+            }
           }
           return parsed;
         }
@@ -415,7 +486,7 @@ class WorkoutApp {
     const session = {
       dayId: day.id,
       dayTitle: day.title,
-      startTime: new Date().toISOString(),
+      startTime: null,
       logs: {},
       swaps: {}
     };
@@ -449,9 +520,10 @@ class WorkoutApp {
   }
 
   parseInitialWeight(str) {
-    if (!str) return '';
-    const m = str.match(/(\d+)/);
-    return m ? parseInt(m[1], 10) : '';
+    if (!str) return 0;
+    if (typeof str === 'string' && str.toLowerCase().includes('bodyweight')) return 0;
+    const m = String(str).match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : 0;
   }
 
   parseInitialReps(str) {
@@ -486,14 +558,8 @@ class WorkoutApp {
     return 0;
   }
 
-  getMaxTargetReps(targetRepsStr) {
-    if (!targetRepsStr) return 10;
-    const matches = targetRepsStr.match(/\d+/g);
-    if (!matches || matches.length === 0) return 10;
-    return Math.max(...matches.map(n => parseInt(n, 10)));
-  }
-
-  getPreviousProgressionFlag(exerciseName, targetRepsStr, requiredSetsCount = 3) {
+  getPreviousProgressionFlag(exerciseName, targetRepsStr, requiredSetsCount = 3, ex = null) {
+    if (this.deloadActive) return { unlocked: false };
     const prev = this.getPreviousExercisePerformance(exerciseName);
     if (!prev || !prev.sets || prev.sets.length === 0) return { unlocked: false };
     const maxTarget = this.getMaxTargetReps(targetRepsStr);
@@ -501,40 +567,44 @@ class WorkoutApp {
     const targetSets = requiredSetsCount || 3;
     if (validSets.length < targetSets) return { unlocked: false };
     
-    // Weight increase flag is ONLY unlocked if top-end target reps were hit for all sets (all 3 sets)
+    // Weight increase flag is ONLY unlocked if top-end target reps were hit for all sets
     const allSetsHit = validSets.every(s => (s.reps || 0) >= maxTarget);
 
     if (allSetsHit) {
       const topWeight = Math.max(...validSets.map(s => s.weight || 0));
+      const increment = this.getExerciseIncrement(ex, exerciseName);
       return {
         unlocked: true,
         allSetsHit: true,
         maxReps: maxTarget,
         setsCount: validSets.length,
-        topWeight
+        topWeight,
+        increment
       };
     }
     return { unlocked: false };
   }
 
   bumpExerciseWeight(exId, delta = 5) {
-    const list = this.session.logs[exId];
+    const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list) return;
-    const effectiveName = this.getEffectiveExerciseName(exId);
-    list.forEach((s, idx) => {
+    if (this.session && !this.session.startTime) {
+      this.session.startTime = new Date().toISOString();
+    }
+    list.forEach((s) => {
       const cur = parseFloat(s.weight) || 0;
       s.weight = Math.max(0, cur + delta);
-      if (effectiveName) {
-        this.recordExerciseWeight(effectiveName, idx + 1, s.weight, s.reps, s.completed);
-      }
     });
     this.saveCurrentSession();
     this.renderWorkout();
   }
 
   updateSetWeight(exId, setIdx, newWeight) {
-    const list = this.session.logs[exId];
+    const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
+    if (this.session && !this.session.startTime) {
+      this.session.startTime = new Date().toISOString();
+    }
     const val = Math.max(0, parseFloat(newWeight) || 0);
     list[setIdx].weight = val;
 
@@ -548,51 +618,60 @@ class WorkoutApp {
     }
 
     this.saveCurrentSession();
-    const effectiveName = this.getEffectiveExerciseName(exId);
-    if (effectiveName) {
-      list.forEach((s, idx) => {
-        this.recordExerciseWeight(effectiveName, idx + 1, s.weight, s.reps, s.completed);
-      });
-    }
     this.renderWorkout();
   }
 
   updateSetReps(exId, setIdx, newReps) {
-    const list = this.session.logs[exId];
+    const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
+    if (this.session && !this.session.startTime) {
+      this.session.startTime = new Date().toISOString();
+    }
     const val = Math.max(0, parseInt(newReps, 10) || 0);
     list[setIdx].reps = val;
 
     this.saveCurrentSession();
-    const effectiveName = this.getEffectiveExerciseName(exId);
-    if (effectiveName) {
-      this.recordExerciseWeight(effectiveName, setIdx + 1, list[setIdx].weight, val, list[setIdx].completed);
-    }
     this.renderWorkout();
   }
 
   getPreviousExercisePerformance(exerciseName) {
-    // 1. Check persistent lastWeights store
-    if (this.lastWeights && this.lastWeights[exerciseName] && this.lastWeights[exerciseName].sets) {
-      const validSets = this.lastWeights[exerciseName].sets.filter(Boolean);
+    // 1. Check completed history (most recent first)
+    let historyEntry = null;
+    if (this.history && Array.isArray(this.history)) {
+      for (let i = this.history.length - 1; i >= 0; i--) {
+        const workout = this.history[i];
+        if (workout.exercises && workout.exercises[exerciseName] && Array.isArray(workout.exercises[exerciseName].sets)) {
+          const validSets = workout.exercises[exerciseName].sets.filter(s => s && (s.completed || s.reps > 0 || s.weight > 0));
+          if (validSets.length > 0) {
+            historyEntry = {
+              date: workout.date,
+              sets: validSets
+            };
+            break;
+          }
+        }
+      }
+    }
+
+    // 2. Check persistent lastWeights store as fallback
+    let lastWeightsEntry = null;
+    if (this.lastWeights && this.lastWeights[exerciseName] && Array.isArray(this.lastWeights[exerciseName].sets)) {
+      const validSets = this.lastWeights[exerciseName].sets.filter(s => s && (s.completed || s.reps > 0 || s.weight > 0));
       if (validSets.length > 0) {
-        return {
+        lastWeightsEntry = {
           date: this.lastWeights[exerciseName].date,
           sets: validSets
         };
       }
     }
-    // 2. Check completed history
-    for (let i = this.history.length - 1; i >= 0; i--) {
-      const workout = this.history[i];
-      if (workout.exercises && workout.exercises[exerciseName]) {
-        return {
-          date: workout.date,
-          sets: workout.exercises[exerciseName].sets
-        };
-      }
+
+    if (historyEntry && lastWeightsEntry) {
+      const histTime = new Date(historyEntry.date).getTime();
+      const lastTime = new Date(lastWeightsEntry.date).getTime();
+      return (lastTime > histTime) ? lastWeightsEntry : historyEntry;
     }
-    return null;
+
+    return historyEntry || lastWeightsEntry || null;
   }
 
   formatPreviousSetsSummary(sets) {
@@ -639,40 +718,38 @@ class WorkoutApp {
     let max1RM = 0;
     let bestReps = 0;
 
-    // Check history
-    this.history.forEach(h => {
-      if (h.exercises && h.exercises[exerciseName]) {
-        h.exercises[exerciseName].sets.forEach(s => {
-          if (s.weight > 0) {
-            const reps = s.reps || 1;
-            const est1RM = Math.round(s.weight * (1 + reps / 30));
-            if (est1RM > max1RM) max1RM = est1RM;
-            if (s.weight > maxWeight) {
-              maxWeight = s.weight;
-              bestReps = reps;
-            } else if (s.weight === maxWeight && reps > bestReps) {
-              bestReps = reps;
-            }
-          }
-        });
+    const processSet = (s) => {
+      if (!s) return;
+      const weight = parseFloat(s.weight) || 0;
+      const reps = parseInt(s.reps, 10) || 0;
+      if (weight > 0) {
+        const est1RM = Math.round(weight * (1 + (reps || 1) / 30));
+        if (est1RM > max1RM) max1RM = est1RM;
+        if (weight > maxWeight) {
+          maxWeight = weight;
+          bestReps = reps;
+        } else if (weight === maxWeight && reps > bestReps) {
+          bestReps = reps;
+        }
+      } else if (weight === 0 && reps > 0) {
+        if (maxWeight === 0) {
+          bestReps = Math.max(bestReps, reps);
+        }
       }
-    });
+    };
 
-    // Check persistent last weights
-    if (this.lastWeights && this.lastWeights[exerciseName] && this.lastWeights[exerciseName].sets) {
-      this.lastWeights[exerciseName].sets.filter(Boolean).forEach(s => {
-        if (s.weight > 0) {
-          const reps = s.reps || 1;
-          const est1RM = Math.round(s.weight * (1 + reps / 30));
-          if (est1RM > max1RM) max1RM = est1RM;
-          if (s.weight > maxWeight) {
-            maxWeight = s.weight;
-            bestReps = reps;
-          } else if (s.weight === maxWeight && reps > bestReps) {
-            bestReps = reps;
-          }
+    // Check history
+    if (this.history && Array.isArray(this.history)) {
+      this.history.forEach(h => {
+        if (h.exercises && h.exercises[exerciseName] && Array.isArray(h.exercises[exerciseName].sets)) {
+          h.exercises[exerciseName].sets.forEach(processSet);
         }
       });
+    }
+
+    // Check persistent last weights
+    if (this.lastWeights && this.lastWeights[exerciseName] && Array.isArray(this.lastWeights[exerciseName].sets)) {
+      this.lastWeights[exerciseName].sets.filter(Boolean).forEach(processSet);
     }
 
     return { maxWeight, max1RM, bestReps };
@@ -685,17 +762,14 @@ class WorkoutApp {
     this.timerDockEl = document.getElementById('timerDock');
     this.timerDisplayEl = document.getElementById('timerDisplay');
     this.timerProgressBarEl = document.getElementById('timerProgressBar');
-    this.timerSoundToggleEl = document.getElementById('timerSoundToggle');
 
     // Modals
     this.summaryModalEl = document.getElementById('summaryModal');
     this.summaryContentEl = document.getElementById('summaryContent');
-    this.analyticsModalEl = document.getElementById('analyticsModal');
     this.analyticsContentEl = document.getElementById('analyticsContent');
-    this.routineModalEl = document.getElementById('routineModal');
     this.routineEditorEl = document.getElementById('routineEditor');
 
-    // New Gym Power Modals
+    // Gym Power Modals
     this.swapModalEl = document.getElementById('swapModal');
     this.swapContentEl = document.getElementById('swapContent');
     this.swapModalTitleEl = document.getElementById('swapModalTitle');
@@ -708,31 +782,18 @@ class WorkoutApp {
 
     // Wake Lock Status Badge
     this.wakeLockBadgeEl = document.getElementById('wakeLockBadge');
-
-    // Time saver toggle
-    this.streamlineToggleBtn = document.getElementById('streamlineToggleBtn');
   }
 
   bindEvents() {
     // Navigation
     document.querySelectorAll('.nav-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', () => {
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         const view = btn.dataset.view;
         this.switchMainView(view);
       });
     });
-
-    // Streamline toggle
-    if (this.streamlineToggleBtn) {
-      this.streamlineToggleBtn.addEventListener('click', () => {
-        this.streamlineMode = !this.streamlineMode;
-        localStorage.setItem(this.storageKeys.streamlineMode, this.streamlineMode);
-        this.updateStreamlineButton();
-        this.renderWorkout();
-      });
-    }
 
     // Finish Workout button
     const finishBtn = document.getElementById('finishWorkoutBtn');
@@ -744,9 +805,10 @@ class WorkoutApp {
     document.getElementById('timerSkipBtn')?.addEventListener('click', () => this.stopTimer());
     document.getElementById('timerPlus30Btn')?.addEventListener('click', () => this.adjustTimer(30));
     document.getElementById('timerMinus30Btn')?.addEventListener('click', () => this.adjustTimer(-30));
-    document.getElementById('timerMinus15Btn')?.addEventListener('click', () => this.adjustTimer(-15));    // Modal closes
+
+    // Modal closes
     document.querySelectorAll('.close-modal-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', () => {
         const modal = btn.closest('.modal-backdrop');
         if (modal) modal.classList.remove('open');
       });
@@ -765,10 +827,6 @@ class WorkoutApp {
         document.querySelectorAll('.modal-backdrop.open').forEach(m => m.classList.remove('open'));
       }
     });
-
-    // Export & Reset buttons
-    document.getElementById('exportDataBtn')?.addEventListener('click', () => this.exportData());
-    document.getElementById('resetRoutineBtn')?.addEventListener('click', () => this.resetRoutine());
 
     // Import file input handler
     const fileInput = document.getElementById('importFileInput');
@@ -829,20 +887,8 @@ class WorkoutApp {
     }
   }
 
-  updateStreamlineButton() {
-    if (!this.streamlineToggleBtn) return;
-    if (this.streamlineMode) {
-      this.streamlineToggleBtn.classList.add('active');
-      this.streamlineToggleBtn.innerHTML = '⚡ Streamlined (ON)';
-    } else {
-      this.streamlineToggleBtn.classList.remove('active');
-      this.streamlineToggleBtn.innerHTML = '⚡ Streamlined (OFF)';
-    }
-  }
-
   render() {
     this.renderDaySelector();
-    this.updateStreamlineButton();
     this.renderWorkout();
   }
 
@@ -893,7 +939,7 @@ class WorkoutApp {
     const optionalExercises = currentDay.exercises.filter(ex => ex.isOptional);
 
     const hasSuperset = coreExercises.some(ex => ex.superset);
-    const totalCoreSets = coreExercises.reduce((sum, ex) => sum + ex.sets, 0);
+    const totalCoreSets = coreExercises.reduce((sum, ex) => sum + ((this.session.logs[ex.id] && this.session.logs[ex.id].length) || ex.sets), 0);
     const completedCoreSets = coreExercises.reduce((sum, ex) => {
       const logs = this.session.logs[ex.id] || [];
       return sum + logs.filter(s => s.completed).length;
@@ -985,13 +1031,13 @@ class WorkoutApp {
     const completedSets = sessionSets.filter(s => s.completed);
     const setsHittingMax = completedSets.filter(s => (s.reps || 0) >= maxTarget);
     const targetSetsCount = (this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets) || sessionSets.length || 3;
-    const allCurrentHit = sessionSets.length >= targetSetsCount && completedSets.length === sessionSets.length && completedSets.every(s => s.completed && (s.reps || 0) >= maxTarget);
-    const prevProgression = this.getPreviousProgressionFlag(effectiveName, effectiveTargetReps, targetSetsCount);
+    const allCurrentHit = !this.deloadActive && sessionSets.length >= targetSetsCount && completedSets.length === sessionSets.length && completedSets.every(s => s.completed && (s.reps || 0) >= maxTarget);
+    const prevProgression = this.getPreviousProgressionFlag(effectiveName, effectiveTargetReps, targetSetsCount, ex);
     const nextIncompleteIdx = sessionSets.findIndex(s => !s.completed);
     const prevSummaryText = this.formatPreviousSetsSummary(prev ? prev.sets : null);
 
     return `
-      <div class="exercise-card ${isAllDone ? 'completed' : ''} ${isBonus ? 'is-optional' : ''} ${ex.superset ? 'is-superset' : ''}" id="card_${ex.id}">
+      <div class="exercise-card ${isAllDone ? 'completed' : ''} ${isBonus ? 'is-optional' : ''} ${ex.superset ? 'is-superset' : ''}" id="card_${ex.id}" data-exid="${ex.id}">
         
         ${ex.superset && ex.superset.tag.endsWith('A') ? `
           <div class="superset-guide-banner">
@@ -1030,7 +1076,7 @@ class WorkoutApp {
 
           <div class="card-tools-row">
             ${prevSummaryText ? `
-              <button type="button" class="prev-weight-pill-btn" data-exname="${this.escapeHtml(ex.name)}" title="Tap to view performance log">⏱️ Last: ${prevSummaryText} ▾</button>
+              <button type="button" class="prev-weight-pill-btn" data-exname="${this.escapeHtml(effectiveName)}" title="Tap to view performance log">⏱️ Last: ${prevSummaryText} ▾</button>
             ` : '<div class="card-tools-spacer"></div>'}
             <div class="card-actions-pills">
               <button type="button" class="action-pill-btn warmup-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(displayName)}" title="Calculate neural warmup ramp sets">
@@ -1067,7 +1113,7 @@ class WorkoutApp {
                   <span>ℹ️ Setup & Form Guide</span>
                   <span class="chevron">▾</span>
                 </summary>
-                <div class="form-notes-content">${effectiveNotes}</div>
+                <div class="form-notes-content">${this.escapeHtml(effectiveNotes)}</div>
               </details>
             ` : ''}
             
@@ -1089,19 +1135,28 @@ class WorkoutApp {
             </div>
           </div>
 
-          ${prevProgression.unlocked ? `
+          ${prevProgression.unlocked ? (() => {
+            const isBumped = sessionSets.length > 0 && sessionSets[0].weight > prevProgression.topWeight;
+            return `
             <div class="progression-banner">
               <div class="progression-banner-left">
                 <span class="progression-icon">🚀</span>
                 <div class="progression-text">
-                  <strong>Weight Increase Flag:</strong> Hit ${prevProgression.maxReps} reps on all ${prevProgression.setsCount} sets last workout! Ready to increase weight today (+5 lbs recommended).
+                  <strong>Double Progression Auto-Bump (+${prevProgression.increment} lbs):</strong> Hit ${prevProgression.maxReps} reps across all ${prevProgression.setsCount} sets last workout! ${isBumped ? `Weight auto-bumped +${prevProgression.increment} lbs.` : `Staying at ${prevProgression.topWeight} lbs.`}
                 </div>
               </div>
-              <button class="bump-weight-btn" data-exid="${ex.id}" data-bump="5" title="Add 5 lbs to all sets today">
-                +5 lbs All Sets
-              </button>
+              ${isBumped ? `
+                <button class="bump-weight-btn revert" data-exid="${ex.id}" data-bump="-${prevProgression.increment}" title="Revert to previous session weight (${prevProgression.topWeight} lbs)">
+                  ↩️ Keep ${prevProgression.topWeight} lbs (-${prevProgression.increment} lbs)
+                </button>
+              ` : `
+                <button class="bump-weight-btn" data-exid="${ex.id}" data-bump="${prevProgression.increment}" title="Apply +${prevProgression.increment} lbs progression bump">
+                  +${prevProgression.increment} lbs All Sets
+                </button>
+              `}
             </div>
-          ` : ''}
+            `;
+          })() : ''}
 
           <div class="sets-table-wrap">
             <table class="sets-table">
@@ -1117,13 +1172,20 @@ class WorkoutApp {
               <tbody>
                 ${sessionSets.map((s, sIdx) => {
                   const prevSet = prev && prev.sets && prev.sets[sIdx];
-                  const prevText = prevSet && prevSet.weight > 0 ? `${prevSet.weight}×${prevSet.reps}` : '—';
+                  let prevText = '—';
+                  if (prevSet) {
+                    if (prevSet.weight > 0) {
+                      prevText = `${prevSet.weight}×${prevSet.reps}`;
+                    } else if (prevSet.weight === 0 && prevSet.reps > 0) {
+                      prevText = `BW×${prevSet.reps}`;
+                    }
+                  }
                   const isActiveNext = sIdx === nextIncompleteIdx;
                   const target = this.getSetTarget(ex, sIdx, effectiveName);
 
                   // Micro-PR badge calculation
                   let microBadge = '';
-                  if (s.completed && prevSet && prevSet.weight > 0) {
+                  if (s.completed && prevSet && (prevSet.weight > 0 || (prevSet.weight === 0 && prevSet.reps > 0))) {
                     const weightDiff = (s.weight || 0) - (prevSet.weight || 0);
                     const repsDiff = (s.reps || 0) - (prevSet.reps || 0);
                     if (weightDiff > 0) {
@@ -1143,8 +1205,8 @@ class WorkoutApp {
                       </td>
                       <td class="target-cell">
                         <div class="target-val">${target.targetRepsDisplay} <span style="font-size: 0.65rem; color: var(--text-muted); font-weight: normal;">reps</span></div>
-                        ${target.targetWeight > 0 ? `<div class="target-wt">${target.targetWeightDisplay} lbs</div>` : ''}
-                        ${target.isProgressionIncrease ? `<span class="target-bump-badge">▲ +${this.getExerciseIncrement(ex)}</span>` : ''}
+                        ${target.targetWeight > 0 ? `<div class="target-wt">${target.targetWeightDisplay} lbs</div>` : (target.targetWeight === 0 && ex.startingWeight && ex.startingWeight.toLowerCase().includes('bodyweight') ? `<div class="target-wt">Bodyweight</div>` : '')}
+                        ${target.isProgressionIncrease ? `<span class="target-bump-badge">▲ +${this.getExerciseIncrement(ex, effectiveName)} lbs</span>` : ''}
                       </td>
                       <td>
                         <div class="stepper-wrap weight-stepper">
@@ -1384,17 +1446,15 @@ class WorkoutApp {
     const setObj = this.session.logs[exId] && this.session.logs[exId][setIdx];
     if (!setObj) return;
 
+    if (this.session && !this.session.startTime) {
+      this.session.startTime = new Date().toISOString();
+    }
+
     setObj.completed = !setObj.completed;
     this.saveCurrentSession();
 
     // Tactile haptic pulse on completing set
     this.triggerHaptic([40]);
-
-    const ex = this.findExerciseById(exId);
-    const effectiveName = this.getEffectiveExerciseName(exId, ex);
-    if (effectiveName) {
-      this.recordExerciseWeight(effectiveName, setIdx + 1, setObj.weight, setObj.reps, setObj.completed);
-    }
 
     // Trigger Rest Timer if marking as completed
     if (setObj.completed) {
@@ -1496,13 +1556,24 @@ class WorkoutApp {
     const exId = dock ? dock.dataset.activeExid : null;
     if (!exId) return;
 
+    // If target exercise is an optional finisher and drawer is closed, open it
+    const currentDay = this.routine && this.routine[this.activeDayIndex];
+    const targetEx = currentDay && currentDay.exercises.find(e => e.id === exId);
+    if (targetEx && targetEx.isOptional) {
+      this.expandedOptionalDays.add(currentDay.id);
+      const optList = document.getElementById('optionalCardsList');
+      if (optList) optList.classList.add('open');
+      const optPill = document.getElementById('optionalTogglePill');
+      if (optPill) optPill.textContent = 'Hide Finisher ▴';
+    }
+
     // Uncollapse if collapsed
     if (this.collapsedCards.has(exId)) {
       this.collapsedCards.delete(exId);
       this.renderWorkout();
     }
 
-    const card = document.querySelector(`.exercise-card[data-exid="${exId}"]`);
+    const card = document.getElementById('card_' + exId) || document.querySelector(`.exercise-card[data-exid="${exId}"]`);
     if (card) {
       card.scrollIntoView({ behavior: 'smooth', block: 'center' });
       card.style.transition = 'box-shadow 0.3s ease, border-color 0.3s ease';
@@ -1649,12 +1720,21 @@ class WorkoutApp {
     }
 
     if (this.swapContentEl) {
+      const isCurrentlySwapped = Boolean(this.session && this.session.swaps && this.session.swaps[exId]);
       this.swapContentEl.innerHTML = `
         <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-md); padding: 12px; margin-bottom: 14px;">
           <div style="font-size: 0.74rem; color: var(--text-muted); text-transform: uppercase; font-weight: 800; letter-spacing: 0.05em;">Current Exercise</div>
           <div style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-top: 2px;">${this.escapeHtml(currentName)}</div>
           <div style="font-size: 0.78rem; color: var(--accent-blue); margin-top: 2px;">Target: ${ex ? ex.targetReps : '8–12'} reps • ${ex ? ex.muscle : ''}</div>
         </div>
+
+        ${isCurrentlySwapped ? `
+          <div style="margin-bottom: 14px;">
+            <button type="button" id="restoreSwapBtn" style="width: 100%; padding: 10px; background: rgba(59, 130, 246, 0.15); border: 1px solid var(--accent-blue); color: var(--accent-blue); border-radius: var(--radius-md); font-weight: 700; cursor: pointer;">
+              ↩️ Restore Original (${this.escapeHtml(ex ? ex.name : exName)})
+            </button>
+          </div>
+        ` : ''}
 
         <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px;">
           Select Alternative (${subs.length} available):
@@ -1665,7 +1745,7 @@ class WorkoutApp {
             <div class="swap-option-card">
               <div class="swap-option-header">
                 <div>
-                  <span class="swap-type-badge ${sub.type.toLowerCase()}">${sub.type}</span>
+                  <span class="swap-type-badge ${sub.type.toLowerCase().replace(/\s+/g, '-')}">${sub.type}</span>
                   <div class="swap-option-name">${this.escapeHtml(sub.name)}</div>
                 </div>
                 ${sub.videoUrl ? `
@@ -1687,6 +1767,26 @@ class WorkoutApp {
           `).join('')}
         </div>
       `;
+
+      // Bind restore button
+      document.getElementById('restoreSwapBtn')?.addEventListener('click', () => {
+        if (this.session && this.session.swaps) {
+          delete this.session.swaps[exId];
+        }
+        // Recalculate uncompleted sets back to original targets
+        const sets = (this.session && this.session.logs && this.session.logs[exId]) || [];
+        sets.forEach((s, sIdx) => {
+          if (!s.completed && ex) {
+            const target = this.getSetTarget(ex, sIdx, ex.name);
+            s.weight = target.targetWeight;
+            s.reps = target.targetReps;
+          }
+        });
+        this.saveCurrentSession();
+        if (this.swapModalEl) this.swapModalEl.classList.remove('open');
+        this.showToast(`↩️ Restored original exercise "${ex ? ex.name : exName}"!`);
+        this.renderWorkout();
+      });
 
       // Bind swap action buttons
       this.swapContentEl.querySelectorAll('.swap-btn-today').forEach(btn => {
@@ -1717,15 +1817,30 @@ class WorkoutApp {
       if (sub.targetReps) ex.targetReps = sub.targetReps;
       if (sub.notes) ex.notes = sub.notes;
       if (sub.videoUrl) ex.videoUrl = sub.videoUrl;
+      ex.increment = this.getExerciseIncrement(sub, sub.name);
+      if (this.session && this.session.swaps) {
+        delete this.session.swaps[exId];
+      }
       this.saveRoutine();
       this.showToast(`✅ Replaced "${oldName}" with "${sub.name}" permanently in your routine!`);
     } else {
       // Today only: mark in session
       if (!this.session.swaps) this.session.swaps = {};
       this.session.swaps[exId] = sub;
-      this.saveCurrentSession();
       this.showToast(`⚡ Swapped to "${sub.name}" for today's workout!`);
     }
+
+    // Recalculate uncompleted sets in this.session.logs[exId]
+    const effectiveName = sub.name;
+    const sets = (this.session && this.session.logs && this.session.logs[exId]) || [];
+    sets.forEach((s, sIdx) => {
+      if (!s.completed) {
+        const target = this.getSetTarget(ex, sIdx, effectiveName);
+        s.weight = target.targetWeight;
+        s.reps = target.targetReps;
+      }
+    });
+    this.saveCurrentSession();
 
     if (this.swapModalEl) this.swapModalEl.classList.remove('open');
     this.renderWorkout();
@@ -1892,7 +2007,7 @@ class WorkoutApp {
               <div class="quick-history-session-card">
                 <div class="quick-history-session-header">
                   <div class="quick-history-date">📅 ${dateStr}</div>
-                  <div class="quick-history-day">${item.dayTitle || ''}</div>
+                  <div class="quick-history-day">${this.escapeHtml(item.dayTitle || '')}</div>
                 </div>
                 <div style="font-size: 0.85rem; font-weight: 700; color: var(--accent-blue); margin-bottom: 4px;">
                   ${item.sets ? item.sets.filter(Boolean).map(s => `${s.weight}lbs×${s.reps}`).join(' • ') : '—'}
@@ -2030,7 +2145,9 @@ class WorkoutApp {
       this.timer.intervalId = null;
     }
     this.timer.active = false;
-    this.releaseWakeLock();
+    if (this.activeView !== 'workout' || !this.wakeLockEnabled) {
+      this.releaseWakeLock();
+    }
     if (clearStorage) {
       localStorage.removeItem(this.storageKeys.timerTargetEnd);
       localStorage.removeItem(this.storageKeys.timerTotalDuration);
@@ -2123,64 +2240,98 @@ class WorkoutApp {
   // Workout Completion & Summary
   showWorkoutSummary() {
     const currentDay = this.routine[this.activeDayIndex];
-    let totalVolume = 0;
+    if (!currentDay) return;
+
     let totalCompletedSets = 0;
+    currentDay.exercises.forEach(ex => {
+      const sets = (this.session && this.session.logs && this.session.logs[ex.id]) || [];
+      totalCompletedSets += sets.filter(s => s.completed).length;
+    });
+
+    if (totalCompletedSets === 0) {
+      this.showToast('⚠️ No completed sets to finish. Complete at least one set first!');
+      return;
+    }
+
+    let durationMins = Math.max(15, totalCompletedSets * 3);
+    if (this.session && this.session.startTime) {
+      const startMs = new Date(this.session.startTime).getTime();
+      const elapsedMins = Math.round((Date.now() - startMs) / 60000);
+      if (elapsedMins > 0 && elapsedMins <= 240) {
+        durationMins = elapsedMins;
+      }
+    }
+
+    let totalVolume = 0;
     const newPRs = [];
     const weightIncreaseUnlocked = [];
-
     const recordedExercises = {};
 
     currentDay.exercises.forEach(ex => {
       const sets = this.session.logs[ex.id] || [];
       const completedSets = sets.filter(s => s.completed);
-      totalCompletedSets += completedSets.length;
+      if (completedSets.length === 0) return;
+
       const effectiveName = this.getEffectiveExerciseName(ex.id, ex);
       const isSwapped = Boolean(this.session && this.session.swaps && this.session.swaps[ex.id]);
-      const maxTarget = this.getMaxTargetReps(ex.targetReps);
+      const effectiveTargetReps = isSwapped && this.session.swaps[ex.id].targetReps ? this.session.swaps[ex.id].targetReps : ex.targetReps;
+      const maxTarget = this.getMaxTargetReps(effectiveTargetReps);
+      const targetSetsCount = (this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets) || sets.length || 3;
 
-      // Check double progression: only unlocked if ALL sets hit top end target reps!
-      const targetSetsCount = ex.sets || sets.length || 3;
-      const allHit = completedSets.length >= targetSetsCount && completedSets.every(s => (s.reps || 0) >= maxTarget);
-      if (allHit) {
+      // Check double progression: only unlocked if ALL sets hit top end target reps and NOT deloading!
+      if (!this.deloadActive && completedSets.length >= targetSetsCount && completedSets.every(s => (s.reps || 0) >= maxTarget)) {
         const topW = Math.max(...completedSets.map(s => s.weight || 0));
+        const increment = this.getExerciseIncrement(ex, effectiveName);
         weightIncreaseUnlocked.push({
           name: effectiveName,
           reps: maxTarget,
           setsCount: completedSets.length,
-          topWeight: topW
+          topWeight: topW,
+          increment
         });
       }
+
+      // Check PRs before committing new sets
+      const priorPR = this.getPersonalRecord(effectiveName);
+      let hitNewPR = false;
+      let prDescription = '';
 
       completedSets.forEach(s => {
         const vol = (s.weight || 0) * (s.reps || 0);
         totalVolume += vol;
 
-        // Check PR on effective exercise name
-        const pr = this.getPersonalRecord(effectiveName);
-        if (s.weight > pr.maxWeight && pr.maxWeight > 0) {
-          newPRs.push(`${effectiveName}: New Weight Record (${s.weight} lbs)`);
+        if (s.weight > priorPR.maxWeight && priorPR.maxWeight > 0) {
+          hitNewPR = true;
+          prDescription = `${effectiveName}: New Weight Record (${s.weight} lbs)`;
+        } else if (s.weight === 0 && s.reps > priorPR.bestReps && priorPR.bestReps > 0) {
+          hitNewPR = true;
+          prDescription = `${effectiveName}: New Rep Record (BW × ${s.reps})`;
         }
       });
 
-      if (completedSets.length > 0) {
-        recordedExercises[effectiveName] = {
-          swappedFrom: isSwapped ? ex.name : null,
-          sets: sets.map(s => ({
-            setNum: s.setNum,
-            weight: s.weight,
-            reps: s.reps,
-            completed: s.completed,
-            rir: typeof s.rir === 'number' ? s.rir : null,
-            type: s.type || 'working'
-          }))
-        };
-        sets.forEach(s => {
-          this.recordExerciseWeight(effectiveName, s.setNum, s.weight, s.reps, s.completed);
-        });
+      if (hitNewPR && prDescription && !newPRs.includes(prDescription)) {
+        newPRs.push(prDescription);
       }
-    });
 
-    const durationMins = Math.max(15, Math.round((new Date() - new Date(this.session.startTime)) / 60000));
+      recordedExercises[effectiveName] = {
+        swappedFrom: isSwapped ? ex.name : null,
+        sets: sets.map(s => ({
+          setNum: s.setNum,
+          weight: s.weight,
+          reps: s.reps,
+          completed: s.completed,
+          rir: typeof s.rir === 'number' ? s.rir : null,
+          type: s.type || 'working'
+        }))
+      };
+
+      // Record to lastWeights NOW as workout is completed
+      sets.forEach(s => {
+        if (s.completed) {
+          this.recordExerciseWeight(effectiveName, s.setNum, s.weight, s.reps, true);
+        }
+      });
+    });
 
     // Save to history
     const workoutRecord = {
@@ -2229,7 +2380,7 @@ class WorkoutApp {
           <h4>🚀 Weight Increases Unlocked for Next Workout!</h4>
           <ul>
             ${weightIncreaseUnlocked.map(item => `
-              <li><strong>${this.escapeHtml(item.name)}</strong>: Hit ${item.reps} reps on all ${item.setsCount} sets (${item.topWeight} lbs) — Ready to increase weight (+5 lbs) next workout!</li>
+              <li><strong>${this.escapeHtml(item.name)}</strong>: Hit ${item.reps} reps across all ${item.setsCount} sets (${item.topWeight} lbs) — Ready to increase weight (+${item.increment} lbs) next workout!</li>
             `).join('')}
           </ul>
         </div>
@@ -2320,38 +2471,49 @@ class WorkoutApp {
     if (!exHistory || exHistory.length === 0) {
       return `
         <div style="text-align: center; padding: 20px 12px; color: var(--text-muted); font-size: 0.85rem; background: rgba(255,255,255,0.02); border-radius: var(--radius-md);">
-          <span>📊 Complete sets with weight for this lift to view your dynamic 1RM strength curve!</span>
+          <span>📊 Complete sets for this lift to view your dynamic progress chart here!</span>
         </div>
       `;
     }
 
-    // Extract best e1RM for each session
+    const hasAnyWeighted = exHistory.some(session => (session.sets || []).some(s => s && s.weight > 0));
+    const isBodyweight = !hasAnyWeighted;
+
+    // Extract best e1RM or best Reps for each session
     const points = [];
     exHistory.forEach((session, sIdx) => {
-      let maxE1RM = 0;
+      let metricVal = 0;
       let topWeight = 0;
       let topReps = 0;
       (session.sets || []).forEach(s => {
-        if (s && s.weight > 0) {
+        if (!s) return;
+        if (!isBodyweight && s.weight > 0) {
           const reps = s.reps || 1;
           const e1rm = Math.round(s.weight * (1 + reps / 30));
-          if (e1rm > maxE1RM) {
-            maxE1RM = e1rm;
+          if (e1rm > metricVal) {
+            metricVal = e1rm;
             topWeight = s.weight;
             topReps = reps;
           }
+        } else if (isBodyweight && s.reps > 0) {
+          if (s.reps > metricVal) {
+            metricVal = s.reps;
+            topWeight = 0;
+            topReps = s.reps;
+          }
         }
       });
-      if (maxE1RM > 0) {
+      if (metricVal > 0) {
         const d = new Date(session.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         points.push({
           idx: sIdx,
           date: d,
           fullDate: new Date(session.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
           dayTitle: session.dayTitle || 'Workout',
-          e1rm: maxE1RM,
+          e1rm: metricVal,
           weight: topWeight,
-          reps: topReps
+          reps: topReps,
+          isBodyweight
         });
       }
     });
@@ -2359,7 +2521,7 @@ class WorkoutApp {
     if (points.length === 0) {
       return `
         <div style="text-align: center; padding: 20px 12px; color: var(--text-muted); font-size: 0.85rem; background: rgba(255,255,255,0.02); border-radius: var(--radius-md);">
-          <span>📊 Enter your weights during your workout and they will automatically build your strength progress chart here!</span>
+          <span>📊 Complete sets for this lift to view your dynamic progress chart here!</span>
         </div>
       `;
     }
@@ -2371,6 +2533,8 @@ class WorkoutApp {
     const diffSign = diff > 0 ? `+${diff}` : `${diff}`;
     const diffPct = firstPoint.e1rm > 0 ? Math.round((diff / firstPoint.e1rm) * 100) : 0;
     const allTimeBest = Math.max(...points.map(p => p.e1rm));
+    const chartTitle = isBodyweight ? '📈 Rep Progression Trend (Bodyweight)' : '📈 Estimated 1-Rep Max Trend';
+    const unitLabel = isBodyweight ? 'reps' : 'lbs';
 
     // SVG geometry
     const svgW = 340;
@@ -2413,13 +2577,13 @@ class WorkoutApp {
       <div class="svg-chart-wrapper">
         <div class="chart-headline-banner">
           <div>
-            <div class="chart-headline-title">📈 Estimated 1-Rep Max Trend</div>
-            <div class="chart-headline-sub">${points.length} session${points.length > 1 ? 's' : ''} logged • All-Time Peak: <strong style="color: #60a5fa;">${allTimeBest} lbs</strong></div>
+            <div class="chart-headline-title">${chartTitle}</div>
+            <div class="chart-headline-sub">${points.length} session${points.length > 1 ? 's' : ''} logged • All-Time Peak: <strong style="color: #60a5fa;">${allTimeBest} ${unitLabel}</strong></div>
           </div>
           <div style="text-align: right;">
             ${points.length > 1 ? `
               <span class="micro-badge ${diff >= 0 ? 'weight-pr' : 'reps-pr'}" style="font-size: 0.75rem; padding: 2px 8px;">
-                ${diff >= 0 ? '🚀' : '📉'} ${diffSign} lbs (${diffPct > 0 ? '+' : ''}${diffPct}%)
+                ${diff >= 0 ? '🚀' : '📉'} ${diffSign} ${unitLabel} (${diffPct > 0 ? '+' : ''}${diffPct}%)
               </span>
             ` : `<span style="font-size: 0.75rem; color: var(--accent-emerald);">Baseline Session</span>`}
           </div>
@@ -2455,12 +2619,13 @@ class WorkoutApp {
                     fill="#1e293b" stroke="#38bdf8" stroke-width="2.2" 
                     class="chart-data-dot" 
                     style="cursor: pointer;"
-                    data-date="${c.fullDate}" 
-                    data-day="${c.dayTitle}"
+                    data-date="${this.escapeHtml(c.fullDate)}" 
+                    data-day="${this.escapeHtml(c.dayTitle)}"
                     data-e1rm="${c.e1rm}" 
                     data-weight="${c.weight}" 
-                    data-reps="${c.reps}" />
-            <text x="${c.x.toFixed(1)}" y="${(padTop + plotH + 16).toFixed(1)}" text-anchor="middle" fill="var(--text-muted)" font-size="8">${c.date}</text>
+                    data-reps="${c.reps}"
+                    data-isbw="${c.isBodyweight}" />
+            <text x="${c.x.toFixed(1)}" y="${(padTop + plotH + 16).toFixed(1)}" text-anchor="middle" fill="var(--text-muted)" font-size="8">${this.escapeHtml(c.date)}</text>
           `).join('')}
         </svg>
 
@@ -2513,7 +2678,7 @@ class WorkoutApp {
 
           // Synergist secondary muscle credits
           if (typeof SECONDARY_MUSCLE_CONTRIBUTIONS !== 'undefined') {
-            const effectiveName = (this.swappedExercises && this.swappedExercises[ex.id]) ? this.swappedExercises[ex.id] : ex.name;
+            const effectiveName = (this.session && this.session.swaps && this.session.swaps[ex.id]) ? this.session.swaps[ex.id].name : ex.name;
             for (const [key, contribs] of Object.entries(SECONDARY_MUSCLE_CONTRIBUTIONS)) {
               if (effectiveName === key || effectiveName.startsWith(key)) {
                 Object.entries(contribs).forEach(([targetMuscle, creditFraction]) => {
@@ -2616,8 +2781,11 @@ class WorkoutApp {
       return `
         <div class="history-item">
           <div class="history-item-header">
-            <span class="history-item-title">${h.dayTitle}</span>
-            <span class="history-item-date">${d}</span>
+            <span class="history-item-title">${this.escapeHtml(h.dayTitle)}</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="history-item-date">${d}</span>
+              <button type="button" class="history-delete-btn" data-wid="${h.id}" title="Delete this workout from history" aria-label="Delete workout">🗑️</button>
+            </div>
           </div>
           <div class="history-pills">
             <span class="history-pill">🏋️ ${(h.totalVolume || 0).toLocaleString()} lbs</span>
@@ -2632,7 +2800,7 @@ class WorkoutApp {
           <div class="history-details-drawer" id="drawer_${h.id}">
             ${exEntries.map(([exName, exData]) => `
               <div style="margin-bottom: 8px;">
-                <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-primary);">${exName}</div>
+                <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-primary);">${this.escapeHtml(exName)}</div>
                 <div class="progress-set-chips" style="margin-top: 4px;">
                   ${(exData.sets || []).map(s => `
                     <span class="progress-set-chip">Set ${s.setNum}: ${s.weight} lbs × ${s.reps}${s.completed ? ' ✓' : ''}</span>
@@ -2670,10 +2838,10 @@ class WorkoutApp {
           </div>
           <select class="exercise-select" id="progressExerciseSelect">
             ${this.routine.map(day => `
-              <optgroup label="${day.title}">
+              <optgroup label="${this.escapeHtml(day.title)}">
                 ${day.exercises.map(ex => `
-                  <option value="${ex.name}" ${ex.name === this.selectedProgressExercise ? 'selected' : ''}>
-                    ${ex.name}
+                  <option value="${this.escapeHtml(ex.name)}" ${ex.name === this.selectedProgressExercise ? 'selected' : ''}>
+                    ${this.escapeHtml(ex.name)}
                   </option>
                 `).join('')}
               </optgroup>
@@ -2708,7 +2876,7 @@ class WorkoutApp {
               return `
                 <div class="progress-session-row">
                   <div class="progress-session-top">
-                    <span class="progress-session-date">${d} (${s.dayTitle})</span>
+                    <span class="progress-session-date">${d} (${this.escapeHtml(s.dayTitle || '')})</span>
                     <span class="progress-session-topweight">Top: ${s.maxWeight} lbs</span>
                   </div>
                   <div class="progress-set-chips">
@@ -2778,7 +2946,12 @@ class WorkoutApp {
         const e1rm = dot.dataset.e1rm;
         const w = dot.dataset.weight;
         const r = dot.dataset.reps;
-        tip.innerHTML = `<strong>📅 ${date} (${day})</strong>: Best set <strong>${w} lbs × ${r} reps</strong> → Est. 1-Rep Max: <strong style="color: #60a5fa;">${e1rm} lbs</strong>`;
+        const isBw = dot.dataset.isbw === 'true';
+        if (isBw) {
+          tip.innerHTML = `<strong>📅 ${date} (${day})</strong>: Best set <strong>Bodyweight × ${r} reps</strong>`;
+        } else {
+          tip.innerHTML = `<strong>📅 ${date} (${day})</strong>: Best set <strong>${w} lbs × ${r} reps</strong> → Est. 1-Rep Max: <strong style="color: #60a5fa;">${e1rm} lbs</strong>`;
+        }
       };
       dot.addEventListener('click', showTip);
       dot.addEventListener('mouseenter', showTip);
@@ -2795,6 +2968,52 @@ class WorkoutApp {
         }
       });
     });
+
+    // Bind workout history deletion
+    this.analyticsContentEl.querySelectorAll('.history-delete-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const wid = btn.dataset.wid;
+        this.deleteWorkoutFromHistory(wid);
+      });
+    });
+  }
+
+  deleteWorkoutFromHistory(workoutId) {
+    if (!confirm('Are you sure you want to delete this workout from your history?')) return;
+    this.history = this.history.filter(h => h.id !== workoutId);
+    this.saveHistory();
+    this.rebuildLastWeightsFromHistory();
+    this.showToast('🗑️ Workout deleted from history.');
+    this.renderAnalytics();
+  }
+
+  rebuildLastWeightsFromHistory() {
+    this.lastWeights = {};
+    if (this.history && Array.isArray(this.history)) {
+      this.history.forEach(workout => {
+        if (!workout.exercises) return;
+        Object.entries(workout.exercises).forEach(([exName, exData]) => {
+          if (!this.lastWeights[exName]) {
+            this.lastWeights[exName] = { sets: [], date: workout.date };
+          }
+          if (Array.isArray(exData.sets)) {
+            exData.sets.forEach(s => {
+              if (s && s.completed) {
+                const sIdx = (s.setNum || 1) - 1;
+                this.lastWeights[exName].sets[sIdx] = {
+                  weight: s.weight,
+                  reps: s.reps,
+                  completed: true
+                };
+                this.lastWeights[exName].date = workout.date;
+              }
+            });
+          }
+        });
+      });
+    }
+    this.saveLastWeights();
   }
 
   // Routine & Customizer View
@@ -2865,9 +3084,9 @@ class WorkoutApp {
         <h4 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 12px;">Active Workout Days</h4>
         ${this.routine.map(day => `
           <div style="padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-            <div style="font-weight: 700; font-size: 0.95rem; color: var(--accent-blue);">${day.title} (${day.exercises.length} lifts)</div>
+            <div style="font-weight: 700; font-size: 0.95rem; color: var(--accent-blue);">${this.escapeHtml(day.title)} (${day.exercises.length} lifts)</div>
             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
-              ${day.exercises.map(e => `${e.name} (${e.sets}×${e.targetReps}${e.isOptional ? ' - optional' : ''})`).join(' • ')}
+              ${day.exercises.map(e => `${this.escapeHtml(e.name)} (${e.sets}×${this.escapeHtml(e.targetReps)}${e.isOptional ? ' - optional' : ''})`).join(' • ')}
             </div>
           </div>
         `).join('')}
@@ -2914,6 +3133,8 @@ class WorkoutApp {
         localStorage.removeItem(this.storageKeys.deloadStartDate);
         this.showToast('💪 Deload Week deactivated. Full training intensity restored.');
       }
+      this.session = this.loadSession();
+      this.saveCurrentSession();
       this.render();
     });
 
@@ -2979,7 +3200,7 @@ class WorkoutApp {
       exerciseNotes: this.exerciseNotes,
       lastWeights: this.lastWeights,
       wakeLockEnabled: this.wakeLockEnabled,
-      routineRev: localStorage.getItem(this.storageKeys.routineRev) || '12',
+      routineRev: localStorage.getItem(this.storageKeys.routineRev) || '13',
       exportedAt: new Date().toISOString()
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
