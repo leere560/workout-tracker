@@ -1,0 +1,8 @@
+{
+  "name": "machine-master-workout-tracker",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "check": "node --check app.js && node --check routine-data.js && node --check sw.js && node --check update-manager.js && node --check accessibility.js"
+  }
+}

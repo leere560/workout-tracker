@@ -1,0 +1,200 @@
+[
+  {
+    "id": "wed___upper_a",
+    "title": "Wed - Upper A",
+    "exercises": [
+      {
+        "id": "wed___upper_a_ex1",
+        "name": "Converging Machine Chest Press",
+        "sets": 3,
+        "targetReps": "6–8"
+      },
+      {
+        "id": "wed___upper_a_ex2",
+        "name": "Neutral-Grip Lat Pulldown",
+        "sets": 3,
+        "targetReps": "8–10"
+      },
+      {
+        "id": "wed___upper_a_ex3",
+        "name": "Chest-Supported Machine Row",
+        "sets": 3,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "wed___upper_a_ex4",
+        "name": "Cable Lateral Raise",
+        "sets": 3,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "wed___upper_a_ex5",
+        "name": "Triceps Rope Pushdown",
+        "sets": 3,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "wed___upper_a_ex6",
+        "name": "Cable Biceps Curl",
+        "sets": 3,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "wed___upper_a_opt_facepull",
+        "name": "Cable Face Pull (Rear Delts & Posture)",
+        "sets": 2,
+        "targetReps": "10–12"
+      }
+    ]
+  },
+  {
+    "id": "fri___lower_a",
+    "title": "Fri - Lower A",
+    "exercises": [
+      {
+        "id": "fri___lower_a_ex1",
+        "name": "Hack Squat (or 45° Leg Press)",
+        "sets": 3,
+        "targetReps": "6–8"
+      },
+      {
+        "id": "fri___lower_a_ex2",
+        "name": "Leg Extension",
+        "sets": 4,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "fri___lower_a_ex3",
+        "name": "Seated Leg Curl",
+        "sets": 4,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "fri___lower_a_ex4",
+        "name": "Standing / Leg Press Calf Raise",
+        "sets": 4,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "fri___lower_a_ex5",
+        "name": "Kneeling Cable Crunch",
+        "sets": 3,
+        "targetReps": "10–12"
+      }
+    ]
+  },
+  {
+    "id": "sat___upper_b",
+    "title": "Sat - Upper B",
+    "exercises": [
+      {
+        "id": "sat___upper_b_ex1",
+        "name": "Smith Machine Incline Press (30°)",
+        "sets": 3,
+        "targetReps": "6–8"
+      },
+      {
+        "id": "sat___upper_b_ex2",
+        "name": "Half-Kneeling Single-Arm Pulldown",
+        "sets": 3,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "sat___upper_b_ex3",
+        "name": "Machine Overhead Shoulder Press",
+        "sets": 3,
+        "targetReps": "8–10"
+      },
+      {
+        "id": "sat___upper_b_ex_cable_row",
+        "name": "Neutral-Grip Seated Cable Row",
+        "sets": 3,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "sat___upper_b_ex4",
+        "name": "Machine Pec Deck Flye",
+        "sets": 4,
+        "targetReps": "8–12"
+      }
+    ]
+  },
+  {
+    "id": "sun___db_arms",
+    "title": "Sun - DB Arms & Shoulders",
+    "exercises": [
+      {
+        "id": "sun___db_arms_ex2",
+        "name": "Standing Dumbbell Lateral Raise",
+        "sets": 3,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "sun___db_arms_ex5",
+        "name": "Standing Bent-Over DB Rear Delt Flye",
+        "sets": 3,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "sun___db_arms_ex3",
+        "name": "Standing Dumbbell Biceps / Hammer Curl",
+        "sets": 3,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "sun___db_arms_ex4",
+        "name": "Standing / Seated DB Overhead Triceps Extension",
+        "sets": 3,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "sun___db_arms_ex_forearms",
+        "name": "Standing Dumbbell Reverse Curl",
+        "sets": 3,
+        "targetReps": "10–12"
+      }
+    ]
+  },
+  {
+    "id": "mon__lower_b",
+    "title": "Mon - Lower B",
+    "exercises": [
+      {
+        "id": "mon__lower_b_ex_hip_thrust",
+        "name": "Machine Hip Thrust / Glute Drive",
+        "sets": 3,
+        "targetReps": "6–8"
+      },
+      {
+        "id": "mon__lower_b_ex2",
+        "name": "Horizontal Leg Press",
+        "sets": 3,
+        "targetReps": "6–8"
+      },
+      {
+        "id": "mon__lower_b_ex5",
+        "name": "Leg Press Calf Press",
+        "sets": 4,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "mon__lower_b_ex3",
+        "name": "Lying Leg Curl",
+        "sets": 3,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "mon__lower_b_ex_back_ext",
+        "name": "45-Degree Back Extension",
+        "sets": 3,
+        "targetReps": "8–12"
+      },
+      {
+        "id": "mon__lower_b_ex6",
+        "name": "Captain's Chair Knee Raise",
+        "sets": 3,
+        "targetReps": "10–12"
+      }
+    ]
+  }
+]
