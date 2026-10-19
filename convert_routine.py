@@ -315,6 +315,18 @@ if existing_sunday and not any(d.get('id') == 'sun___db_arms' for d in routine_d
     else:
         routine_data.append(existing_sunday)
 
+# Keep generated labels aligned with numeric rest and the straight-set minimum.
+for day in routine_data:
+    for ex in day['exercises']:
+        ex['restSeconds'] = max(120, ex.get('restSeconds', 180 if '3 min' in ex.get('rest', '') else 120))
+        ex['rest'] = f"{ex['restSeconds'] // 60} min" if ex['restSeconds'] % 60 == 0 else f"{ex['restSeconds']} sec"
+        if ex.get('superset'):
+            sup = ex['superset']
+            sup['restSeconds'] = 75 if ex['name'] == 'Seated Leg Curl' else sup.get('restSeconds', 60)
+            sup['rest'] = f"{sup['restSeconds']} sec"
+            sup['tip'] = ('Alternate Leg Extension and Seated Leg Curl. Rest 60 seconds after extensions and 75 seconds after curls.'
+                          if sup['id'] == 'lower_a_quad_ham' else 'Alternate one set of each exercise. Rest 60 seconds after each set.')
+
 with open('routine-data.js', 'w', encoding='utf-8') as f:
     f.write('// Pre-loaded routine parsed from routine.xlsx + Sunday DB Arms & Shoulders\n')
     f.write('const DEFAULT_ROUTINE = ')

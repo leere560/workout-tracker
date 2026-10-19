@@ -296,6 +296,9 @@ class WorkoutApp {
   }
 
   getExerciseIncrement(ex, effectiveName) {
+    const preference = this.exercisePreferences?.[effectiveName || ex?.name];
+    if ([1, 2.5, 5, 10].includes(Number(preference?.increment))) return Number(preference.increment);
+    if ((!effectiveName || effectiveName === ex?.name) && [1, 2.5, 5, 10].includes(Number(ex?.increment))) return Number(ex.increment);
     const rawName = (effectiveName || (ex ? ex.name : '') || '').toLowerCase();
     
     // 1. Isolation, dumbbell, bodyweight, or unilateral movement (+5 lbs)
@@ -343,11 +346,18 @@ class WorkoutApp {
 
   getSetTarget(ex, setIdx, effectiveName) {
     const activeSubName = effectiveName || this.getEffectiveExerciseName(ex.id, ex);
-    const effectiveTargetReps = (this.session && this.session.swaps && this.session.swaps[ex.id]?.targetReps) || ex.targetReps;
+    const activeSwap = this.session?.swaps?.[ex.id];
+    const effectiveTargetReps = (activeSwap?.name === activeSubName && activeSwap.targetReps) || ex.targetReps;
     const minTarget = this.getMinTargetReps(effectiveTargetReps);
     const maxTarget = this.getMaxTargetReps(effectiveTargetReps);
     const increment = this.getExerciseIncrement(ex, activeSubName);
     const prev = this.getPreviousExercisePerformance(activeSubName);
+
+    // Loads from a different machine are not a baseline for this exercise.
+    if (!prev && (activeSubName !== ex.name || ex.needsBaseline)) {
+      return { targetWeight: null, targetReps: minTarget, targetRepsDisplay: effectiveTargetReps,
+        targetWeightDisplay: 'Enter load', isProgressionIncrease: false, needsBaseline: true, note: 'Set an equipment baseline' };
+    }
 
     if (!prev || !prev.sets || prev.sets.length === 0) {
       const parsedStart = this.parseInitialWeight(ex.startingWeight);
@@ -421,6 +431,10 @@ class WorkoutApp {
     const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
     list[setIdx].rir = (list[setIdx].rir === rirVal) ? null : rirVal;
+    if (this.pendingRir?.exId === exId && this.pendingRir?.setIdx === setIdx) {
+      this.pendingRir = null;
+      if (list.every(s => s.completed)) this.collapsedCards.add(exId);
+    }
     this.saveCurrentSession();
     this.renderWorkout();
   }
@@ -491,11 +505,14 @@ class WorkoutApp {
   initNewSession(dayIndex) {
     const day = this.routine[dayIndex] || this.routine[0];
     const session = {
+      id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
       dayId: day.id,
       dayTitle: day.title,
       startTime: null,
       logs: {},
-      swaps: {}
+      swaps: {},
+      disabledSupersets: {},
+      deload: Boolean(this.deloadActive)
     };
 
     day.exercises.forEach(ex => {
@@ -509,11 +526,15 @@ class WorkoutApp {
           weight: target.targetWeight,
           reps: target.targetReps,
           completed: false,
-          rir: null
+          rir: null,
+          exerciseName: effectiveName,
+          muscle: ex.muscle,
+          needsBaseline: Boolean(target.needsBaseline)
         });
       }
     });
 
+    session.initialLogs = JSON.parse(JSON.stringify(session.logs));
     return session;
   }
 
@@ -540,16 +561,46 @@ class WorkoutApp {
   }
 
   parseRestSeconds(restStr) {
-    if (!restStr) return 120;
-    const lower = restStr.toLowerCase();
-    if (lower.includes('3 min') || lower.includes('3m') || lower.includes('3.0')) return 180;
-    if (lower.includes('2.5–3') || lower.includes('2.5-3')) return 165;
-    if (lower.includes('2.5')) return 150;
-    if (lower.includes('2 min') || lower.includes('2m')) return 120;
-    if (lower.includes('90 sec') || lower.includes('90s')) return 90;
-    if (lower.includes('45–60') || lower.includes('45-60') || lower.includes('60 sec') || lower.includes('60s')) return 60;
-    if (lower.includes('45 sec') || lower.includes('45s')) return 45;
-    return 120; // Default to 2 minutes
+    if (typeof restStr === 'number') return Number.isFinite(restStr) && restStr > 0 ? restStr : 120;
+    const lower = String(restStr || '').toLowerCase();
+    const values = lower.match(/\d+(?:\.\d+)?/g)?.map(Number);
+    if (!values?.length) return 120;
+    return Math.round(Math.max(...values) * (/min|\d\s*m\b/.test(lower) ? 60 : 1));
+  }
+
+  formatRest(seconds) {
+    return seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds} sec`;
+  }
+
+  isSupersetEnabled(ex) {
+    return Boolean(ex?.superset && !this.session?.disabledSupersets?.[ex.superset.id]);
+  }
+
+  getRestSeconds(ex) {
+    if (this.isSupersetEnabled(ex)) {
+      return this.parseRestSeconds(ex.superset.restSeconds || ex.superset.rest);
+    }
+    return Math.max(120, this.parseRestSeconds(ex?.restSeconds || ex?.rest));
+  }
+
+  getNextSet() {
+    const exercises = this.routine?.[this.activeDayIndex]?.exercises || [];
+    const visited = new Set();
+    for (const ex of exercises) {
+      if (visited.has(ex.id)) continue;
+      const group = this.isSupersetEnabled(ex)
+        ? exercises.filter(candidate => candidate.superset?.id === ex.superset.id)
+        : [ex];
+      group.forEach(candidate => visited.add(candidate.id));
+      const maxSets = Math.max(0, ...group.map(candidate => this.session?.logs?.[candidate.id]?.length || 0));
+      for (let setIdx = 0; setIdx < maxSets; setIdx++) {
+        for (const candidate of group) {
+          const set = this.session?.logs?.[candidate.id]?.[setIdx];
+          if (set && !set.completed) return { ex: candidate, setIdx };
+        }
+      }
+    }
+    return null;
   }
 
   getSuggestedDayIndex() {
@@ -647,6 +698,7 @@ class WorkoutApp {
     if (this.history && Array.isArray(this.history)) {
       for (let i = this.history.length - 1; i >= 0; i--) {
         const workout = this.history[i];
+        if (workout.deload || workout.isDeload || workout.deloadActive) continue;
         if (workout.exercises && workout.exercises[exerciseName] && Array.isArray(workout.exercises[exerciseName].sets)) {
           const validSets = workout.exercises[exerciseName].sets.filter(s => s && s.completed !== false && (s.reps > 0 || s.weight > 0));
           if (validSets.length > 0) {
@@ -661,7 +713,7 @@ class WorkoutApp {
     }
 
     // 2. Check persistent lastWeights store only if no history entry exists
-    if (!historyEntry && this.lastWeights && this.lastWeights[exerciseName] && Array.isArray(this.lastWeights[exerciseName].sets)) {
+    if (!historyEntry && this.lastWeights && this.lastWeights[exerciseName] && !this.lastWeights[exerciseName].deload && Array.isArray(this.lastWeights[exerciseName].sets)) {
       const validSets = this.lastWeights[exerciseName].sets.filter(s => s && s.completed !== false && (s.reps > 0 || s.weight > 0));
       if (validSets.length > 0) {
         return {
@@ -1446,12 +1498,24 @@ class WorkoutApp {
   toggleSetCompletion(exId, setIdx, restStr) {
     const setObj = this.session.logs[exId] && this.session.logs[exId][setIdx];
     if (!setObj) return;
+    const ex = this.findExerciseById(exId);
+    if (!setObj.completed && (setObj.weight === null || setObj.needsBaseline || !Number.isFinite(Number(setObj.weight)))) {
+      this.showToast('Enter a load for this equipment before completing the set.');
+      return;
+    }
 
     if (this.session && !this.session.startTime) {
       this.session.startTime = new Date().toISOString();
     }
 
     setObj.completed = !setObj.completed;
+    if (setObj.completed) {
+      setObj.exerciseName = setObj.exerciseName || this.getEffectiveExerciseName(exId, ex);
+      setObj.muscle = setObj.muscle || ex?.muscle;
+      setObj.completedAt = new Date().toISOString();
+    } else {
+      delete setObj.completedAt;
+    }
     this.saveCurrentSession();
 
     // Tactile haptic pulse on completing set
@@ -1461,17 +1525,19 @@ class WorkoutApp {
     if (setObj.completed) {
       this.primeAudioContext();
 
-      // Check if all sets for this exercise are now completed -> auto-collapse
+      // Keep the final effort prompt accessible until answered or skipped.
       const list = this.session.logs[exId] || [];
       if (list.length > 0 && list.every(s => s.completed)) {
-        this.collapsedCards.add(exId);
+        this.pendingRir = { exId, setIdx };
+        this.collapsedCards.delete(exId);
       }
 
-      const restSeconds = this.parseRestSeconds(restStr);
-      this.startTimer(restSeconds);
+      const restSeconds = this.getRestSeconds(ex);
+      this.startTimer(restSeconds, this.isSupersetEnabled(ex) ? 0 : 120);
     } else {
       // If unchecked, uncollapse
       this.collapsedCards.delete(exId);
+      if (this.pendingRir?.exId === exId) this.pendingRir = null;
     }
 
     this.renderWorkout();
@@ -1811,6 +1877,13 @@ class WorkoutApp {
   applyExerciseSwap(exId, sub, mode) {
     const ex = this.findExerciseById(exId);
     if (!ex) return;
+    const previousName = this.getEffectiveExerciseName(exId, ex);
+    const sets = this.session?.logs?.[exId] || [];
+    sets.filter(s => s.completed).forEach(s => {
+      s.exerciseName = s.exerciseName || previousName;
+      s.muscle = s.muscle || ex.muscle;
+    });
+    const hasHistory = Boolean(this.getPreviousExercisePerformance(sub.name));
 
     if (mode === 'permanent') {
       const oldName = ex.name;
@@ -1819,6 +1892,8 @@ class WorkoutApp {
       if (sub.notes) ex.notes = sub.notes;
       if (sub.videoUrl) ex.videoUrl = sub.videoUrl;
       ex.increment = this.getExerciseIncrement(sub, sub.name);
+      ex.startingWeight = '';
+      ex.needsBaseline = !hasHistory;
       if (this.session && this.session.swaps) {
         delete this.session.swaps[exId];
       }
@@ -1833,12 +1908,15 @@ class WorkoutApp {
 
     // Recalculate uncompleted sets in this.session.logs[exId]
     const effectiveName = sub.name;
-    const sets = (this.session && this.session.logs && this.session.logs[exId]) || [];
     sets.forEach((s, sIdx) => {
       if (!s.completed) {
         const target = this.getSetTarget(ex, sIdx, effectiveName);
-        s.weight = target.targetWeight;
+        s.weight = hasHistory ? target.targetWeight : null;
         s.reps = target.targetReps;
+        s.needsBaseline = !hasHistory;
+        s.exerciseName = effectiveName;
+        s.muscle = sub.muscle || ex.muscle;
+        s.rir = null;
       }
     });
     this.saveCurrentSession();
@@ -2057,13 +2135,17 @@ class WorkoutApp {
     }
   }
 
-  startTimer(seconds) {
+  startTimer(seconds, minimumDuration = 120) {
     this.stopTimer(false);
     this.primeAudioContext();
     this.requestWakeLock();
     this.requestNotificationPermission();
 
-    const targetEndTime = Date.now() + (seconds * 1000);
+    seconds = Math.max(minimumDuration, this.parseRestSeconds(seconds));
+    const startedAt = Date.now();
+    const targetEndTime = startedAt + (seconds * 1000);
+    this.timer.startedAt = startedAt;
+    this.timer.minimumDuration = minimumDuration;
     this.timer.totalDuration = seconds;
     this.timer.targetEndTime = targetEndTime;
     this.timer.remaining = seconds;
@@ -2071,6 +2153,8 @@ class WorkoutApp {
 
     localStorage.setItem(this.storageKeys.timerTargetEnd, String(targetEndTime));
     localStorage.setItem(this.storageKeys.timerTotalDuration, String(seconds));
+    localStorage.setItem('gym_timer_started_at_v1', String(startedAt));
+    localStorage.setItem('gym_timer_minimum_v1', String(minimumDuration));
 
     this.updateTimerUI();
     this.timerDockEl.classList.add('active');
@@ -2083,7 +2167,7 @@ class WorkoutApp {
 
   tickTimer() {
     if (!this.timer.active) return;
-    const remaining = Math.max(0, Math.round((this.timer.targetEndTime - Date.now()) / 1000));
+    const remaining = Math.max(0, Math.ceil((this.timer.targetEndTime - Date.now()) / 1000));
     this.timer.remaining = remaining;
     this.updateTimerUI();
 
@@ -2093,6 +2177,12 @@ class WorkoutApp {
   }
 
   onTimerFinished() {
+    // Another tab or a newer set may already have started a different timer.
+    const savedEnd = Number(localStorage.getItem(this.storageKeys.timerTargetEnd));
+    if (savedEnd && savedEnd !== this.timer.targetEndTime) {
+      this.syncTimerFromBackground();
+      return;
+    }
     this.stopTimer(true);
     this.playTimerAlarm();
     this.showRestCompleteBanner();
@@ -2106,7 +2196,12 @@ class WorkoutApp {
     const targetEndTime = parseInt(savedEnd, 10);
     const totalDuration = parseInt(savedTotal, 10) || 120;
     const now = Date.now();
-    const remaining = Math.round((targetEndTime - now) / 1000);
+    const remaining = Math.ceil((targetEndTime - now) / 1000);
+    if (!Number.isFinite(targetEndTime)) return;
+    this.timer.targetEndTime = targetEndTime;
+    this.timer.startedAt = Number(localStorage.getItem('gym_timer_started_at_v1')) || targetEndTime - totalDuration * 1000;
+    const savedMinimum = localStorage.getItem('gym_timer_minimum_v1');
+    this.timer.minimumDuration = savedMinimum === null ? Math.min(120, totalDuration) : Number(savedMinimum);
 
     if (remaining > 0) {
       this.timer.totalDuration = totalDuration;
@@ -2120,9 +2215,7 @@ class WorkoutApp {
       if (!this.timer.intervalId) {
         this.timer.intervalId = setInterval(() => this.tickTimer(), 1000);
       }
-    } else if (remaining <= 0 && this.timer.active) {
-      localStorage.removeItem(this.storageKeys.timerTargetEnd);
-      localStorage.removeItem(this.storageKeys.timerTotalDuration);
+    } else if (remaining <= 0) {
       this.onTimerFinished();
     }
   }
@@ -2134,8 +2227,8 @@ class WorkoutApp {
       if (targetEndTime > Date.now()) {
         this.syncTimerFromBackground();
       } else {
-        localStorage.removeItem(this.storageKeys.timerTargetEnd);
-        localStorage.removeItem(this.storageKeys.timerTotalDuration);
+        this.timer.targetEndTime = targetEndTime;
+        this.stopTimer(true);
       }
     }
   }
@@ -2149,9 +2242,11 @@ class WorkoutApp {
     if (this.activeView !== 'workout' || !this.wakeLockEnabled) {
       this.releaseWakeLock();
     }
-    if (clearStorage) {
+    if (clearStorage && Number(localStorage.getItem(this.storageKeys.timerTargetEnd)) === this.timer.targetEndTime) {
       localStorage.removeItem(this.storageKeys.timerTargetEnd);
       localStorage.removeItem(this.storageKeys.timerTotalDuration);
+      localStorage.removeItem('gym_timer_started_at_v1');
+      localStorage.removeItem('gym_timer_minimum_v1');
     }
     this.timerDockEl.classList.remove('active');
     document.body.classList.remove('timer-active');
@@ -2159,13 +2254,26 @@ class WorkoutApp {
 
   adjustTimer(delta) {
     if (!this.timer.active) return;
-    this.timer.targetEndTime += (delta * 1000);
-    const newRemaining = Math.max(5, Math.round((this.timer.targetEndTime - Date.now()) / 1000));
+    this.timer.targetEndTime = Math.max(
+      this.timer.targetEndTime + delta * 1000,
+      this.timer.startedAt + this.timer.minimumDuration * 1000,
+      Date.now() + 1000
+    );
+    const newRemaining = Math.max(1, Math.ceil((this.timer.targetEndTime - Date.now()) / 1000));
     this.timer.remaining = newRemaining;
-    this.timer.totalDuration = Math.max(this.timer.totalDuration, newRemaining);
+    this.timer.totalDuration = Math.ceil((this.timer.targetEndTime - this.timer.startedAt) / 1000);
     localStorage.setItem(this.storageKeys.timerTargetEnd, String(this.timer.targetEndTime));
     localStorage.setItem(this.storageKeys.timerTotalDuration, String(this.timer.totalDuration));
     this.updateTimerUI();
+  }
+
+  skipTimer() {
+    if (this.timer.active && Date.now() < this.timer.startedAt + this.timer.minimumDuration * 1000) {
+      this.showToast('Your two-minute minimum rest is still running.');
+      return false;
+    }
+    this.stopTimer();
+    return true;
   }
 
   updateTimerUI() {
@@ -2175,6 +2283,11 @@ class WorkoutApp {
 
     const pct = ((this.timer.totalDuration - this.timer.remaining) / this.timer.totalDuration) * 100;
     this.timerProgressBarEl.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+    const skip = document.getElementById('timerSkipBtn');
+    if (skip) {
+      skip.disabled = this.timer.active && Date.now() < this.timer.startedAt + this.timer.minimumDuration * 1000;
+      skip.title = skip.disabled ? 'Available after two minutes of rest' : 'Finish rest';
+    }
   }
 
   playTimerAlarm() {
