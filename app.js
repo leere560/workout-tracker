@@ -812,7 +812,7 @@ class WorkoutApp {
     }
 
     // Timer controls
-    document.getElementById('timerSkipBtn')?.addEventListener('click', () => this.stopTimer());
+    document.getElementById('timerSkipBtn')?.addEventListener('click', () => this.skipTimer());
     document.getElementById('timerPlus30Btn')?.addEventListener('click', () => this.adjustTimer(30));
     document.getElementById('timerMinus30Btn')?.addEventListener('click', () => this.adjustTimer(-30));
 
