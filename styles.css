@@ -2856,3 +2856,8 @@ body.timer-active { padding-bottom: calc(230px + env(safe-area-inset-bottom, 0px
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+/* Remove legacy table-width constraints from the new set blocks. */
+.focused-card .stepper-wrap.weight-stepper,
+.focused-card .stepper-wrap.reps-stepper { max-width: none; }
+.focused-card .stepper-btn { min-width: 44px; max-width: 44px; }
+.session-actions-group { width: auto; }
