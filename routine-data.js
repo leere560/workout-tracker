@@ -17,7 +17,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+machine+chest+press+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 10
+        "increment": 10,
+        "restSeconds": 180
       },
       {
         "id": "wed___upper_a_ex2",
@@ -31,7 +32,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+lat+pulldown+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 10
+        "increment": 10,
+        "restSeconds": 120
       },
       {
         "id": "wed___upper_a_ex3",
@@ -45,7 +47,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+chest+supported+row+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 10
+        "increment": 10,
+        "restSeconds": 120
       },
       {
         "id": "wed___upper_a_ex4",
@@ -59,7 +62,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+cable+lateral+raise",
         "isOptional": false,
         "superset": null,
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       },
       {
         "id": "wed___upper_a_ex5",
@@ -76,10 +80,12 @@ const DEFAULT_ROUTINE = [
           "id": "upper_a_arms",
           "tag": "5A",
           "name": "Arm Finisher Superset (Triceps + Biceps)",
-          "tip": "⚡ Superset: Perform 1 set of Triceps, rest 45–60s, then perform 1 set of Biceps, rest 60s. Saves ~6 mins!",
-          "rest": "45–60 sec"
+          "tip": "Alternate one set of each exercise. Rest 60 seconds after each set.",
+          "rest": "60 sec",
+          "restSeconds": 60
         },
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       },
       {
         "id": "wed___upper_a_ex6",
@@ -96,10 +102,12 @@ const DEFAULT_ROUTINE = [
           "id": "upper_a_arms",
           "tag": "5B",
           "name": "Arm Finisher Superset (Triceps + Biceps)",
-          "tip": "⚡ Superset: Alternate with Triceps Rope Pushdown. Saves ~6 mins!",
-          "rest": "60 sec"
+          "tip": "Alternate one set of each exercise. Rest 60 seconds after each set.",
+          "rest": "60 sec",
+          "restSeconds": 60
         },
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       },
       {
         "id": "wed___upper_a_opt_facepull",
@@ -108,12 +116,13 @@ const DEFAULT_ROUTINE = [
         "sets": 2,
         "targetReps": "10–12",
         "startingWeight": "30–40 lbs",
-        "rest": "90 sec",
+        "rest": "2 min",
         "notes": "Set pulley to eye level; thumbs back; pull rope toward forehead while pulling elbows back to build healthy shoulders.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+face+pull+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       }
     ]
   },
@@ -134,7 +143,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+hack+squat+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 10
+        "increment": 10,
+        "restSeconds": 180
       },
       {
         "id": "fri___lower_a_ex2",
@@ -151,10 +161,12 @@ const DEFAULT_ROUTINE = [
           "id": "lower_a_quad_ham",
           "tag": "2A",
           "name": "Antagonist Superset (Quads + Hamstrings)",
-          "tip": "⚡ Superset: Perform 1 set of Leg Extensions, rest 60s, then perform 1 set of Seated Leg Curls, rest 60s. Saves ~8 mins!",
-          "rest": "60 sec"
+          "tip": "Alternate Leg Extension and Seated Leg Curl. Rest 60 seconds after extensions and 75 seconds after curls.",
+          "rest": "60 sec",
+          "restSeconds": 60
         },
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       },
       {
         "id": "fri___lower_a_ex3",
@@ -171,10 +183,12 @@ const DEFAULT_ROUTINE = [
           "id": "lower_a_quad_ham",
           "tag": "2B",
           "name": "Antagonist Superset (Quads + Hamstrings)",
-          "tip": "⚡ Superset: Alternate with Leg Extensions. Quads rest while hamstrings work!",
-          "rest": "60–75 sec"
+          "tip": "Alternate Leg Extension and Seated Leg Curl. Rest 60 seconds after extensions and 75 seconds after curls.",
+          "rest": "75 sec",
+          "restSeconds": 75
         },
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       },
       {
         "id": "fri___lower_a_ex4",
@@ -188,7 +202,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+calf+raise+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 10
+        "increment": 10,
+        "restSeconds": 120
       },
       {
         "id": "fri___lower_a_ex5",
@@ -197,12 +212,13 @@ const DEFAULT_ROUTINE = [
         "sets": 3,
         "targetReps": "10–12",
         "startingWeight": "60–80 lbs",
-        "rest": "90 sec",
+        "rest": "2 min",
         "notes": "Anchor hips in place; actively round ribcage down into your pelvis like rolling up a mat.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+cable+crunch+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       }
     ]
   },
@@ -223,7 +239,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+smith+machine+incline+press",
         "isOptional": false,
         "superset": null,
-        "increment": 10
+        "increment": 10,
+        "restSeconds": 180
       },
       {
         "id": "sat___upper_b_ex2",
@@ -237,7 +254,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+single+arm+lat+pulldown",
         "isOptional": false,
         "superset": null,
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       },
       {
         "id": "sat___upper_b_ex3",
@@ -251,7 +269,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+shoulder+press+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 10
+        "increment": 10,
+        "restSeconds": 180
       },
       {
         "id": "sat___upper_b_ex_cable_row",
@@ -265,7 +284,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+seated+cable+row+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 10
+        "increment": 10,
+        "restSeconds": 120
       },
       {
         "id": "sat___upper_b_ex4",
@@ -279,7 +299,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+chest+flye+pec+deck",
         "isOptional": false,
         "superset": null,
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       }
     ]
   },
@@ -300,7 +321,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+lateral+raise",
         "isOptional": false,
         "superset": null,
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       },
       {
         "id": "sun___db_arms_ex5",
@@ -309,12 +331,13 @@ const DEFAULT_ROUTINE = [
         "sets": 3,
         "targetReps": "8–12",
         "startingWeight": "15–20 lbs DBs",
-        "rest": "90 sec",
+        "rest": "2 min",
         "notes": "Hinge at the hips with soft knees and a flat back; sweep dumbbells out wide leading with pinkies to isolate rear delts. Zero bench needed!",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+rear+delt+flye",
         "isOptional": false,
         "superset": null,
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       },
       {
         "id": "sun___db_arms_ex3",
@@ -331,10 +354,12 @@ const DEFAULT_ROUTINE = [
           "id": "sun_db_arm_superset",
           "tag": "2A",
           "name": "Dumbbell Arm Superset (Biceps + Triceps)",
-          "tip": "⚡ Superset: Perform 1 set of Curls, rest 45–60s, then perform 1 set of Overhead Triceps Extensions, rest 60s. Saves ~7 mins!",
-          "rest": "45–60 sec"
+          "tip": "Alternate one set of each exercise. Rest 60 seconds after each set.",
+          "rest": "60 sec",
+          "restSeconds": 60
         },
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       },
       {
         "id": "sun___db_arms_ex4",
@@ -351,10 +376,12 @@ const DEFAULT_ROUTINE = [
           "id": "sun_db_arm_superset",
           "tag": "2B",
           "name": "Dumbbell Arm Superset (Biceps + Triceps)",
-          "tip": "⚡ Superset: Alternate with Standing Biceps Curls. Fits your 30-min window at home!",
-          "rest": "60 sec"
+          "tip": "Alternate one set of each exercise. Rest 60 seconds after each set.",
+          "rest": "60 sec",
+          "restSeconds": 60
         },
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       },
       {
         "id": "sun___db_arms_ex_forearms",
@@ -363,12 +390,13 @@ const DEFAULT_ROUTINE = [
         "sets": 3,
         "targetReps": "10–12",
         "startingWeight": "15–25 lbs DBs",
-        "rest": "60–90 sec",
+        "rest": "2 min",
         "notes": "Pronated overhand grip (palms down/knuckles forward); lock wrists straight; controlled 2–3s negative to blast the brachioradialis and forearm extensors. Zero bench needed!",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+reverse+curl+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       }
     ]
   },
@@ -389,7 +417,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=machine+hip+thrust+glute+drive+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 10
+        "increment": 10,
+        "restSeconds": 180
       },
       {
         "id": "mon__lower_b_ex2",
@@ -406,10 +435,12 @@ const DEFAULT_ROUTINE = [
           "id": "lower_b_leg_press_calf",
           "tag": "2A",
           "name": "Same-Machine Superset (Quads + Calves)",
-          "tip": "⚡ Superset: Perform 1 set of Leg Press, rest 45–60s (adjust weight pin & slide feet to bottom edge), then perform Calf Press, rest 60s. Saves ~6 mins!",
-          "rest": "45–60 sec"
+          "tip": "Alternate one set of each exercise. Rest 60 seconds after each set.",
+          "rest": "60 sec",
+          "restSeconds": 60
         },
-        "increment": 10
+        "increment": 10,
+        "restSeconds": 180
       },
       {
         "id": "mon__lower_b_ex5",
@@ -426,10 +457,12 @@ const DEFAULT_ROUTINE = [
           "id": "lower_b_leg_press_calf",
           "tag": "2B",
           "name": "Same-Machine Superset (Quads + Calves)",
-          "tip": "⚡ Superset: Alternate with Horizontal Leg Press on the same machine. Calves work while quads rest!",
-          "rest": "60 sec"
+          "tip": "Alternate one set of each exercise. Rest 60 seconds after each set.",
+          "rest": "60 sec",
+          "restSeconds": 60
         },
-        "increment": 10
+        "increment": 10,
+        "restSeconds": 120
       },
       {
         "id": "mon__lower_b_ex3",
@@ -443,7 +476,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+lying+leg+curl",
         "isOptional": false,
         "superset": null,
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       },
       {
         "id": "mon__lower_b_ex_back_ext",
@@ -457,7 +491,8 @@ const DEFAULT_ROUTINE = [
         "videoUrl": "https://www.youtube.com/results?search_query=45+degree+back+extension+for+glutes+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       },
       {
         "id": "mon__lower_b_ex6",
@@ -466,12 +501,13 @@ const DEFAULT_ROUTINE = [
         "sets": 3,
         "targetReps": "10–12",
         "startingWeight": "Bodyweight",
-        "rest": "90 sec",
+        "rest": "2 min",
         "notes": "Forearms locked on pads; pull knees up while actively rolling pelvis toward your chest.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+hanging+knee+raise+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 5
+        "increment": 5,
+        "restSeconds": 120
       }
     ]
   }

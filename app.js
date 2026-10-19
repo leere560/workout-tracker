@@ -16,7 +16,8 @@ class WorkoutApp {
       timerTargetEnd: 'gym_timer_target_end_v1',
       timerTotalDuration: 'gym_timer_total_duration_v1',
       wakeLockEnabled: 'gym_wake_lock_enabled',
-      routineRev: 'gym_routine_rev'
+      routineRev: 'gym_routine_rev',
+      exercisePreferences: 'gym_exercise_preferences_v1'
     };
 
     // Load History, Notes, & Last Recorded Weights
@@ -24,6 +25,7 @@ class WorkoutApp {
     this.lastWeights = this.loadLastWeights();
     this.machineSettings = this.loadMachineSettings();
     this.exerciseNotes = this.loadExerciseNotes();
+    this.exercisePreferences = this.loadExercisePreferences();
     this.deloadActive = localStorage.getItem(this.storageKeys.deloadActive) === 'true';
     this.deloadStartDate = parseInt(localStorage.getItem(this.storageKeys.deloadStartDate) || '0', 10);
     this.checkDeloadExpiry();
@@ -88,65 +90,41 @@ class WorkoutApp {
   }
 
   loadRoutine() {
-    const CURRENT_ROUTINE_REV = 14;
-    const savedRev = localStorage.getItem(this.storageKeys.routineRev);
     const saved = localStorage.getItem(this.storageKeys.routine);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Correct any legacy muscle tags for calves & ensure all exercises are core
-        parsed.forEach(day => {
-          day.exercises.forEach(ex => {
-            if (ex.name.toLowerCase().includes('calf') && ex.muscle === 'Quads') {
-              ex.muscle = 'Calves';
-            }
-            if (ex.name.toLowerCase().includes('incline') && ex.name.toLowerCase().includes('press')) {
-              ex.targetReps = '6–8';
-            }
-            ex.isOptional = false;
-            if (typeof ex.increment !== 'number') {
-              ex.increment = this.getExerciseIncrement(ex, ex.name);
-            }
-          });
-        });
+    let routine;
+    try {
+      const parsed = saved ? JSON.parse(saved) : null;
+      if (Array.isArray(parsed) && parsed.length && parsed.every(d => Array.isArray(d.exercises))) routine = parsed;
+    } catch (e) { console.error(e); }
+    routine ||= JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
+    // Add only the new fields. User exercises, order, sets, reps and notes are authoritative.
+    routine.forEach(day => day.exercises.forEach(ex => {
+      const defaults = DEFAULT_ROUTINE.flatMap(d => d.exercises).find(e => e.id === ex.id || e.name === ex.name);
+      const restText = String(ex.rest || '');
+      const legacyRest = /min/i.test(restText) ? parseFloat(restText) * 60 : parseFloat(restText);
+      if (!Number.isFinite(ex.restSeconds)) ex.restSeconds = Math.max(120, legacyRest || defaults?.restSeconds || 120);
+      ex.restSeconds = Math.max(120, ex.restSeconds);
+      ex.rest = ex.restSeconds % 60 === 0 ? `${ex.restSeconds / 60} min` : `${ex.restSeconds} sec`;
+      if (ex.superset) {
+        if (!Number.isFinite(ex.superset.restSeconds)) ex.superset.restSeconds = defaults?.superset?.restSeconds || (/seated leg curl/i.test(ex.name) ? 75 : 60);
+        ex.superset.rest = `${ex.superset.restSeconds} sec`;
+      }
+      if (!Number.isFinite(ex.increment)) ex.increment = defaults?.increment || this.getExerciseIncrement(ex, ex.name);
+    }));
+    localStorage.setItem(this.storageKeys.routineRev, '15');
+    localStorage.setItem(this.storageKeys.routine, JSON.stringify(routine));
+    return routine;
+  }
 
-        // Migrate routine to Revision 14 (Double progression increments, no optional finishers, 6-8 incline press)
-        const needsUpdate = 
-          savedRev !== String(CURRENT_ROUTINE_REV) ||
-          parsed.length < 5 ||
-          !parsed.some(d => d.id === 'sun___db_arms') ||
-          parsed.some(d => d.exercises.some(e => e.id === 'fri___lower_a_ex_lunges' || e.id === 'mon__lower_b_ex4')) ||
-          parsed.find(d => d.id === 'sat___upper_b')?.exercises.some(e => e.id === 'sat___upper_b_ex5') ||
-          parsed.find(d => d.id === 'sun___db_arms')?.exercises.some(e => e.id === 'sun___db_arms_ex1') ||
-          !parsed.find(d => d.id === 'sun___db_arms')?.exercises.some(e => e.id === 'sun___db_arms_ex_forearms');
+  loadExercisePreferences() {
+    try {
+      const data = JSON.parse(localStorage.getItem(this.storageKeys.exercisePreferences) || '{}');
+      return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+    } catch (_) { return {}; }
+  }
 
-        if (needsUpdate) {
-          // Backup previous routine in localStorage just in case
-          localStorage.setItem('gym_routine_backup_v12', JSON.stringify(parsed));
-          const updatedRoutine = JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
-          // Preserve any custom starting weights or notes from parsed if matched
-          parsed.forEach(oldDay => {
-            const newDay = updatedRoutine.find(d => d.id === oldDay.id);
-            if (newDay && oldDay.exercises) {
-              oldDay.exercises.forEach(oldEx => {
-                const newEx = newDay.exercises.find(e => e.id === oldEx.id || e.name === oldEx.name);
-                if (newEx) {
-                  if (oldEx.notes && !oldEx.notes.includes('pad.;')) newEx.notes = oldEx.notes;
-                  if (oldEx.startingWeight) newEx.startingWeight = oldEx.startingWeight;
-                }
-              });
-            }
-          });
-          localStorage.setItem(this.storageKeys.routineRev, String(CURRENT_ROUTINE_REV));
-          localStorage.setItem(this.storageKeys.routine, JSON.stringify(updatedRoutine));
-          return updatedRoutine;
-        }
-
-        return parsed;
-      } catch (e) { console.error(e); }
-    }
-    localStorage.setItem(this.storageKeys.routineRev, String(CURRENT_ROUTINE_REV));
-    return JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
+  saveExercisePreferences() {
+    localStorage.setItem(this.storageKeys.exercisePreferences, JSON.stringify(this.exercisePreferences || {}));
   }
 
   saveRoutine() {
@@ -174,6 +152,7 @@ class WorkoutApp {
     // Bootstrap from history if empty
     if (Object.keys(data).length === 0 && this.history && this.history.length > 0) {
       this.history.forEach(h => {
+        if (h.deload || h.isDeload || h.deloadActive) return;
         if (h.exercises) {
           Object.keys(h.exercises).forEach(name => {
             const entry = h.exercises[name];
@@ -187,6 +166,17 @@ class WorkoutApp {
         }
       });
     }
+    // Older builds saved recovery loads without identifying them as a deload.
+    Object.entries(data).forEach(([name, entry]) => {
+      if (!entry || typeof entry !== 'object') return;
+      const matching = (this.history || []).filter(h => h.exercises?.[name]).sort((a, b) => new Date(b.date) - new Date(a.date));
+      const latest = matching[0];
+      if (latest && (latest.deload || latest.isDeload || latest.deloadActive) && new Date(entry.date).getTime() <= new Date(latest.date).getTime()) {
+        const baseline = matching.find(h => !h.deload && !h.isDeload && !h.deloadActive);
+        if (baseline) data[name] = { date: baseline.date, deload: false, sets: baseline.exercises[name].sets };
+        else entry.deload = true;
+      }
+    });
     return data;
   }
 
@@ -296,6 +286,9 @@ class WorkoutApp {
   }
 
   getExerciseIncrement(ex, effectiveName) {
+    const preference = this.exercisePreferences?.[effectiveName || ex?.name];
+    if ([1, 2.5, 5, 10].includes(Number(preference?.increment))) return Number(preference.increment);
+    if ((!effectiveName || effectiveName === ex?.name) && [1, 2.5, 5, 10].includes(Number(ex?.increment))) return Number(ex.increment);
     const rawName = (effectiveName || (ex ? ex.name : '') || '').toLowerCase();
     
     // 1. Isolation, dumbbell, bodyweight, or unilateral movement (+5 lbs)
@@ -343,11 +336,18 @@ class WorkoutApp {
 
   getSetTarget(ex, setIdx, effectiveName) {
     const activeSubName = effectiveName || this.getEffectiveExerciseName(ex.id, ex);
-    const effectiveTargetReps = (this.session && this.session.swaps && this.session.swaps[ex.id]?.targetReps) || ex.targetReps;
+    const activeSwap = this.session?.swaps?.[ex.id];
+    const effectiveTargetReps = (activeSwap?.name === activeSubName && activeSwap.targetReps) || ex.targetReps;
     const minTarget = this.getMinTargetReps(effectiveTargetReps);
     const maxTarget = this.getMaxTargetReps(effectiveTargetReps);
     const increment = this.getExerciseIncrement(ex, activeSubName);
     const prev = this.getPreviousExercisePerformance(activeSubName);
+
+    // Loads from a different machine are not a baseline for this exercise.
+    if (!prev && (activeSubName !== ex.name || ex.needsBaseline)) {
+      return { targetWeight: null, targetReps: minTarget, targetRepsDisplay: effectiveTargetReps,
+        targetWeightDisplay: 'Enter load', isProgressionIncrease: false, needsBaseline: true, note: 'Set an equipment baseline' };
+    }
 
     if (!prev || !prev.sets || prev.sets.length === 0) {
       const parsedStart = this.parseInitialWeight(ex.startingWeight);
@@ -421,6 +421,10 @@ class WorkoutApp {
     const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
     list[setIdx].rir = (list[setIdx].rir === rirVal) ? null : rirVal;
+    if (this.pendingRir?.exId === exId && this.pendingRir?.setIdx === setIdx) {
+      this.pendingRir = null;
+      if (list.every(s => s.completed)) this.collapsedCards.add(exId);
+    }
     this.saveCurrentSession();
     this.renderWorkout();
   }
@@ -431,50 +435,17 @@ class WorkoutApp {
 
   loadSession(dayIndex = this.activeDayIndex) {
     const day = this.routine[dayIndex] || this.routine[0];
-    const key = this.getSessionKey(day.id);
-    const legacy = localStorage.getItem(this.storageKeys.legacyCurrentSession);
-    let saved = localStorage.getItem(key);
-    if (!saved && legacy) {
-      try {
-        const parsedLegacy = JSON.parse(legacy);
-        if (parsedLegacy && parsedLegacy.dayId === day.id) saved = legacy;
-      } catch (e) {}
-    }
-
+    const saved = localStorage.getItem(this.getSessionKey(day.id)) || localStorage.getItem(this.storageKeys.legacyCurrentSession);
     if (saved) {
       try {
-        const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
-        if (parsed.dayId === day.id) {
-          if (!parsed.swaps) parsed.swaps = {};
-          Object.values(parsed.swaps).forEach(sub => {
-            if (sub && sub.name && sub.name.toLowerCase().includes('incline') && sub.name.toLowerCase().includes('press')) {
-              sub.targetReps = '6–8';
-            }
-          });
-          
-          if (day && day.exercises) {
-            day.exercises.forEach(ex => {
-              const existingSets = parsed.logs && parsed.logs[ex.id];
-              const exHasCompleted = Array.isArray(existingSets) && existingSets.some(s => s && s.completed);
-              if (!exHasCompleted) {
-                // Refresh uncompleted exercise targets from getSetTarget()
-                const activeSub = parsed.swaps && parsed.swaps[ex.id];
-                const effectiveName = activeSub ? activeSub.name : ex.name;
-                const targetSetsCount = this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets;
-                parsed.logs[ex.id] = [];
-                for (let i = 1; i <= targetSetsCount; i++) {
-                  const target = this.getSetTarget(ex, i - 1, effectiveName);
-                  parsed.logs[ex.id].push({
-                    setNum: i,
-                    weight: target.targetWeight,
-                    reps: target.targetReps,
-                    completed: false,
-                    rir: null
-                  });
-                }
-              }
-            });
-          }
+        const parsed = JSON.parse(saved);
+        if (parsed.dayId === day.id && parsed.logs && typeof parsed.logs === 'object') {
+          parsed.swaps ||= {};
+          // Only a provably untouched session may be recalculated when deload changes.
+          const untouched = parsed.initialLogs && JSON.stringify(parsed.logs) === JSON.stringify(parsed.initialLogs) && !parsed.startTime && Object.keys(parsed.swaps).length === 0;
+          if (untouched && Boolean(parsed.deload) !== Boolean(this.deloadActive)) return this.initNewSession(dayIndex);
+          if (typeof parsed.deload !== 'boolean') parsed.deload = Boolean(this.deloadActive);
+          parsed.id ||= `s_${day.id}_${parsed.startTime || Date.now()}`;
           return parsed;
         }
       } catch (e) { console.error(e); }
@@ -484,18 +455,22 @@ class WorkoutApp {
 
   saveCurrentSession() {
     if (!this.session || !this.session.dayId) return;
-    const key = this.getSessionKey(this.session.dayId);
-    localStorage.setItem(key, JSON.stringify(this.session));
+    this.session.id ||= `s_${this.session.dayId}_${Date.now()}`;
+    this.session.updatedAt = new Date().toISOString();
+    localStorage.setItem(this.getSessionKey(this.session.dayId), JSON.stringify(this.session));
   }
 
   initNewSession(dayIndex) {
     const day = this.routine[dayIndex] || this.routine[0];
     const session = {
+      id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
       dayId: day.id,
       dayTitle: day.title,
       startTime: null,
       logs: {},
-      swaps: {}
+      swaps: {},
+      disabledSupersets: {},
+      deload: Boolean(this.deloadActive)
     };
 
     day.exercises.forEach(ex => {
@@ -509,11 +484,16 @@ class WorkoutApp {
           weight: target.targetWeight,
           reps: target.targetReps,
           completed: false,
-          rir: null
+          rir: null,
+          exerciseName: effectiveName,
+          muscle: ex.muscle,
+          targetReps: ex.targetReps,
+          needsBaseline: Boolean(target.needsBaseline)
         });
       }
     });
 
+    session.initialLogs = JSON.parse(JSON.stringify(session.logs));
     return session;
   }
 
@@ -540,16 +520,46 @@ class WorkoutApp {
   }
 
   parseRestSeconds(restStr) {
-    if (!restStr) return 120;
-    const lower = restStr.toLowerCase();
-    if (lower.includes('3 min') || lower.includes('3m') || lower.includes('3.0')) return 180;
-    if (lower.includes('2.5–3') || lower.includes('2.5-3')) return 165;
-    if (lower.includes('2.5')) return 150;
-    if (lower.includes('2 min') || lower.includes('2m')) return 120;
-    if (lower.includes('90 sec') || lower.includes('90s')) return 90;
-    if (lower.includes('45–60') || lower.includes('45-60') || lower.includes('60 sec') || lower.includes('60s')) return 60;
-    if (lower.includes('45 sec') || lower.includes('45s')) return 45;
-    return 120; // Default to 2 minutes
+    if (typeof restStr === 'number') return Number.isFinite(restStr) && restStr > 0 ? restStr : 120;
+    const lower = String(restStr || '').toLowerCase();
+    const values = lower.match(/\d+(?:\.\d+)?/g)?.map(Number);
+    if (!values?.length) return 120;
+    return Math.round(Math.max(...values) * (/min|\d\s*m\b/.test(lower) ? 60 : 1));
+  }
+
+  formatRest(seconds) {
+    return seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds} sec`;
+  }
+
+  isSupersetEnabled(ex) {
+    return Boolean(ex?.superset && !this.session?.disabledSupersets?.[ex.superset.id]);
+  }
+
+  getRestSeconds(ex) {
+    if (this.isSupersetEnabled(ex)) {
+      return this.parseRestSeconds(ex.superset.restSeconds || ex.superset.rest);
+    }
+    return Math.max(120, this.parseRestSeconds(ex?.restSeconds || ex?.rest));
+  }
+
+  getNextSet() {
+    const exercises = this.routine?.[this.activeDayIndex]?.exercises || [];
+    const visited = new Set();
+    for (const ex of exercises) {
+      if (visited.has(ex.id)) continue;
+      const group = this.isSupersetEnabled(ex)
+        ? exercises.filter(candidate => candidate.superset?.id === ex.superset.id)
+        : [ex];
+      group.forEach(candidate => visited.add(candidate.id));
+      const maxSets = Math.max(0, ...group.map(candidate => this.session?.logs?.[candidate.id]?.length || 0));
+      for (let setIdx = 0; setIdx < maxSets; setIdx++) {
+        for (const candidate of group) {
+          const set = this.session?.logs?.[candidate.id]?.[setIdx];
+          if (set && !set.completed) return { ex: candidate, setIdx };
+        }
+      }
+    }
+    return null;
   }
 
   getSuggestedDayIndex() {
@@ -609,36 +619,40 @@ class WorkoutApp {
   updateSetWeight(exId, setIdx, newWeight) {
     const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
-    if (this.session && !this.session.startTime) {
-      this.session.startTime = new Date().toISOString();
-    }
-    const val = Math.max(0, parseFloat(newWeight) || 0);
-    list[setIdx].weight = val;
-
-    // Set 1 weight propagation: auto-update subsequent uncompleted sets!
-    if (setIdx === 0 && list.length > 1) {
-      for (let i = 1; i < list.length; i++) {
-        if (!list[i].completed) {
-          list[i].weight = val;
-        }
-      }
-    }
-
+    if (!this.session.startTime) this.session.startTime = new Date().toISOString();
+    const parsed = newWeight === null || newWeight === '' ? NaN : Number(newWeight);
+    const value = Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+    const affected = [setIdx];
+    if (setIdx === 0 && value !== null) list.forEach((set, idx) => {
+      if (idx > 0 && !set.completed && (!set.exerciseName || !list[0].exerciseName || set.exerciseName === list[0].exerciseName)) affected.push(idx);
+    });
+    affected.forEach(idx => {
+      list[idx].weight = value;
+      list[idx].needsBaseline = value === null;
+      const row = this.exerciseListEl.querySelector(`.set-row[data-exid="${exId}"][data-setidx="${idx}"]`);
+      if (!row) return;
+      const input = row.querySelector('.set-weight-input');
+      if (input && document.activeElement !== input) input.value = value === null ? '' : value;
+      const button = row.querySelector('.set-check-btn');
+      if (button) button.disabled = value === null && !list[idx].completed;
+      const prompt = row.querySelector('.baseline-prompt');
+      if (prompt) prompt.hidden = value !== null;
+    });
+    const warmup = this.exerciseListEl.querySelector(`#card_${exId} .warmup-btn`);
+    if (warmup) warmup.disabled = list.some(set => set.needsBaseline || set.weight === null);
     this.saveCurrentSession();
-    this.renderWorkout();
+    this.updateNowLiftingHUD();
   }
 
   updateSetReps(exId, setIdx, newReps) {
     const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
-    if (this.session && !this.session.startTime) {
-      this.session.startTime = new Date().toISOString();
-    }
-    const val = Math.max(0, parseInt(newReps, 10) || 0);
-    list[setIdx].reps = val;
-
+    if (!this.session.startTime) this.session.startTime = new Date().toISOString();
+    list[setIdx].reps = Math.max(0, parseInt(newReps, 10) || 0);
+    const input = this.exerciseListEl.querySelector(`.set-reps-input[data-exid="${exId}"][data-setidx="${setIdx}"]`);
+    if (input && document.activeElement !== input) input.value = list[setIdx].reps;
     this.saveCurrentSession();
-    this.renderWorkout();
+    this.updateNowLiftingHUD();
   }
 
   getPreviousExercisePerformance(exerciseName) {
@@ -647,6 +661,7 @@ class WorkoutApp {
     if (this.history && Array.isArray(this.history)) {
       for (let i = this.history.length - 1; i >= 0; i--) {
         const workout = this.history[i];
+        if (workout.deload || workout.isDeload || workout.deloadActive) continue;
         if (workout.exercises && workout.exercises[exerciseName] && Array.isArray(workout.exercises[exerciseName].sets)) {
           const validSets = workout.exercises[exerciseName].sets.filter(s => s && s.completed !== false && (s.reps > 0 || s.weight > 0));
           if (validSets.length > 0) {
@@ -661,7 +676,7 @@ class WorkoutApp {
     }
 
     // 2. Check persistent lastWeights store only if no history entry exists
-    if (!historyEntry && this.lastWeights && this.lastWeights[exerciseName] && Array.isArray(this.lastWeights[exerciseName].sets)) {
+    if (!historyEntry && this.lastWeights && this.lastWeights[exerciseName] && !this.lastWeights[exerciseName].deload && Array.isArray(this.lastWeights[exerciseName].sets)) {
       const validSets = this.lastWeights[exerciseName].sets.filter(s => s && s.completed !== false && (s.reps > 0 || s.weight > 0));
       if (validSets.length > 0) {
         return {
@@ -802,7 +817,7 @@ class WorkoutApp {
     }
 
     // Timer controls
-    document.getElementById('timerSkipBtn')?.addEventListener('click', () => this.stopTimer());
+    document.getElementById('timerSkipBtn')?.addEventListener('click', () => this.skipTimer());
     document.getElementById('timerPlus30Btn')?.addEventListener('click', () => this.adjustTimer(30));
     document.getElementById('timerMinus30Btn')?.addEventListener('click', () => this.adjustTimer(-30));
 
@@ -893,389 +908,151 @@ class WorkoutApp {
   }
 
   renderDaySelector() {
-    const todayIndex = this.getSuggestedDayIndex();
-    this.daySelectorEl.innerHTML = this.routine.map((day, idx) => {
-      const isActive = idx === this.activeDayIndex;
-      const isToday = idx === todayIndex;
-      
-      let dayAbbr = 'DAY';
-      let routineName = day.title;
-      if (day.title.includes('Wed')) { dayAbbr = 'WED'; routineName = 'Upper A'; }
-      else if (day.title.includes('Fri')) { dayAbbr = 'FRI'; routineName = 'Lower A'; }
-      else if (day.title.includes('Sat')) { dayAbbr = 'SAT'; routineName = 'Upper B'; }
-      else if (day.title.includes('Sun')) { dayAbbr = 'SUN'; routineName = 'DB Arms'; }
-      else if (day.title.includes('Mon')) { dayAbbr = 'MON'; routineName = 'Lower B'; }
-
-      const coreCount = day.exercises.filter(e => !e.isOptional).length;
-
-      return `
-        <button class="day-btn ${isActive ? 'active' : ''}" data-index="${idx}">
-          <div class="day-btn-header">
-            <span class="day-btn-day">${dayAbbr}</span>
-            ${isToday ? '<span class="today-dot">● Today</span>' : `<span style="font-size: 0.65rem; color: var(--text-muted);">${coreCount} lifts</span>`}
-          </div>
-          <div class="day-btn-title">${routineName}</div>
-        </button>
-      `;
-    }).join('');
-
-    this.daySelectorEl.querySelectorAll('.day-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const idx = parseInt(btn.dataset.index, 10);
-        this.activeDayIndex = idx;
-        this.session = this.loadSession();
-        this.renderDaySelector();
-        this.renderWorkout();
-      });
+    const todayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()];
+    this.daySelectorEl.innerHTML = `<label class="day-picker-label" for="workoutDayPicker">Workout day</label>
+      <select id="workoutDayPicker" class="day-picker">${this.routine.map((day, idx) =>
+        `<option value="${idx}" ${idx === this.activeDayIndex ? 'selected' : ''}>${this.escapeHtml(day.title)}${day.title.startsWith(todayName) ? ' · Today' : ''}</option>`).join('')}</select>`;
+    document.getElementById('workoutDayPicker').addEventListener('change', e => {
+      this.saveCurrentSession();
+      this.activeDayIndex = Number(e.target.value);
+      this.focusedExerciseId = null;
+      this.pendingRir = null;
+      this.session = this.loadSession();
+      this.renderDaySelector();
+      this.renderWorkout();
     });
   }
 
   renderWorkout() {
-    const currentDay = this.routine[this.activeDayIndex];
-    if (!currentDay) return;
-
-    // Separate Core Lifts and Exclusively Optional Finishers
-    const coreExercises = currentDay.exercises.filter(ex => !ex.isOptional);
-    const optionalExercises = currentDay.exercises.filter(ex => ex.isOptional);
-
-    const hasSuperset = coreExercises.some(ex => ex.superset);
-    const totalCoreSets = coreExercises.reduce((sum, ex) => sum + ((this.session.logs[ex.id] && this.session.logs[ex.id].length) || ex.sets), 0);
-    const completedCoreSets = coreExercises.reduce((sum, ex) => {
-      const logs = this.session.logs[ex.id] || [];
-      return sum + logs.filter(s => s.completed).length;
+    const day = this.routine[this.activeDayIndex];
+    if (!day) return;
+    const core = day.exercises.filter(ex => !ex.isOptional);
+    const total = core.reduce((sum, ex) => sum + (this.session.logs[ex.id] || []).length, 0);
+    const complete = core.reduce((sum, ex) => sum + (this.session.logs[ex.id] || []).filter(set => set.completed).length, 0);
+    const estimateSeconds = core.reduce((sum, ex) => {
+      const count = (this.session.logs[ex.id] || []).length;
+      return sum + count * 45 + Math.max(0, count - 1) * this.getRestSeconds(ex) + 90;
     }, 0);
-    const progressPct = totalCoreSets > 0 ? Math.round((completedCoreSets / totalCoreSets) * 100) : 0;
-    const estimatedMins = currentDay.id === 'sun___db_arms' ? 30 : (hasSuperset ? (coreExercises.length * 8) - 8 : (coreExercises.length * 8));
-
-    // Clean Day Title for header
-    let cleanDayTitle = currentDay.title;
-    if (cleanDayTitle.includes('Mon-')) cleanDayTitle = 'Mon - Lower B';
-
-    const deloadBannerHTML = this.deloadActive ? `
-      <div class="deload-banner">
-        <div class="deload-banner-icon">🌿</div>
-        <div class="deload-banner-text">
-          <div class="deload-banner-title">Deload Week Active (${this.getDeloadDaysLeft()} day${this.getDeloadDaysLeft() === 1 ? '' : 's'} remaining)</div>
-          <div>Volume automatically reduced by ~50% & loads eased by ~10% for systemic joint & CNS recovery.</div>
-        </div>
-      </div>
-    ` : '';
-
-    this.sessionInfoEl.innerHTML = `
-      ${deloadBannerHTML}
-      <h2>${this.escapeHtml(cleanDayTitle)}</h2>
-      <div class="session-meta">
-        <span>🏋️ ${coreExercises.length} Core Lifts</span>
-        <span>•</span>
-        <span>⚡ ${totalCoreSets} Sets</span>
-        <span>•</span>
-        <span>⏱️ ~${estimatedMins}m ${hasSuperset ? '<strong style="color: var(--accent-purple);">(⚡ Superset)</strong>' : ''}</span>
-      </div>
-      <div class="workout-progress-bar-wrap">
-        <div class="workout-progress-info">
-          <span>⚡ <strong>${completedCoreSets} of ${totalCoreSets}</strong> sets completed</span>
-          <span class="workout-progress-pct">${progressPct}%</span>
-        </div>
-        <div class="workout-progress-track">
-          <div class="workout-progress-fill" style="width: ${progressPct}%;"></div>
-        </div>
-      </div>
-    `;
-
-    // Render Core Cards
-    const coreHTML = coreExercises.map(ex => this.renderExerciseCard(ex, false)).join('');
-
-    // Render Dedicated Optional Drawer
-    const isOptionalOpen = this.expandedOptionalDays.has(currentDay.id);
-    const optionalHTML = optionalExercises.length > 0 ? `
-      <div class="optional-section-wrap">
-        <div class="optional-section-header" id="optionalToggleHeader">
-          <div class="optional-header-left">
-            <span class="optional-badge-pill">⚡ 100% EXCLUSIVELY OPTIONAL</span>
-            <div class="optional-section-title">${optionalExercises.length} Bonus Finisher${optionalExercises.length > 1 ? 's' : ''}</div>
-            <div class="optional-section-subtitle">Only do this if you have 10+ mins left on your 60m timer!</div>
-          </div>
-          <span class="optional-toggle-pill" id="optionalTogglePill">${isOptionalOpen ? 'Hide Finisher ▴' : 'View Finisher (+5m) ▾'}</span>
-        </div>
-        <div class="optional-cards-list ${isOptionalOpen ? 'open' : ''}" id="optionalCardsList">
-          ${optionalExercises.map(ex => this.renderExerciseCard(ex, true)).join('')}
-        </div>
-      </div>
-    ` : '';
-
-    this.exerciseListEl.innerHTML = coreHTML + optionalHTML;
+    const normalSets = core.reduce((sum, ex) => sum + ex.sets, 0);
+    const reducedSets = core.reduce((sum, ex) => sum + Math.max(2, Math.floor(ex.sets * .67)), 0);
+    this.sessionInfoEl.innerHTML = `${this.deloadActive ? `<div class="deload-banner">Deload: ${reducedSets} of ${normalSets} planned sets (${Math.round((normalSets - reducedSets) / normalSets * 100)}% fewer), loads eased 10%.</div>` : ''}
+      <h2>${this.escapeHtml(day.title)}</h2>
+      <div class="session-meta">${complete}/${total} sets · Estimated ${Math.ceil(estimateSeconds / 60)} min</div>
+      <div class="workout-progress-track" role="progressbar" aria-label="Workout sets" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${complete}"><div class="workout-progress-fill" style="width:${total ? complete / total * 100 : 0}%"></div></div>`;
+    const next = this.getNextSet();
+    const pending = this.pendingRir && day.exercises.find(ex => ex.id === this.pendingRir.exId);
+    const focus = pending || day.exercises.find(ex => ex.id === this.focusedExerciseId) || (next && next.ex) || core[0];
+    const visible = focus ? day.exercises.filter(ex => ex.id === focus.id ||
+      (this.isSupersetEnabled(focus) && this.isSupersetEnabled(ex) && ex.superset.id === focus.superset.id)) : [];
+    this.exerciseListEl.innerHTML = `<details class="workout-overview">
+      <summary>Workout overview · ${day.exercises.length} exercises</summary>
+      <div class="overview-list">${day.exercises.map(ex => {
+        const sets = this.session.logs[ex.id] || [];
+        return `<button type="button" class="overview-exercise ${visible.includes(ex) ? 'selected' : ''}" data-exid="${ex.id}"><span>${this.escapeHtml(this.getEffectiveExerciseName(ex.id, ex))}${ex.isOptional ? ' · Optional' : ''}</span><span>${sets.filter(set => set.completed).length}/${sets.length}</span></button>`;
+      }).join('')}</div>
+    </details>${this.focusedExerciseId && next && this.focusedExerciseId !== next.ex.id ? '<button type="button" class="secondary-btn return-next-btn">Return to next set</button>' : ''}
+    ${visible.map(ex => this.renderExerciseCard(ex, ex.isOptional)).join('')}`;
     this.bindWorkoutCardEvents();
   }
 
   renderExerciseCard(ex, isBonus) {
-    const activeSub = this.session && this.session.swaps && this.session.swaps[ex.id];
-    const isSwapped = Boolean(activeSub);
-    const effectiveName = activeSub ? activeSub.name : ex.name;
-    const sessionSets = this.session.logs[ex.id] || [];
-    const prev = this.getPreviousExercisePerformance(effectiveName);
-    const pr = this.getPersonalRecord(effectiveName);
-    const machineSetting = this.machineSettings[ex.id] || '';
-    const isAllDone = sessionSets.length > 0 && sessionSets.every(s => s.completed);
-    const isCollapsed = isAllDone && this.collapsedCards.has(ex.id);
-
-    const displayName = isSwapped ? `${activeSub.name} (Alt for ${ex.name})` : ex.name;
-    const effectiveTargetReps = isSwapped && activeSub.targetReps ? activeSub.targetReps : ex.targetReps;
-    const effectiveNotes = isSwapped && activeSub.notes ? activeSub.notes : ex.notes;
-    const effectiveVideo = isSwapped && activeSub.videoUrl ? activeSub.videoUrl : ex.videoUrl;
-
-    const cleanTag = ex.muscle.replace(/[^a-zA-Z]/g, '');
-    const effectiveRest = ex.superset ? ex.superset.rest : (ex.rest || '2 min');
-
-    // Progression Flag Checks: only unlock weight increase if top-end reps hit on ALL sets
-    const maxTarget = this.getMaxTargetReps(effectiveTargetReps);
-    const completedSets = sessionSets.filter(s => s.completed);
-    const topCurrentWeight = completedSets.length > 0 ? Math.max(...completedSets.map(s => s.weight || 0)) : 0;
-    const setsHittingMax = completedSets.filter(s => (s.reps || 0) >= maxTarget && (topCurrentWeight === 0 || (s.weight || 0) >= topCurrentWeight));
-    const targetSetsCount = (this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets) || sessionSets.length || 3;
-    const allCurrentHit = !this.deloadActive && sessionSets.length >= targetSetsCount && completedSets.length === sessionSets.length && completedSets.every(s => s.completed && (s.reps || 0) >= maxTarget && (topCurrentWeight === 0 || (s.weight || 0) >= topCurrentWeight));
-    const prevProgression = this.getPreviousProgressionFlag(effectiveName, effectiveTargetReps, targetSetsCount, ex);
-    const nextIncompleteIdx = sessionSets.findIndex(s => !s.completed);
-    const prevSummaryText = this.formatPreviousSetsSummary(prev ? prev.sets : null);
-
-    return `
-      <div class="exercise-card ${isAllDone ? 'completed' : ''} ${isBonus ? 'is-optional' : ''} ${ex.superset ? 'is-superset' : ''}" id="card_${ex.id}" data-exid="${ex.id}">
-        
-        ${ex.superset && ex.superset.tag.endsWith('A') ? `
-          <div class="superset-guide-banner">
-            <span style="font-size: 1.1rem;">⚡</span>
-            <div>
-              <strong>${ex.superset.name}</strong><br>
-              <span>${ex.superset.tip}</span>
-            </div>
-          </div>
-        ` : ''}
-
-        <div class="card-header">
-          <div class="card-meta-row">
-            <div class="card-tags-group">
-              <span class="muscle-tag tag-${cleanTag}">${ex.muscle}</span>
-              ${ex.superset ? `<span class="superset-badge">⚡ SUPERSET ${ex.superset.tag}</span>` : ''}
-              ${isBonus ? '<span class="optional-badge">⚡ Optional Bonus</span>' : ''}
-              ${isSwapped ? '<span class="optional-badge alt-tag">🔄 Alt Equipment</span>' : ''}
-              ${allCurrentHit ? `<span class="progression-badge full">🚀 All ${sessionSets.length} Sets Hit ${maxTarget} Reps! Increase Weight Next Time</span>` : (setsHittingMax.length > 0 ? `<span class="progression-badge partial">🎯 ${setsHittingMax.length}/${sessionSets.length} sets @ ${maxTarget} reps</span>` : '')}
-            </div>
-            <div class="card-meta-actions">
-              ${effectiveVideo ? `
-                <a href="${effectiveVideo}" target="_blank" rel="noopener noreferrer" class="video-link-btn" title="Watch form guide">
-                  ▶ Form
-                </a>
-              ` : ''}
-              ${isAllDone ? `
-                <button type="button" class="card-collapse-toggle-btn" data-exid="${ex.id}" aria-label="Toggle exercise details">
-                  ${isCollapsed ? 'Show Details ▾' : 'Collapse ▴'}
-                </button>
-              ` : ''}
-            </div>
-          </div>
-
-          <h3 class="exercise-name">${this.escapeHtml(displayName)}</h3>
-
-          <div class="card-tools-row">
-            ${prevSummaryText ? `
-              <button type="button" class="prev-weight-pill-btn" data-exname="${this.escapeHtml(effectiveName)}" title="Tap to view performance log">⏱️ Last: ${prevSummaryText} ▾</button>
-            ` : '<div class="card-tools-spacer"></div>'}
-            <div class="card-actions-pills">
-              <button type="button" class="action-pill-btn warmup-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(displayName)}" title="Calculate neural warmup ramp sets">
-                🔥 Warmup
-              </button>
-              <button type="button" class="action-pill-btn swap-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(ex.name)}" title="Swap with alternative equipment">
-                🔄 Swap
-              </button>
-            </div>
-          </div>
-        </div>
-
-        ${isCollapsed ? `
-          <div class="completed-summary-row">
-            <span class="completed-check-icon">✓</span>
-            <div class="completed-summary-text">
-              <strong>All ${sessionSets.length} Sets Completed!</strong>
-              <span>${sessionSets.map(s => `${s.weight}lbs×${s.reps}`).join(' • ')}</span>
-            </div>
-          </div>
-        ` : ''}
-
-        <div class="card-body-collapsible" style="display: ${isCollapsed ? 'none' : 'block'};">
-          <div class="exercise-meta-box">
-            <div class="target-targets">
-              <div class="target-item"><strong>Target:</strong> ${ex.sets} sets × ${effectiveTargetReps} reps</div>
-              <div class="target-item"><strong>Rest:</strong> <span style="${ex.superset ? 'color: #d8b4fe; font-weight: 700;' : ''}">${effectiveRest}</span></div>
-              <div class="target-item"><strong>Start Weight:</strong> ${ex.startingWeight || 'Moderate'}</div>
-              ${pr.maxWeight > 0 ? `<div class="target-item"><strong>PR:</strong> ${pr.maxWeight} lbs</div>` : ''}
-            </div>
-            ${effectiveNotes ? `
-              <details class="form-notes-collapsible">
-                <summary class="form-notes-summary">
-                  <span>ℹ️ Setup & Form Guide</span>
-                  <span class="chevron">▾</span>
-                </summary>
-                <div class="form-notes-content">${this.escapeHtml(effectiveNotes)}</div>
-              </details>
-            ` : ''}
-            
-            <div class="machine-settings-row">
-              <span class="machine-settings-label">⚙️ Pin / Seat:</span>
-              <input type="text" class="machine-settings-input" 
-                     placeholder="e.g. Seat #4, Pin #8" 
-                     value="${this.escapeHtml(machineSetting)}" 
-                     data-exid="${ex.id}" />
-            </div>
-
-            <div class="exercise-note-wrap">
-              <span class="note-icon">📝</span>
-              <input type="text" class="exercise-note-input" 
-                     placeholder="Note to self (e.g. seat #4, pause at bottom, handle width)..." 
-                     value="${this.escapeHtml(this.exerciseNotes[effectiveName] || '')}" 
-                     data-exname="${this.escapeHtml(effectiveName)}"
-                     data-exid="${ex.id}" />
-            </div>
-          </div>
-
-          ${prevProgression.unlocked ? (() => {
-            const isBumped = sessionSets.length > 0 && sessionSets[0].weight > prevProgression.topWeight;
-            return `
-            <div class="progression-banner">
-              <div class="progression-banner-left">
-                <span class="progression-icon">🚀</span>
-                <div class="progression-text">
-                  <strong>Double Progression Auto-Bump (+${prevProgression.increment} lbs):</strong> Hit ${prevProgression.maxReps} reps across all ${prevProgression.setsCount} sets last workout! ${isBumped ? `Weight auto-bumped +${prevProgression.increment} lbs.` : `Staying at ${prevProgression.topWeight} lbs.`}
-                </div>
-              </div>
-              ${isBumped ? `
-                <button class="bump-weight-btn revert" data-exid="${ex.id}" data-bump="-${prevProgression.increment}" title="Revert to previous session weight (${prevProgression.topWeight} lbs)">
-                  ↩️ Keep ${prevProgression.topWeight} lbs (-${prevProgression.increment} lbs)
-                </button>
-              ` : `
-                <button class="bump-weight-btn" data-exid="${ex.id}" data-bump="${prevProgression.increment}" title="Apply +${prevProgression.increment} lbs progression bump">
-                  +${prevProgression.increment} lbs All Sets
-                </button>
-              `}
-            </div>
-            `;
-          })() : ''}
-
-          <div class="sets-table-wrap">
-            <table class="sets-table">
-              <thead>
-                <tr>
-                  <th>Prev</th>
-                  <th>Target</th>
-                  <th>Lbs</th>
-                  <th>Reps</th>
-                  <th>Done</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${sessionSets.map((s, sIdx) => {
-                  const prevSet = prev && prev.sets && prev.sets[sIdx];
-                  let prevText = '—';
-                  if (prevSet) {
-                    if (prevSet.weight > 0) {
-                      prevText = `${prevSet.weight}×${prevSet.reps}`;
-                    } else if (prevSet.weight === 0 && prevSet.reps > 0) {
-                      prevText = `BW×${prevSet.reps}`;
-                    }
-                  }
-                  const isActiveNext = sIdx === nextIncompleteIdx;
-                  const target = this.getSetTarget(ex, sIdx, effectiveName);
-
-                  // Micro-PR badge calculation
-                  let microBadge = '';
-                  if (s.completed && prevSet && (prevSet.weight > 0 || (prevSet.weight === 0 && prevSet.reps > 0))) {
-                    const weightDiff = (s.weight || 0) - (prevSet.weight || 0);
-                    const repsDiff = (s.reps || 0) - (prevSet.reps || 0);
-                    if (weightDiff > 0) {
-                      microBadge = `<span class="micro-badge weight-pr">🚀 +${weightDiff} lbs</span>`;
-                    } else if (weightDiff === 0 && repsDiff > 0) {
-                      microBadge = `<span class="micro-badge reps-pr">🔥 +${repsDiff} rep${repsDiff > 1 ? 's' : ''}</span>`;
-                    } else if (weightDiff === 0 && repsDiff === 0) {
-                      microBadge = `<span class="micro-badge match-prev">✓ Match</span>`;
-                    }
-                  }
-
-                  return `
-                    <tr class="set-row ${s.completed ? 'completed' : ''} ${isActiveNext ? 'active-next-set' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}">
-                      <td class="prev-cell">
-                        <div>${prevText}</div>
-                        ${microBadge ? `<div>${microBadge}</div>` : ''}
-                      </td>
-                      <td class="target-cell">
-                        <div class="target-val">${target.targetRepsDisplay} <span style="font-size: 0.65rem; color: var(--text-muted); font-weight: normal;">reps</span></div>
-                        ${target.targetWeight > 0 ? `<div class="target-wt">${target.targetWeightDisplay} lbs</div>` : (target.targetWeight === 0 && ex.startingWeight && ex.startingWeight.toLowerCase().includes('bodyweight') ? `<div class="target-wt">Bodyweight</div>` : '')}
-                        ${target.isProgressionIncrease ? `<span class="target-bump-badge">▲ +${this.getExerciseIncrement(ex, effectiveName)} lbs</span>` : ''}
-                      </td>
-                      <td>
-                        <div class="stepper-wrap weight-stepper">
-                          <button type="button" class="stepper-btn minus" data-type="weight" data-delta="-5" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Decrease weight by 5 lbs">−</button>
-                          <input type="number" class="set-input set-weight-input" 
-                                 value="${s.weight}" 
-                                 data-exid="${ex.id}" data-setidx="${sIdx}" 
-                                 step="5" min="0" placeholder="0" 
-                                 inputmode="decimal" pattern="[0-9]*"
-                                 aria-label="Set ${s.setNum} weight in lbs" />
-                          <button type="button" class="stepper-btn plus" data-type="weight" data-delta="5" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Increase weight by 5 lbs">+</button>
-                        </div>
-                      </td>
-                      <td>
-                        <div class="stepper-wrap reps-stepper">
-                          <button type="button" class="stepper-btn minus" data-type="reps" data-delta="-1" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Decrease reps by 1">−</button>
-                          <input type="number" class="set-input set-reps-input" 
-                                 value="${s.reps}" 
-                                 data-exid="${ex.id}" data-setidx="${sIdx}" 
-                                 step="1" min="0" placeholder="0" 
-                                 inputmode="numeric" pattern="[0-9]*"
-                                 aria-label="Set ${s.setNum} reps" />
-                          <button type="button" class="stepper-btn plus" data-type="reps" data-delta="1" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Increase reps by 1">+</button>
-                        </div>
-                      </td>
-                      <td>
-                        <button class="set-check-btn" data-exid="${ex.id}" data-setidx="${sIdx}" data-rest="${effectiveRest}" aria-label="Mark set ${s.setNum} ${s.completed ? 'incomplete' : 'complete'}">
-                          ${s.completed ? '✓' : '○'}
-                        </button>
-                      </td>
-                    </tr>
-                    ${s.completed ? `
-                      <tr class="rir-tr" data-exid="${ex.id}" data-setidx="${sIdx}">
-                        <td colspan="5" style="padding: 0; border-top: none;">
-                          <div class="rir-selector-row">
-                            <span class="rir-prompt">RIR:</span>
-                            <button type="button" class="rir-chip ${s.rir === 3 ? 'active' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}" data-rir="3">3+ (Light)</button>
-                            <button type="button" class="rir-chip ${s.rir === 2 ? 'active' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}" data-rir="2">2 (Solid)</button>
-                            <button type="button" class="rir-chip ${s.rir === 1 ? 'active' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}" data-rir="1">1 (Tough)</button>
-                            <button type="button" class="rir-chip ${s.rir === 0 ? 'active' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}" data-rir="0">0 (Max)</button>
-                          </div>
-                        </td>
-                      </tr>
-                    ` : ''}
-                  `;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-
-          <div class="card-footer">
-            <button class="add-set-btn" data-exid="${ex.id}">
-              <span>+</span> Add Set
-            </button>
-            <div class="card-footer-right">
-              ${sessionSets.length > 1 ? `
-                <button class="icon-btn remove-set-btn" data-exid="${ex.id}" title="Remove last set">
-                  − Remove Set
-                </button>
-              ` : ''}
-            </div>
-          </div>
-        </div>
+    const name = this.getEffectiveExerciseName(ex.id, ex);
+    const swapped = this.session.swaps && this.session.swaps[ex.id];
+    const sets = this.session.logs[ex.id] || [];
+    const previous = this.getPreviousExercisePerformance(name);
+    const targetReps = (swapped && swapped.targetReps) || ex.targetReps;
+    const notes = (swapped && swapped.notes) || ex.notes;
+    const video = (swapped && swapped.videoUrl) || ex.videoUrl;
+    const rest = this.formatRest(this.getRestSeconds(ex));
+    const increment = this.getExerciseIncrement(ex, name);
+    const pref = (this.exercisePreferences || {})[name] || {};
+    const convention = pref.loadConvention || (/smith/i.test(name) ? 'plates-only' : /dumbbell|\bdb\b/i.test(name) ? (/overhead.*extension|goblet/i.test(name) ? 'total' : 'per-hand') : 'total');
+    const conventionLabel = {'per-hand':'per hand', 'total':'total load', 'plates-only':'plates only; exclude Smith bar', 'including-bar':'including Smith bar'}[convention] || 'total load';
+    const next = this.getNextSet();
+    const allDone = sets.length > 0 && sets.every(set => set.completed);
+    const pending = this.pendingRir && this.pendingRir.exId === ex.id;
+    const collapsed = allDone && this.collapsedCards.has(ex.id) && !pending;
+    const enabled = this.isSupersetEnabled(ex);
+    const progression = this.getPreviousProgressionFlag(name, targetReps, this.deloadActive ? Math.max(2, Math.floor(ex.sets * .67)) : ex.sets, ex);
+    return `<article class="exercise-card focused-card ${allDone ? 'completed' : ''}" id="card_${ex.id}" data-exid="${ex.id}">
+      <div class="card-header">
+        <div class="focus-card-eyebrow">${this.escapeHtml(ex.muscle)}${isBonus ? ' · Optional' : ''}${enabled ? ` · Superset ${this.escapeHtml(ex.superset.tag)}` : ''}</div>
+        <h3 class="exercise-name">${this.escapeHtml(name)}</h3>
+        ${swapped ? `<div class="muted-text">Alternative for ${this.escapeHtml(ex.name)}</div>` : ''}
+        <div class="focus-prescription">${sets.length} sets × ${this.escapeHtml(targetReps)} reps · Rest ${rest}</div>
+        <div class="load-convention">Weight in lbs · ${conventionLabel}</div>
       </div>
-    `;
+      ${collapsed ? `<button type="button" class="card-collapse-toggle-btn" data-exid="${ex.id}">✓ All sets complete · Review sets</button>` : `<div class="set-blocks">
+      ${sets.map((set, idx) => {
+        const prev = previous && previous.sets && previous.sets[idx];
+        const target = this.getSetTarget(ex, idx, name);
+        const needsBaseline = set.needsBaseline || set.weight === null;
+        return `<section class="set-row set-block ${set.completed ? 'completed' : ''} ${next && next.ex.id === ex.id && next.setIdx === idx ? 'active-next-set' : ''}" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Set ${idx + 1}">
+          <div class="set-heading"><strong>Set ${idx + 1}${next && next.ex.id === ex.id && next.setIdx === idx ? ' · Up next' : ''}</strong><span>Target ${this.escapeHtml(target.targetRepsDisplay)} reps${!needsBaseline && target.targetWeight > 0 ? ` · ${target.targetWeightDisplay} lb` : ''}</span></div>
+          <div class="previous-set">Last: ${prev ? `${prev.weight === 0 ? 'BW' : prev.weight + ' lb'} × ${prev.reps}` : 'No previous set'}${set.completed && set.exerciseName && set.exerciseName !== name ? ` · Logged as ${this.escapeHtml(set.exerciseName)}` : ''}</div>
+          ${needsBaseline ? '<p class="baseline-prompt">Enter a baseline weight for this equipment (0 for bodyweight).</p>' : ''}
+          <div class="set-entry-grid">
+            <label>Weight (lb)<span class="stepper-wrap weight-stepper"><button type="button" class="stepper-btn" data-type="weight" data-delta="-${increment}" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Decrease set ${idx + 1} weight by ${increment} pounds">−</button><input type="number" class="set-input set-weight-input" value="${set.weight === null ? '' : set.weight}" data-exid="${ex.id}" data-setidx="${idx}" min="0" step="${increment}" inputmode="decimal" placeholder="Enter" aria-label="Set ${idx + 1} weight in pounds"><button type="button" class="stepper-btn" data-type="weight" data-delta="${increment}" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Increase set ${idx + 1} weight by ${increment} pounds">+</button></span></label>
+            <label>Reps<span class="stepper-wrap reps-stepper"><button type="button" class="stepper-btn" data-type="reps" data-delta="-1" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Decrease set ${idx + 1} reps">−</button><input type="number" class="set-input set-reps-input" value="${set.reps}" data-exid="${ex.id}" data-setidx="${idx}" min="0" step="1" inputmode="numeric" aria-label="Set ${idx + 1} reps"><button type="button" class="stepper-btn" data-type="reps" data-delta="1" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Increase set ${idx + 1} reps">+</button></span></label>
+          </div>
+          <button type="button" class="set-check-btn" data-exid="${ex.id}" data-setidx="${idx}" data-rest="${rest}" ${needsBaseline && !set.completed ? 'disabled' : ''} aria-pressed="${set.completed}">${set.completed ? '✓ Completed · Undo' : 'Complete set'}</button>
+          ${set.completed ? `<div class="rir-selector-row"><span class="rir-prompt">Reps left in reserve</span>${[3,2,1,0].map(rir => `<button type="button" class="rir-chip ${set.rir === rir ? 'active' : ''}" data-exid="${ex.id}" data-setidx="${idx}" data-rir="${rir}" aria-pressed="${set.rir === rir}">${rir === 3 ? '3+' : rir}</button>`).join('')}<button type="button" class="rir-chip" data-exid="${ex.id}" data-setidx="${idx}" data-rir="skip">Skip effort</button></div>` : ''}
+        </section>`;
+      }).join('')}</div>`}
+      <details class="exercise-details"><summary>Setup, notes & exercise options</summary>
+        <div class="exercise-detail-content">
+          <p>${this.escapeHtml(notes || '')}</p>
+          ${video ? `<a class="video-link-btn" href="${this.escapeHtml(video)}" target="_blank" rel="noopener noreferrer">Watch form guide ↗</a>` : ''}
+          <div class="exercise-option-buttons"><button type="button" class="warmup-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(name)}" ${sets.some(set => set.needsBaseline || set.weight === null) ? 'disabled title="Enter a baseline weight first"' : ''}>Warmup</button><button type="button" class="swap-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(ex.name)}">Swap equipment</button><button type="button" class="prev-weight-pill-btn" data-exname="${this.escapeHtml(name)}">Performance history</button></div>
+          ${ex.superset ? `<label class="superset-mode"><input type="checkbox" class="superset-enabled-input" data-group="${ex.superset.id}" ${enabled ? 'checked' : ''}> Alternate this superset</label><p class="muted-text">When off, use straight sets with at least 2 minutes of rest.</p>` : ''}
+          <label>Weight increment<select class="exercise-increment-input" data-exname="${this.escapeHtml(name)}">${[1,2.5,5,10].map(value => `<option value="${value}" ${increment === value ? 'selected' : ''}>${value} lb</option>`).join('')}</select></label>
+          <label>Weight convention<select class="exercise-convention-input" data-exname="${this.escapeHtml(name)}">${[['total','Total load'],['per-hand','Dumbbell weight per hand'],['plates-only','Smith plates only (exclude bar)'],['including-bar','Smith total including bar']].map(([value,label]) => `<option value="${value}" ${convention === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+          <p class="muted-text">Changing the label keeps your recorded numbers unchanged.</p>
+          <label>Pin / seat<input type="text" class="machine-settings-input" value="${this.escapeHtml(this.machineSettings[ex.id] || '')}" data-exid="${ex.id}" placeholder="Seat #4, pin #8"></label>
+          <label>Note to self<input type="text" class="exercise-note-input" value="${this.escapeHtml(this.exerciseNotes[name] || '')}" data-exname="${this.escapeHtml(name)}" data-exid="${ex.id}" placeholder="Setup or technique reminders"></label>
+          ${progression.unlocked ? `<p>All previous sets reached ${progression.maxReps} reps. Progression step: ${progression.increment} lb.</p><button class="bump-weight-btn" data-exid="${ex.id}" data-bump="${sets[0] && sets[0].weight > progression.topWeight ? -progression.increment : progression.increment}">${sets[0] && sets[0].weight > progression.topWeight ? 'Revert' : 'Apply'} ${progression.increment} lb progression</button>` : ''}
+          <div class="card-footer"><button type="button" class="add-set-btn" data-exid="${ex.id}">+ Add set</button>${sets.length > 1 ? `<button type="button" class="remove-set-btn icon-btn" data-exid="${ex.id}">− Remove set</button>` : ''}</div>
+        </div>
+      </details>
+    </article>`;
   }
 
   bindWorkoutCardEvents() {
+    this.exerciseListEl.querySelectorAll('.overview-exercise').forEach(button => {
+      button.addEventListener('click', () => {
+        this.focusedExerciseId = button.dataset.exid;
+        this.collapsedCards.delete(button.dataset.exid);
+        this.renderWorkout();
+      });
+    });
+    this.exerciseListEl.querySelector('.return-next-btn')?.addEventListener('click', () => {
+      this.focusedExerciseId = null;
+      this.renderWorkout();
+    });
+    this.exerciseListEl.querySelectorAll('.superset-enabled-input').forEach(input => {
+      input.addEventListener('input', () => {
+        this.session.disabledSupersets = this.session.disabledSupersets || {};
+        this.session.disabledSupersets[input.dataset.group] = !input.checked;
+        this.saveCurrentSession();
+        this.renderWorkout();
+      });
+    });
+    this.exerciseListEl.querySelectorAll('.exercise-increment-input, .exercise-convention-input').forEach(input => {
+      input.addEventListener('input', () => {
+        const name = input.dataset.exname;
+        this.exercisePreferences = this.exercisePreferences || {};
+        const preference = this.exercisePreferences[name] || {};
+        if (input.classList.contains('exercise-increment-input')) preference.increment = Number(input.value);
+        else preference.loadConvention = input.value;
+        this.exercisePreferences[name] = preference;
+        this.saveExercisePreferences();
+        const details = input.closest('details');
+        const exId = details.closest('.exercise-card').dataset.exid;
+        this.renderWorkout();
+        const replacement = this.exerciseListEl.querySelector(`#card_${exId} details`);
+        if (replacement) replacement.open = true;
+      });
+    });
     // Optional finisher drawer toggle
     const optHeader = document.getElementById('optionalToggleHeader');
     const optList = document.getElementById('optionalCardsList');
@@ -1364,6 +1141,7 @@ class WorkoutApp {
         const exId = btn.dataset.exid;
         const setIdx = parseInt(btn.dataset.setidx, 10);
         const rest = btn.dataset.rest;
+        this.focusedExerciseId = null;
         this.toggleSetCompletion(exId, setIdx, rest);
       });
     });
@@ -1379,16 +1157,16 @@ class WorkoutApp {
 
     // Weight and Rep input changes - auto-save immediately to persistent store
     this.exerciseListEl.querySelectorAll('.set-weight-input').forEach(input => {
-      input.addEventListener('change', () => {
+      input.addEventListener('input', () => {
         const exId = input.dataset.exid;
         const setIdx = parseInt(input.dataset.setidx, 10);
-        const val = parseFloat(input.value) || 0;
+        const val = input.value === '' ? null : parseFloat(input.value);
         this.updateSetWeight(exId, setIdx, val);
       });
     });
 
     this.exerciseListEl.querySelectorAll('.set-reps-input').forEach(input => {
-      input.addEventListener('change', () => {
+      input.addEventListener('input', () => {
         const exId = input.dataset.exid;
         const setIdx = parseInt(input.dataset.setidx, 10);
         const val = parseInt(input.value, 10) || 0;
@@ -1398,7 +1176,7 @@ class WorkoutApp {
 
     // Machine Settings input changes
     this.exerciseListEl.querySelectorAll('.machine-settings-input').forEach(input => {
-      input.addEventListener('change', () => {
+      input.addEventListener('input', () => {
         const exId = input.dataset.exid;
         this.machineSettings[exId] = input.value;
         this.saveMachineSettings();
@@ -1407,7 +1185,7 @@ class WorkoutApp {
 
     // Exercise Notes input changes
     this.exerciseListEl.querySelectorAll('.exercise-note-input').forEach(input => {
-      input.addEventListener('change', () => {
+      input.addEventListener('input', () => {
         const key = input.dataset.exname || input.dataset.exid;
         this.exerciseNotes[key] = input.value.trim();
         this.saveExerciseNotes();
@@ -1420,7 +1198,7 @@ class WorkoutApp {
         e.stopPropagation();
         const exId = chip.dataset.exid;
         const setIdx = parseInt(chip.dataset.setidx, 10);
-        const rir = parseInt(chip.dataset.rir, 10);
+        const rir = chip.dataset.rir === 'skip' ? null : parseInt(chip.dataset.rir, 10);
         this.setSetRIR(exId, setIdx, rir);
       });
     });
@@ -1446,12 +1224,26 @@ class WorkoutApp {
   toggleSetCompletion(exId, setIdx, restStr) {
     const setObj = this.session.logs[exId] && this.session.logs[exId][setIdx];
     if (!setObj) return;
+    const ex = this.findExerciseById(exId);
+    if (!setObj.completed && (setObj.weight === null || setObj.needsBaseline || !Number.isFinite(Number(setObj.weight)))) {
+      this.showToast('Enter a load for this equipment before completing the set.');
+      return;
+    }
 
     if (this.session && !this.session.startTime) {
       this.session.startTime = new Date().toISOString();
     }
 
     setObj.completed = !setObj.completed;
+    if (setObj.completed) {
+      const activeSwap = this.session.swaps?.[exId];
+      setObj.exerciseName = setObj.exerciseName || this.getEffectiveExerciseName(exId, ex);
+      setObj.muscle = setObj.muscle || activeSwap?.muscle || ex?.muscle;
+      setObj.targetReps = setObj.targetReps || activeSwap?.targetReps || ex?.targetReps;
+      setObj.completedAt = new Date().toISOString();
+    } else {
+      delete setObj.completedAt;
+    }
     this.saveCurrentSession();
 
     // Tactile haptic pulse on completing set
@@ -1461,17 +1253,19 @@ class WorkoutApp {
     if (setObj.completed) {
       this.primeAudioContext();
 
-      // Check if all sets for this exercise are now completed -> auto-collapse
+      // Keep the final effort prompt accessible until answered or skipped.
       const list = this.session.logs[exId] || [];
       if (list.length > 0 && list.every(s => s.completed)) {
-        this.collapsedCards.add(exId);
+        this.pendingRir = { exId, setIdx };
+        this.collapsedCards.delete(exId);
       }
 
-      const restSeconds = this.parseRestSeconds(restStr);
-      this.startTimer(restSeconds);
+      const restSeconds = this.getRestSeconds(ex);
+      this.startTimer(restSeconds, this.isSupersetEnabled(ex) ? 0 : 120);
     } else {
       // If unchecked, uncollapse
       this.collapsedCards.delete(exId);
+      if (this.pendingRir?.exId === exId) this.pendingRir = null;
     }
 
     this.renderWorkout();
@@ -1480,13 +1274,26 @@ class WorkoutApp {
 
   addSetToExercise(exId) {
     const list = this.session.logs[exId];
-    if (!list) return;
-    const lastSet = list[list.length - 1];
+    const ex = this.findExerciseById(exId);
+    if (!list || !ex) return;
+    const activeSwap = this.session.swaps?.[exId];
+    const effectiveName = this.getEffectiveExerciseName(exId, ex);
+    const currentSets = list.filter(set => set.exerciseName === effectiveName ||
+      (!set.exerciseName && !activeSwap && !ex.needsBaseline));
+    const lastSet = currentSets[currentSets.length - 1];
+    const lastLoadedSet = [...currentSets].reverse().find(set => !set.needsBaseline && Number.isFinite(set.weight));
+    const target = this.getSetTarget(ex, currentSets.length, effectiveName);
+    const weight = lastLoadedSet ? lastLoadedSet.weight : target.targetWeight;
     list.push({
       setNum: list.length + 1,
-      weight: lastSet ? lastSet.weight : 50,
-      reps: lastSet ? lastSet.reps : 10,
-      completed: false
+      weight,
+      reps: lastSet ? lastSet.reps : target.targetReps,
+      completed: false,
+      rir: null,
+      exerciseName: effectiveName,
+      muscle: activeSwap?.muscle || ex.muscle,
+      targetReps: activeSwap?.targetReps || ex.targetReps,
+      needsBaseline: !Number.isFinite(weight)
     });
     this.saveCurrentSession();
     this.renderWorkout();
@@ -1504,87 +1311,26 @@ class WorkoutApp {
   updateNowLiftingHUD() {
     const dock = document.getElementById('nowLiftingDock');
     if (!dock) return;
-
-    if (this.activeView !== 'workout' || !this.session) {
-      dock.style.display = 'none';
-      return;
-    }
-
-    const currentDay = this.routine && this.routine[this.activeDayIndex];
-    if (!currentDay || !currentDay.exercises) {
-      dock.style.display = 'none';
-      return;
-    }
-
-    // Find first exercise that has at least one incomplete set
-    let activeEx = null;
-    let activeSetIdx = -1;
-
-    for (const ex of currentDay.exercises) {
-      const sets = this.session.logs[ex.id] || [];
-      const idx = sets.findIndex(s => !s.completed);
-      if (idx !== -1) {
-        activeEx = ex;
-        activeSetIdx = idx;
-        break;
-      }
-    }
-
-    if (!activeEx) {
-      dock.style.display = 'none';
-      return;
-    }
-
-    const effectiveName = this.getEffectiveExerciseName(activeEx.id, activeEx);
-    const sets = this.session.logs[activeEx.id] || [];
-    const activeSet = sets[activeSetIdx];
-
-    const titleEl = document.getElementById('nowLiftingTitle');
-    const metaEl = document.getElementById('nowLiftingMeta');
-
-    if (titleEl) titleEl.textContent = effectiveName;
-    if (metaEl) {
-      const wtStr = (activeSet && activeSet.weight > 0) ? ` • ${activeSet.weight} lbs` : '';
-      metaEl.textContent = `Set ${activeSetIdx + 1}/${sets.length}${wtStr}`;
-    }
-
-    dock.dataset.activeExid = activeEx.id;
+    const next = this.activeView === 'workout' && this.session ? this.getNextSet() : null;
+    if (!next) { dock.style.display = 'none'; return; }
+    const set = this.session.logs[next.ex.id][next.setIdx];
+    const name = this.getEffectiveExerciseName(next.ex.id, next.ex);
+    const swap = this.session.swaps && this.session.swaps[next.ex.id];
+    const targetReps = (swap && swap.targetReps) || next.ex.targetReps;
+    document.getElementById('nowLiftingTitle').textContent = name;
+    document.getElementById('nowLiftingMeta').textContent = `Next: set ${next.setIdx + 1} · ${targetReps} reps · ${set.weight === null ? 'Enter baseline' : set.weight + ' lb'}`;
+    dock.dataset.activeExid = next.ex.id;
     dock.style.display = 'flex';
   }
 
   jumpToActiveExercise() {
-    const dock = document.getElementById('nowLiftingDock');
-    const exId = dock ? dock.dataset.activeExid : null;
-    if (!exId) return;
-
-    // If target exercise is an optional finisher and drawer is closed, open it
-    const currentDay = this.routine && this.routine[this.activeDayIndex];
-    const targetEx = currentDay && currentDay.exercises.find(e => e.id === exId);
-    if (targetEx && targetEx.isOptional) {
-      this.expandedOptionalDays.add(currentDay.id);
-      const optList = document.getElementById('optionalCardsList');
-      if (optList) optList.classList.add('open');
-      const optPill = document.getElementById('optionalTogglePill');
-      if (optPill) optPill.textContent = 'Hide Finisher ▴';
-    }
-
-    // Uncollapse if collapsed
-    if (this.collapsedCards.has(exId)) {
-      this.collapsedCards.delete(exId);
-      this.renderWorkout();
-    }
-
-    const card = document.getElementById('card_' + exId) || document.querySelector(`.exercise-card[data-exid="${exId}"]`);
-    if (card) {
-      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      card.style.transition = 'box-shadow 0.3s ease, border-color 0.3s ease';
-      card.style.borderColor = 'var(--accent-blue)';
-      card.style.boxShadow = '0 0 25px rgba(59, 130, 246, 0.45)';
-      setTimeout(() => {
-        card.style.borderColor = '';
-        card.style.boxShadow = '';
-      }, 1400);
-    }
+    const next = this.getNextSet();
+    if (!next) return;
+    this.focusedExerciseId = null;
+    this.collapsedCards.delete(next.ex.id);
+    this.renderWorkout();
+    const card = document.getElementById('card_' + next.ex.id);
+    if (card) card.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start'});
   }
 
   // Rest Timer Controller
@@ -1811,14 +1557,26 @@ class WorkoutApp {
   applyExerciseSwap(exId, sub, mode) {
     const ex = this.findExerciseById(exId);
     if (!ex) return;
+    const previousName = this.getEffectiveExerciseName(exId, ex);
+    const previousSwap = this.session?.swaps?.[exId];
+    const sets = this.session?.logs?.[exId] || [];
+    sets.filter(s => s.completed).forEach(s => {
+      s.exerciseName = s.exerciseName || previousName;
+      s.muscle = s.muscle || previousSwap?.muscle || ex.muscle;
+      s.targetReps = s.targetReps || previousSwap?.targetReps || ex.targetReps;
+    });
+    const hasHistory = Boolean(this.getPreviousExercisePerformance(sub.name));
 
     if (mode === 'permanent') {
       const oldName = ex.name;
       ex.name = sub.name;
+      if (sub.muscle) ex.muscle = sub.muscle;
       if (sub.targetReps) ex.targetReps = sub.targetReps;
       if (sub.notes) ex.notes = sub.notes;
       if (sub.videoUrl) ex.videoUrl = sub.videoUrl;
       ex.increment = this.getExerciseIncrement(sub, sub.name);
+      ex.startingWeight = '';
+      ex.needsBaseline = !hasHistory;
       if (this.session && this.session.swaps) {
         delete this.session.swaps[exId];
       }
@@ -1833,12 +1591,16 @@ class WorkoutApp {
 
     // Recalculate uncompleted sets in this.session.logs[exId]
     const effectiveName = sub.name;
-    const sets = (this.session && this.session.logs && this.session.logs[exId]) || [];
     sets.forEach((s, sIdx) => {
       if (!s.completed) {
         const target = this.getSetTarget(ex, sIdx, effectiveName);
-        s.weight = target.targetWeight;
+        s.weight = hasHistory ? target.targetWeight : null;
         s.reps = target.targetReps;
+        s.needsBaseline = !hasHistory;
+        s.exerciseName = effectiveName;
+        s.muscle = sub.muscle || ex.muscle;
+        s.targetReps = target.targetRepsDisplay;
+        s.rir = null;
       }
     });
     this.saveCurrentSession();
@@ -1852,25 +1614,18 @@ class WorkoutApp {
     const ex = this.findExerciseById(exId);
     const sessionSets = (this.session && this.session.logs && this.session.logs[exId]) || [];
     
-    // Determine target weight
-    let weight = parseFloat(targetWeight);
-    if (!weight || isNaN(weight) || weight <= 0) {
-      if (sessionSets.length > 0 && sessionSets[0].weight > 0) {
-        weight = sessionSets[0].weight;
-      } else if (ex) {
-        weight = this.parseInitialWeight(ex.startingWeight) || 100;
-      } else {
-        weight = 100;
-      }
+    const effectiveName = ex ? this.getEffectiveExerciseName(exId, ex) : exName;
+    const matchingSets = sessionSets.filter(set => !set.exerciseName || set.exerciseName === effectiveName);
+    const workingSet = matchingSets.find(set => !set.completed && Number.isFinite(set.weight)) || matchingSets.find(set => Number.isFinite(set.weight));
+    const weight = Number.isFinite(targetWeight) && targetWeight > 0 ? targetWeight : workingSet?.weight;
+    if (!Number.isFinite(weight) || weight <= 0) {
+      this.showToast('Enter a working load for this equipment before calculating a warmup.');
+      return;
     }
+    const repsStr = targetReps || this.session?.swaps?.[exId]?.targetReps || ex?.targetReps || '8–10';
+    if (this.warmupModalTitleEl) this.warmupModalTitleEl.textContent = `Warm-Up Ramp: ${effectiveName}`;
 
-    const repsStr = targetReps || (ex ? ex.targetReps : '8–10');
-    
-    if (this.warmupModalTitleEl) {
-      this.warmupModalTitleEl.textContent = `🔥 Warm-Up Ramp: ${ex ? ex.name : exName}`;
-    }
-
-    this.renderWarmupModalContent(exId, exName, weight, repsStr);
+    this.renderWarmupModalContent(exId, effectiveName, weight, repsStr);
     if (this.warmupModalEl) this.warmupModalEl.classList.add('open');
   }
 
@@ -2057,13 +1812,17 @@ class WorkoutApp {
     }
   }
 
-  startTimer(seconds) {
+  startTimer(seconds, minimumDuration = 120) {
     this.stopTimer(false);
     this.primeAudioContext();
     this.requestWakeLock();
     this.requestNotificationPermission();
 
-    const targetEndTime = Date.now() + (seconds * 1000);
+    seconds = Math.max(minimumDuration, this.parseRestSeconds(seconds));
+    const startedAt = Date.now();
+    const targetEndTime = startedAt + (seconds * 1000);
+    this.timer.startedAt = startedAt;
+    this.timer.minimumDuration = minimumDuration;
     this.timer.totalDuration = seconds;
     this.timer.targetEndTime = targetEndTime;
     this.timer.remaining = seconds;
@@ -2071,6 +1830,8 @@ class WorkoutApp {
 
     localStorage.setItem(this.storageKeys.timerTargetEnd, String(targetEndTime));
     localStorage.setItem(this.storageKeys.timerTotalDuration, String(seconds));
+    localStorage.setItem('gym_timer_started_at_v1', String(startedAt));
+    localStorage.setItem('gym_timer_minimum_v1', String(minimumDuration));
 
     this.updateTimerUI();
     this.timerDockEl.classList.add('active');
@@ -2083,7 +1844,7 @@ class WorkoutApp {
 
   tickTimer() {
     if (!this.timer.active) return;
-    const remaining = Math.max(0, Math.round((this.timer.targetEndTime - Date.now()) / 1000));
+    const remaining = Math.max(0, Math.ceil((this.timer.targetEndTime - Date.now()) / 1000));
     this.timer.remaining = remaining;
     this.updateTimerUI();
 
@@ -2093,6 +1854,12 @@ class WorkoutApp {
   }
 
   onTimerFinished() {
+    // Another tab or a newer set may already have started a different timer.
+    const savedEnd = Number(localStorage.getItem(this.storageKeys.timerTargetEnd));
+    if (savedEnd && savedEnd !== this.timer.targetEndTime) {
+      this.syncTimerFromBackground();
+      return;
+    }
     this.stopTimer(true);
     this.playTimerAlarm();
     this.showRestCompleteBanner();
@@ -2106,7 +1873,12 @@ class WorkoutApp {
     const targetEndTime = parseInt(savedEnd, 10);
     const totalDuration = parseInt(savedTotal, 10) || 120;
     const now = Date.now();
-    const remaining = Math.round((targetEndTime - now) / 1000);
+    const remaining = Math.ceil((targetEndTime - now) / 1000);
+    if (!Number.isFinite(targetEndTime)) return;
+    this.timer.targetEndTime = targetEndTime;
+    this.timer.startedAt = Number(localStorage.getItem('gym_timer_started_at_v1')) || targetEndTime - totalDuration * 1000;
+    const savedMinimum = localStorage.getItem('gym_timer_minimum_v1');
+    this.timer.minimumDuration = savedMinimum === null ? Math.min(120, totalDuration) : Number(savedMinimum);
 
     if (remaining > 0) {
       this.timer.totalDuration = totalDuration;
@@ -2120,9 +1892,7 @@ class WorkoutApp {
       if (!this.timer.intervalId) {
         this.timer.intervalId = setInterval(() => this.tickTimer(), 1000);
       }
-    } else if (remaining <= 0 && this.timer.active) {
-      localStorage.removeItem(this.storageKeys.timerTargetEnd);
-      localStorage.removeItem(this.storageKeys.timerTotalDuration);
+    } else if (remaining <= 0) {
       this.onTimerFinished();
     }
   }
@@ -2134,8 +1904,8 @@ class WorkoutApp {
       if (targetEndTime > Date.now()) {
         this.syncTimerFromBackground();
       } else {
-        localStorage.removeItem(this.storageKeys.timerTargetEnd);
-        localStorage.removeItem(this.storageKeys.timerTotalDuration);
+        this.timer.targetEndTime = targetEndTime;
+        this.stopTimer(true);
       }
     }
   }
@@ -2149,9 +1919,11 @@ class WorkoutApp {
     if (this.activeView !== 'workout' || !this.wakeLockEnabled) {
       this.releaseWakeLock();
     }
-    if (clearStorage) {
+    if (clearStorage && Number(localStorage.getItem(this.storageKeys.timerTargetEnd)) === this.timer.targetEndTime) {
       localStorage.removeItem(this.storageKeys.timerTargetEnd);
       localStorage.removeItem(this.storageKeys.timerTotalDuration);
+      localStorage.removeItem('gym_timer_started_at_v1');
+      localStorage.removeItem('gym_timer_minimum_v1');
     }
     this.timerDockEl.classList.remove('active');
     document.body.classList.remove('timer-active');
@@ -2159,13 +1931,26 @@ class WorkoutApp {
 
   adjustTimer(delta) {
     if (!this.timer.active) return;
-    this.timer.targetEndTime += (delta * 1000);
-    const newRemaining = Math.max(5, Math.round((this.timer.targetEndTime - Date.now()) / 1000));
+    this.timer.targetEndTime = Math.max(
+      this.timer.targetEndTime + delta * 1000,
+      this.timer.startedAt + this.timer.minimumDuration * 1000,
+      Date.now() + 1000
+    );
+    const newRemaining = Math.max(1, Math.ceil((this.timer.targetEndTime - Date.now()) / 1000));
     this.timer.remaining = newRemaining;
-    this.timer.totalDuration = Math.max(this.timer.totalDuration, newRemaining);
+    this.timer.totalDuration = Math.ceil((this.timer.targetEndTime - this.timer.startedAt) / 1000);
     localStorage.setItem(this.storageKeys.timerTargetEnd, String(this.timer.targetEndTime));
     localStorage.setItem(this.storageKeys.timerTotalDuration, String(this.timer.totalDuration));
     this.updateTimerUI();
+  }
+
+  skipTimer() {
+    if (this.timer.active && Date.now() < this.timer.startedAt + this.timer.minimumDuration * 1000) {
+      this.showToast('Your two-minute minimum rest is still running.');
+      return false;
+    }
+    this.stopTimer();
+    return true;
   }
 
   updateTimerUI() {
@@ -2175,6 +1960,11 @@ class WorkoutApp {
 
     const pct = ((this.timer.totalDuration - this.timer.remaining) / this.timer.totalDuration) * 100;
     this.timerProgressBarEl.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+    const skip = document.getElementById('timerSkipBtn');
+    if (skip) {
+      skip.disabled = this.timer.active && Date.now() < this.timer.startedAt + this.timer.minimumDuration * 1000;
+      skip.title = skip.disabled ? 'Available after two minutes of rest' : 'Finish rest';
+    }
   }
 
   playTimerAlarm() {
@@ -2270,82 +2060,49 @@ class WorkoutApp {
 
     currentDay.exercises.forEach(ex => {
       const sets = this.session.logs[ex.id] || [];
-      const completedSets = sets.filter(s => s.completed);
-      if (completedSets.length === 0) return;
-
-      const effectiveName = this.getEffectiveExerciseName(ex.id, ex);
-      const isSwapped = Boolean(this.session && this.session.swaps && this.session.swaps[ex.id]);
-      const effectiveTargetReps = isSwapped && this.session.swaps[ex.id].targetReps ? this.session.swaps[ex.id].targetReps : ex.targetReps;
-      const maxTarget = this.getMaxTargetReps(effectiveTargetReps);
-      const targetSetsCount = (this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets) || sets.length || 3;
-
-      // Check double progression: only unlocked if ALL sets hit top end target reps at working weight and NOT deloading!
-      const topW = Math.max(...completedSets.map(s => s.weight || 0));
-      if (!this.deloadActive && completedSets.length >= targetSetsCount && completedSets.every(s => (s.reps || 0) >= maxTarget && (topW === 0 || (s.weight || 0) >= topW))) {
-        const increment = this.getExerciseIncrement(ex, effectiveName);
-        weightIncreaseUnlocked.push({
-          name: effectiveName,
-          reps: maxTarget,
-          setsCount: completedSets.length,
-          topWeight: topW,
-          increment
+      const groups = new Map();
+      sets.filter(s => s.completed).forEach(set => {
+        const name = set.exerciseName || this.getEffectiveExerciseName(ex.id, ex);
+        if (!groups.has(name)) groups.set(name, []);
+        groups.get(name).push(set);
+      });
+      groups.forEach((completedSets, effectiveName) => {
+        const isSwapped = effectiveName !== ex.name;
+        const currentSwap = this.session.swaps?.[ex.id];
+        const effectiveTargetReps = completedSets[0].targetReps || (currentSwap?.name === effectiveName ? currentSwap.targetReps : null) || ex.targetReps;
+        const maxTarget = this.getMaxTargetReps(effectiveTargetReps);
+        const targetSetsCount = this.session.deload ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets;
+        const topW = Math.max(...completedSets.map(s => s.weight || 0));
+        if (!this.session.deload && completedSets.length >= targetSetsCount && completedSets.every(s => (s.reps || 0) >= maxTarget && (topW === 0 || (s.weight || 0) >= topW))) {
+          weightIncreaseUnlocked.push({ name: effectiveName, reps: maxTarget, setsCount: completedSets.length, topWeight: topW, increment: this.getExerciseIncrement(ex, effectiveName) });
+        }
+        const priorPR = this.getPersonalRecord(effectiveName);
+        completedSets.forEach(s => {
+          totalVolume += (s.weight || 0) * (s.reps || 0);
+          let description = '';
+          if (s.weight > priorPR.maxWeight && priorPR.maxWeight > 0) description = `${effectiveName}: New Weight Record (${s.weight} lbs)`;
+          else if (s.weight === 0 && s.reps > priorPR.bestReps && priorPR.bestReps > 0) description = `${effectiveName}: New Rep Record (BW × ${s.reps})`;
+          if (description && !newPRs.includes(description)) newPRs.push(description);
         });
-      }
-
-      // Check PRs before committing new sets
-      const priorPR = this.getPersonalRecord(effectiveName);
-      let hitNewPR = false;
-      let prDescription = '';
-
-      completedSets.forEach(s => {
-        const vol = (s.weight || 0) * (s.reps || 0);
-        totalVolume += vol;
-
-        if (s.weight > priorPR.maxWeight && priorPR.maxWeight > 0) {
-          hitNewPR = true;
-          prDescription = `${effectiveName}: New Weight Record (${s.weight} lbs)`;
-        } else if (s.weight === 0 && s.reps > priorPR.bestReps && priorPR.bestReps > 0) {
-          hitNewPR = true;
-          prDescription = `${effectiveName}: New Rep Record (BW × ${s.reps})`;
+        const entry = recordedExercises[effectiveName] ||= { swappedFrom: isSwapped ? ex.name : null, sets: [] };
+        completedSets.forEach(s => entry.sets.push({ ...s, setNum: entry.sets.length + 1, exerciseName: effectiveName, muscle: s.muscle || (currentSwap?.name === effectiveName ? currentSwap.muscle : ex.muscle), completed: true, rir: typeof s.rir === 'number' ? s.rir : null, type: s.type || 'working' }));
+        // A recovery week must not overwrite the normal progression baseline.
+        if (!this.session.deload) {
+          this.lastWeights ||= {};
+          this.lastWeights[effectiveName] = { date: new Date().toISOString(), deload: false, sets: entry.sets.map(s => ({ ...s })) };
         }
       });
-
-      if (hitNewPR && prDescription && !newPRs.includes(prDescription)) {
-        newPRs.push(prDescription);
-      }
-
-      recordedExercises[effectiveName] = {
-        swappedFrom: isSwapped ? ex.name : null,
-        sets: completedSets.map((s, idx) => ({
-          setNum: idx + 1,
-          weight: s.weight,
-          reps: s.reps,
-          completed: true,
-          rir: typeof s.rir === 'number' ? s.rir : null,
-          type: s.type || 'working'
-        }))
-      };
-
-      // Record to lastWeights NOW as workout is completed (replace stale sets cleanly)
-      if (!this.lastWeights) this.lastWeights = {};
-      this.lastWeights[effectiveName] = {
-        date: new Date().toISOString(),
-        sets: completedSets.map((s, idx) => ({
-          setNum: idx + 1,
-          weight: parseFloat(s.weight) || 0,
-          reps: parseInt(s.reps, 10) || 0,
-          completed: true
-        }))
-      };
-      this.saveLastWeights();
     });
+    this.saveLastWeights();
 
     // Save to history
     const workoutRecord = {
       id: 'w_' + Date.now(),
+      sessionId: this.session.id,
+      dayId: currentDay.id,
       date: new Date().toISOString(),
       dayTitle: currentDay.title,
-      deload: Boolean(this.deloadActive),
+      deload: Boolean(this.session.deload),
       totalVolume,
       totalCompletedSets,
       durationMins,
@@ -2645,123 +2402,82 @@ class WorkoutApp {
   }
 
   mapMuscleToLandmark(muscleStr) {
-    if (!muscleStr || typeof muscleStr !== 'string') return null;
-    const tokens = muscleStr.toLowerCase().split('/').map(t => t.trim()).filter(Boolean);
-    for (const token of tokens) {
-      if (token === 'glutes' || token === 'hamstrings') return 'Hamstrings / Glutes';
-      if (token === 'quads') return 'Quads';
-      if (token === 'back' || token === 'lats') return 'Back / Lats';
-      if (token === 'chest') return 'Chest';
-      if (token === 'shoulders' || token === 'delts') return 'Shoulders';
-      if (token === 'biceps') return 'Biceps';
-      if (token === 'triceps') return 'Triceps';
-      if (token === 'forearms') return 'Forearms';
-      if (token === 'calves') return 'Calves';
-      if (token === 'abs' || token === 'core') return 'Abs / Core';
+    const labels = { chest: 'Chest', back: 'Back / Lats', lats: 'Back / Lats', quads: 'Quads', hamstrings: 'Hamstrings', glutes: 'Glutes', calves: 'Calves', biceps: 'Biceps', triceps: 'Triceps', forearms: 'Forearms', abs: 'Abs / Core', core: 'Abs / Core', 'front delts': 'Front Delts', 'side delts': 'Side Delts', 'rear delts': 'Rear Delts' };
+    return labels[String(muscleStr || '').toLowerCase().trim()] || null;
+  }
+
+  getExerciseMuscleCredits(name, muscle) {
+    // Only names from the exercise catalog (or explicitly tagged custom exercises) are mapped.
+    const catalog = [...DEFAULT_ROUTINE.flatMap(d => d.exercises), ...(typeof EXERCISE_SUBSTITUTIONS === 'object' ? Object.values(EXERCISE_SUBSTITUTIONS).flat() : []), ...(this.routine || []).flatMap(d => d.exercises)];
+    const exercise = catalog.find(ex => ex.name === name);
+    if (!exercise && !muscle) return null;
+    const n = name.toLowerCase();
+    let direct = [...new Set(String(muscle || exercise?.muscle || '').split('/').map(tag => this.mapMuscleToLandmark(tag)).filter(Boolean))];
+    const indirect = {};
+    if (/calf/.test(n)) direct = ['Calves'];
+    else if (/lateral raise/.test(n)) direct = ['Side Delts'];
+    else if (/rear delt|reverse pec|face pull/.test(n)) direct = ['Rear Delts'];
+    else if (/shoulder press|overhead press/.test(n)) { direct = ['Front Delts']; indirect['Side Delts'] = 0.5; indirect.Triceps = 0.5; }
+    else if (/hip thrust|glute drive/.test(n)) direct = ['Glutes'];
+    else if (/leg curl/.test(n)) direct = ['Hamstrings'];
+    else if (/leg press|hack squat|goblet squat|smith machine squat/.test(n)) { direct = ['Quads']; indirect.Glutes = 0.5; }
+    else if (/romanian deadlift|back extension|pull-through/.test(n)) direct = /glute focus/i.test(name) ? ['Glutes'] : ['Hamstrings', 'Glutes'];
+    else if (/press|push-up/.test(n) && direct.includes('Chest')) { indirect.Triceps = 0.5; indirect['Front Delts'] = 0.5; }
+    else if (/row|pulldown|pull-up|chin-up/.test(n) && direct.includes('Back / Lats')) { indirect.Biceps = 0.5; indirect.Forearms = 0.5; if (/row/.test(n)) indirect['Rear Delts'] = 0.25; }
+    if (/hammer|reverse curl/.test(n)) indirect.Forearms = 0.5;
+    direct.forEach(m => delete indirect[m]);
+    return direct.length ? { direct, indirect } : null;
+  }
+
+  getStoredSessions() {
+    const sessions = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key.startsWith(this.storageKeys.currentSessionPrefix)) continue;
+      try { const item = JSON.parse(localStorage.getItem(key)); if (item?.dayId && item.logs) sessions.push(item); } catch (_) {}
     }
-    return null;
+    if (this.session?.dayId) {
+      const index = sessions.findIndex(s => s.dayId === this.session.dayId);
+      if (index >= 0) sessions[index] = this.session; else sessions.push(this.session);
+    }
+    return sessions;
+  }
+
+  calculateWeeklyVolume(now = Date.now()) {
+    const muscles = ['Chest', 'Back / Lats', 'Front Delts', 'Side Delts', 'Rear Delts', 'Biceps', 'Triceps', 'Forearms', 'Quads', 'Hamstrings', 'Glutes', 'Calves', 'Abs / Core'];
+    const makeTotals = () => Object.fromEntries(muscles.map(m => [m, { direct: 0, indirect: 0 }]));
+    const result = { planned: makeTotals(), completed: makeTotals(), unmapped: new Set() };
+    const add = (kind, name, muscle, count) => {
+      const mapping = this.getExerciseMuscleCredits(name, muscle);
+      if (!mapping) { result.unmapped.add(name); return; }
+      mapping.direct.forEach(m => { if (result[kind][m]) result[kind][m].direct += count; });
+      Object.entries(mapping.indirect).forEach(([m, credit]) => { if (result[kind][m]) result[kind][m].indirect += count * credit; });
+    };
+    (this.routine || []).forEach(day => day.exercises.forEach(ex => add('planned', ex.name, ex.muscle, this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets)));
+    const cutoff = now - 7 * 86400000;
+    const recent = date => { const value = new Date(date).getTime(); return value >= cutoff && value <= now; };
+    const savedSessionIds = new Set((this.history || []).map(h => h.sessionId).filter(Boolean));
+    (this.history || []).filter(h => recent(h.date)).forEach(h => {
+      Object.entries(h.exercises || {}).forEach(([name, entry]) => (entry.sets || []).filter(set => set.completed !== false && set.type !== 'warmup' && (!set.completedAt || recent(set.completedAt))).forEach(set => add('completed', set.exerciseName || name, set.muscle, 1)));
+    });
+    this.getStoredSessions().filter(session => !savedSessionIds.has(session.id)).forEach(session => {
+      const day = (this.routine || []).find(d => d.id === session.dayId);
+      Object.entries(session.logs).forEach(([id, sets]) => (Array.isArray(sets) ? sets : []).filter(set => set.completed && set.type !== 'warmup' && recent(set.completedAt || session.startTime || session.updatedAt)).forEach(set => {
+        const ex = day?.exercises.find(e => e.id === id);
+        const swap = session.swaps?.[id];
+        const name = set.exerciseName || swap?.name || ex?.name || id;
+        const muscle = set.muscle || (name === swap?.name ? swap.muscle : name === ex?.name ? ex.muscle : undefined);
+        add('completed', name, muscle, 1);
+      }));
+    });
+    return { ...result, unmapped: [...result.unmapped] };
   }
 
   generateWeeklyVolumeLandmarksHTML() {
-    if (typeof VOLUME_LANDMARKS === 'undefined') return '';
-
-    // Calculate planned direct sets per muscle group across this.routine
-    const muscleDirectSets = {};
-    const muscleSecondarySets = {};
-
-    Object.keys(VOLUME_LANDMARKS).forEach(m => {
-      muscleDirectSets[m] = 0;
-      muscleSecondarySets[m] = 0;
-    });
-
-    if (this.routine) {
-      this.routine.forEach(day => {
-        (day.exercises || []).forEach(ex => {
-          const sets = ex.sets || 3;
-          // Direct muscle
-          const landmarkKey = this.mapMuscleToLandmark(ex.muscle);
-          if (landmarkKey && muscleDirectSets[landmarkKey] !== undefined) {
-            muscleDirectSets[landmarkKey] += sets;
-          }
-
-          // Synergist secondary muscle credits
-          if (typeof SECONDARY_MUSCLE_CONTRIBUTIONS !== 'undefined') {
-            const effectiveName = (this.session && this.session.swaps && this.session.swaps[ex.id]) ? this.session.swaps[ex.id].name : ex.name;
-            for (const [key, contribs] of Object.entries(SECONDARY_MUSCLE_CONTRIBUTIONS)) {
-              if (effectiveName === key || effectiveName.startsWith(key)) {
-                Object.entries(contribs).forEach(([targetMuscle, creditFraction]) => {
-                  if (muscleSecondarySets[targetMuscle] !== undefined) {
-                    muscleSecondarySets[targetMuscle] += creditFraction * sets;
-                  }
-                });
-                break;
-              }
-            }
-          }
-        });
-      });
-    }
-
-    const rowsHTML = Object.entries(VOLUME_LANDMARKS).map(([muscle, bounds]) => {
-      const direct = muscleDirectSets[muscle] || 0;
-      const secondary = Math.round((muscleSecondarySets[muscle] || 0) * 10) / 10;
-      const totalSets = Math.round((direct + secondary) * 10) / 10;
-
-      let statusClass = 'optimal';
-      let statusText = 'Growth Sweet Spot';
-      if (totalSets < bounds.mev) {
-        statusClass = 'under';
-        statusText = 'Below MEV';
-      } else if (totalSets < bounds.mavMin) {
-        statusClass = 'near';
-        statusText = 'Above MEV — room to grow';
-      } else if (totalSets <= bounds.mavMax) {
-        statusClass = 'optimal';
-        statusText = 'Growth Sweet Spot';
-      } else if (totalSets <= bounds.mrv) {
-        statusClass = 'high';
-        statusText = 'High Volume';
-      } else {
-        statusClass = 'over';
-        statusText = 'Over MRV';
-      }
-
-      const pct = Math.min(100, Math.round((totalSets / bounds.mrv) * 100));
-
-      return `
-        <div class="volume-row">
-          <div class="volume-row-labels">
-            <span class="volume-muscle-name">
-              ${muscle}
-              <span class="volume-status-tag ${statusClass}">${statusText}</span>
-            </span>
-            <span class="volume-sets-val">
-              ${totalSets} sets <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: normal;">(Target: ${bounds.mavMin}–${bounds.mavMax})</span>
-            </span>
-          </div>
-          <div class="volume-bar-track">
-            <div class="volume-bar-fill ${statusClass}" style="width: ${pct}%;"></div>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    return `
-      <div class="volume-landmarks-box">
-        <div class="volume-landmarks-header">
-          <div>
-            <h4 style="font-size: 0.95rem; font-weight: 800; color: var(--text-primary); margin: 0;">🎯 Weekly Hypertrophy Volume Radar</h4>
-            <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">
-              Scientific landmarks (Dr. Israetel): Direct + compound synergist sets vs MEV/MAV/MRV.
-            </div>
-          </div>
-          <span style="font-size: 0.72rem; background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 8px; border-radius: var(--radius-full); font-weight: 700;">
-            Science Backed
-          </span>
-        </div>
-        ${rowsHTML}
-      </div>
-    `;
+    const volume = this.calculateWeeklyVolume();
+    const format = value => Math.round(value * 10) / 10;
+    const rows = Object.keys(volume.planned).map(muscle => `<tr><th scope="row">${muscle}</th><td>${format(volume.planned[muscle].direct)} <small>+ ${format(volume.planned[muscle].indirect)} indirect</small></td><td>${format(volume.completed[muscle].direct)} <small>+ ${format(volume.completed[muscle].indirect)} indirect</small></td></tr>`).join('');
+    return `<section class="volume-landmarks-box"><h3>Weekly training volume</h3><p class="volume-explanation">Planned sets for your current week${this.deloadActive ? ' (deload)' : ''} and completed sets over the last 7 days, including workouts in progress. Indirect contributions are estimates; useful volume varies with effort and recovery.</p><table class="volume-comparison"><thead><tr><th scope="col">Muscle</th><th scope="col">Planned</th><th scope="col">Completed</th></tr></thead><tbody>${rows}</tbody></table>${volume.unmapped.length ? `<p class="volume-unmapped">Unmapped exercises (excluded): ${volume.unmapped.map(n => this.escapeHtml(n)).join(', ')}</p>` : ''}</section>`;
   }
 
   // Analytics & History View
@@ -2998,34 +2714,21 @@ class WorkoutApp {
 
   rebuildLastWeightsFromHistory() {
     this.lastWeights = {};
-    if (this.history && Array.isArray(this.history)) {
-      this.history.forEach(workout => {
-        if (!workout.exercises) return;
-        Object.entries(workout.exercises).forEach(([exName, exData]) => {
-          if (!this.lastWeights[exName]) {
-            this.lastWeights[exName] = { sets: [], date: workout.date };
-          }
-          if (Array.isArray(exData.sets)) {
-            exData.sets.forEach(s => {
-              if (s && s.completed) {
-                const sIdx = (s.setNum || 1) - 1;
-                this.lastWeights[exName].sets[sIdx] = {
-                  weight: s.weight,
-                  reps: s.reps,
-                  completed: true
-                };
-                this.lastWeights[exName].date = workout.date;
-              }
-            });
-          }
-        });
+    [...(this.history || [])].sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(workout => {
+      if (workout.deload || workout.isDeload || workout.deloadActive) return;
+      Object.entries(workout.exercises || {}).forEach(([name, entry]) => {
+        const sets = (entry.sets || []).filter(set => set && set.completed !== false);
+        if (sets.length) this.lastWeights[name] = { date: workout.date, deload: false, sets: sets.map(set => ({...set})) };
       });
-    }
+    });
     this.saveLastWeights();
   }
 
   // Routine & Customizer View
   renderRoutineEditor() {
+    const exercises = this.routine.flatMap(day => day.exercises).filter(ex => !ex.isOptional);
+    const normalSets = exercises.reduce((sum, ex) => sum + ex.sets, 0);
+    const deloadSets = exercises.reduce((sum, ex) => sum + Math.max(2, Math.floor(ex.sets * .67)), 0);
     this.routineEditorEl.innerHTML = `
       <div style="margin-bottom: 20px;">
         <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 8px;">Routine Customization & Preferences</h3>
@@ -3042,7 +2745,7 @@ class WorkoutApp {
             ${this.deloadActive ? `<span style="font-size: 0.68rem; background: rgba(16, 185, 129, 0.25); color: #a7f3d0; padding: 1px 6px; border-radius: var(--radius-full);">Active</span>` : ''}
           </div>
           <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
-            Auto-scales workout sets down by ~50% and eases loads by ~10% for systemic joint & CNS restoration. Auto-expires after 7 days.
+            Reduces planned sets from ${normalSets} to ${deloadSets} (${Math.round((normalSets - deloadSets) / normalSets * 100)}% fewer) and eases loads by 10%. Auto-expires after 7 days.
             ${this.deloadActive ? `<span style="display:block; color: #a7f3d0; font-weight: 700; margin-top: 4px;">⏳ ${this.getDeloadDaysLeft()} day${this.getDeloadDaysLeft() === 1 ? '' : 's'} remaining</span>` : ''}
           </p>
         </div>
@@ -3075,7 +2778,7 @@ class WorkoutApp {
           </span>
         </div>
         <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 12px;">
-          Browser storage is persistent, but downloading an offline JSON backup guarantees your workout history, personal records, and exercise notes remain 100% immune to browser cache clearing or phone switches.
+          Download a JSON backup to keep a separate copy of your history, active workouts, routine and preferences. Keep the backup file somewhere you can retrieve after changing phones.
         </p>
         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
           <button class="secondary-btn" id="exportDataBtn" style="flex: 1; min-width: 140px; font-size: 0.82rem; padding: 8px 12px;">
@@ -3104,7 +2807,7 @@ class WorkoutApp {
       <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
           <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-emerald);">🔔 Rest Timer Chime & Haptic Check</div>
-          <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Test the 3-tone chime & tactile vibration pattern.</div>
+          <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Test sound and vibration while this page is open. Locked-screen and background alerts may not fire on iPhone; reopening restores the countdown.</div>
         </div>
         <button class="secondary-btn" id="testChimeBtn" style="padding: 6px 14px; font-size: 0.8rem; border-color: rgba(16, 185, 129, 0.4); color: #6ee7b7;">
           🔊 Test Chime & Vibrate
@@ -3114,11 +2817,11 @@ class WorkoutApp {
       <!-- Version & Cache Reset -->
       <div style="background: rgba(148, 163, 184, 0.08); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0;">⚡ MachineMaster v2.6 <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;">(Build v26 • Rev ${localStorage.getItem(this.storageKeys.routineRev) || '14'})</span></div>
-          <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Smart +10/+5lb Auto-Bump • Core-Only Split • Deload Engine • SVG 1RM Curve • Active HUD</div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0;">⚡ MachineMaster <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;">(Build v27 • Rev ${localStorage.getItem(this.storageKeys.routineRev) || '14'})</span></div>
+          <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Saved workouts, configurable progression & focused logging</div>
         </div>
         <button class="secondary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">
-          🔄 Force Sync & Reload
+          🔄 Check for App Update
         </button>
       </div>
 
@@ -3172,119 +2875,108 @@ class WorkoutApp {
   }
 
   async forceAppUpdate() {
+    this.saveCurrentSession();
     try {
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
+      if (window.workoutUpdates) {
+        await window.workoutUpdates.check();
+        if (await window.workoutUpdates.apply()) return;
       }
-      if ('serviceWorker' in navigator) {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        for (let reg of registrations) {
-          await reg.unregister();
-        }
-      }
-      localStorage.removeItem(this.storageKeys.routine);
-      localStorage.removeItem(this.storageKeys.routineRev);
-      localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'mon__lower_b');
-      localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'fri___lower_a');
-      localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'sat___upper_b');
-      localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'sun___db_arms');
-      localStorage.removeItem(this.storageKeys.currentSessionPrefix + 'wed___upper_a');
-      localStorage.removeItem(this.storageKeys.legacyCurrentSession);
-      localStorage.removeItem(this.storageKeys.timerTargetEnd);
-      localStorage.removeItem(this.storageKeys.timerTotalDuration);
-      await fetch(window.location.pathname, { cache: 'reload' }).catch(() => {});
+      this.showToast('App is up to date');
     } catch (e) {
       console.error(e);
+      this.showToast('Could not check for updates. Your workout is saved.');
     }
-    window.location.replace(window.location.pathname + '?v=' + Date.now());
+  }
+
+  createBackupData() {
+    return {
+      version: '3.0', routine: this.routine, history: this.history,
+      machineSettings: this.machineSettings, exerciseNotes: this.exerciseNotes,
+      lastWeights: this.lastWeights, exercisePreferences: this.exercisePreferences || {},
+      wakeLockEnabled: this.wakeLockEnabled, routineRev: localStorage.getItem(this.storageKeys.routineRev) || '15',
+      sessions: this.getStoredSessions(), deloadActive: this.deloadActive, deloadStartDate: this.deloadStartDate,
+      timer: { targetEnd: localStorage.getItem(this.storageKeys.timerTargetEnd), totalDuration: localStorage.getItem(this.storageKeys.timerTotalDuration), minimumRest: localStorage.getItem('gym_timer_minimum_v1'), startedAt: localStorage.getItem('gym_timer_started_at_v1') },
+      exportedAt: new Date().toISOString()
+    };
   }
 
   exportData() {
-    const data = {
-      version: '2.4',
-      routine: this.routine,
-      history: this.history,
-      machineSettings: this.machineSettings,
-      exerciseNotes: this.exerciseNotes,
-      lastWeights: this.lastWeights,
-      wakeLockEnabled: this.wakeLockEnabled,
-      routineRev: localStorage.getItem(this.storageKeys.routineRev) || '13',
-      exportedAt: new Date().toISOString()
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    this.saveCurrentSession();
+    const blob = new Blob([JSON.stringify(this.createBackupData(), null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `MachineMaster_Backup_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-
     localStorage.setItem(this.storageKeys.lastBackupTime, String(Date.now()));
-    this.showToast('📥 Backup exported successfully!');
+    this.showToast('Backup exported successfully!');
     if (this.activeView === 'routine') this.renderRoutineEditor();
+  }
+
+  validateBackup(data) {
+    const object = value => value && typeof value === 'object' && !Array.isArray(value);
+    const setsValid = sets => Array.isArray(sets) && sets.every(s => object(s) && (s.weight === null || Number.isFinite(Number(s.weight))) && Number.isFinite(Number(s.reps)) && Number(s.reps) >= 0 && Number(s.weight) >= 0);
+    if (!object(data) || !['routine', 'history', 'sessions'].some(key => key in data)) throw new Error('This is not a workout backup');
+    if (data.routine !== undefined && (!Array.isArray(data.routine) || !data.routine.length || !data.routine.every(d => object(d) && typeof d.id === 'string' && Array.isArray(d.exercises) && d.exercises.every(ex => object(ex) && typeof ex.id === 'string' && typeof ex.name === 'string' && Number.isInteger(ex.sets) && ex.sets > 0 && typeof ex.targetReps === 'string')))) throw new Error('Invalid routine in backup');
+    if (data.history !== undefined && (!Array.isArray(data.history) || !data.history.every(h => object(h) && typeof h.id === 'string' && Number.isFinite(new Date(h.date).getTime()) && object(h.exercises) && Object.values(h.exercises).every(ex => object(ex) && setsValid(ex.sets))))) throw new Error('Invalid workout history in backup');
+    if (data.sessions !== undefined && (!Array.isArray(data.sessions) || !data.sessions.every(session => object(session) && typeof session.dayId === 'string' && object(session.logs) && Object.values(session.logs).every(setsValid)))) throw new Error('Invalid sessions in backup');
+    ['machineSettings', 'exerciseNotes', 'lastWeights', 'exercisePreferences', 'timer'].forEach(key => { if (data[key] !== undefined && !object(data[key])) throw new Error(`Invalid ${key} in backup`); });
+    if (data.exercisePreferences && !Object.values(data.exercisePreferences).every(pref => object(pref) && (pref.increment === undefined || [1, 2.5, 5, 10].includes(pref.increment)))) throw new Error('Invalid exercise preferences');
+    if (data.lastWeights && !Object.values(data.lastWeights).every(entry => object(entry) && Array.isArray(entry.sets) && setsValid(entry.sets.filter(Boolean)))) throw new Error('Invalid previous weights');
+    if (data.deloadActive !== undefined && typeof data.deloadActive !== 'boolean') throw new Error('Invalid deload setting');
+    if (data.deloadStartDate !== undefined && (!Number.isFinite(data.deloadStartDate) || data.deloadStartDate < 0)) throw new Error('Invalid deload start');
+    if (data.timer && !Object.values(data.timer).every(value => value === null || (Number.isFinite(Number(value)) && Number(value) >= 0))) throw new Error('Invalid timer');
+    return data;
   }
 
   importData(jsonString) {
     try {
-      const data = JSON.parse(jsonString);
-      if (!data || typeof data !== 'object') {
-        throw new Error('Invalid JSON backup file');
-      }
-
-      let newWorkoutsCount = 0;
-      if (Array.isArray(data.history)) {
-        const existingIds = new Set(this.history.map(h => h.id));
-        data.history.forEach(h => {
-          if (h && h.id && !existingIds.has(h.id)) {
-            this.history.push(h);
-            existingIds.add(h.id);
-            newWorkoutsCount++;
-          }
+      // Validate the complete backup before changing memory or browser storage.
+      const data = this.validateBackup(JSON.parse(jsonString));
+      const restoreRoutine = data.routine && confirm('Restore routine configurations from this backup? Cancel keeps your current routine.');
+      const existingIds = new Set(this.history.map(h => h.id));
+      const added = (data.history || []).filter(h => !existingIds.has(h.id) && existingIds.add(h.id));
+      const history = [...this.history, ...added].sort((a, b) => new Date(a.date) - new Date(b.date));
+      const writes = new Map([[this.storageKeys.history, JSON.stringify(history)]]);
+      const merged = {};
+      ['machineSettings', 'exerciseNotes', 'lastWeights', 'exercisePreferences'].forEach(key => {
+        merged[key] = { ...(this[key] || {}), ...(data[key] || {}) };
+        if (key === 'lastWeights') Object.entries(this.lastWeights || {}).forEach(([name, entry]) => {
+          if (new Date(entry.date).getTime() > new Date(merged[key][name]?.date).getTime()) merged[key][name] = entry;
         });
-        this.saveHistory();
+        writes.set(this.storageKeys[key], JSON.stringify(merged[key]));
+      });
+      if (restoreRoutine) writes.set(this.storageKeys.routine, JSON.stringify(data.routine));
+      (data.sessions || []).forEach(session => writes.set(this.getSessionKey(session.dayId), JSON.stringify(session)));
+      ['wakeLockEnabled', 'deloadActive', 'deloadStartDate'].forEach(key => { if (data[key] !== undefined) writes.set(this.storageKeys[key], String(data[key])); });
+      if (data.timer) {
+        const keys = { targetEnd: this.storageKeys.timerTargetEnd, totalDuration: this.storageKeys.timerTotalDuration, minimumRest: 'gym_timer_minimum_v1', startedAt: 'gym_timer_started_at_v1' };
+        Object.entries(keys).forEach(([field, key]) => { if (field in data.timer) writes.set(key, data.timer[field] === null ? null : String(data.timer[field])); });
       }
-
-      if (data.machineSettings && typeof data.machineSettings === 'object') {
-        this.machineSettings = { ...this.machineSettings, ...data.machineSettings };
-        this.saveMachineSettings();
+      writes.set(this.storageKeys.lastBackupTime, String(Date.now()));
+      const before = new Map([...writes.keys()].map(key => [key, localStorage.getItem(key)]));
+      try { writes.forEach((value, key) => value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value)); }
+      catch (e) { before.forEach((value, key) => { try { value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch (_) {} }); throw e; }
+      this.history = history;
+      Object.assign(this, merged);
+      this.lastWeights = this.loadLastWeights();
+      ['wakeLockEnabled', 'deloadActive', 'deloadStartDate'].forEach(key => { if (data[key] !== undefined) this[key] = data[key]; });
+      if (restoreRoutine) this.routine = this.loadRoutine();
+      this.activeDayIndex = Math.min(this.activeDayIndex, this.routine.length - 1);
+      this.session = this.loadSession();
+      if (data.timer) {
+        if (this.timer?.intervalId) clearInterval(this.timer.intervalId);
+        if (this.timer) { this.timer.active = false; this.timer.intervalId = null; }
+        this.restoreActiveTimer();
       }
-
-      if (data.exerciseNotes && typeof data.exerciseNotes === 'object') {
-        this.exerciseNotes = { ...this.exerciseNotes, ...data.exerciseNotes };
-        this.saveExerciseNotes();
-      }
-
-      if (data.lastWeights && typeof data.lastWeights === 'object') {
-        this.lastWeights = { ...this.lastWeights, ...data.lastWeights };
-        localStorage.setItem(this.storageKeys.lastWeights, JSON.stringify(this.lastWeights));
-      }
-
-      if (typeof data.wakeLockEnabled === 'boolean') {
-        this.wakeLockEnabled = data.wakeLockEnabled;
-        localStorage.setItem(this.storageKeys.wakeLockEnabled, String(this.wakeLockEnabled));
-      }
-
-      if (data.routineRev !== undefined && data.routineRev !== null) {
-        localStorage.setItem(this.storageKeys.routineRev, String(data.routineRev));
-      }
-
-      if (Array.isArray(data.routine) && data.routine.length > 0) {
-        if (confirm('Do you also want to restore routine configurations from this backup? Click OK to restore routine, or Cancel to keep your current routine.')) {
-          this.routine = data.routine;
-          this.saveRoutine();
-        }
-      }
-
-      localStorage.setItem(this.storageKeys.lastBackupTime, String(Date.now()));
-      this.showToast(`✅ Restore complete! Added ${newWorkoutsCount} workouts.`);
+      this.showToast(`Restore complete! Added ${added.length} workouts.`);
       this.render();
     } catch (e) {
       console.error('Import error:', e);
       alert('Could not restore backup file: ' + (e.message || 'Invalid format'));
     }
   }
-
 
   resetRoutine() {
     if (confirm('Reset your routine to the original spreadsheet defaults?')) {

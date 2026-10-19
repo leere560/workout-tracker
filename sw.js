@@ -1,74 +1,37 @@
-// Service Worker for offline gym tracking
-const CACHE_NAME = 'workout-tracker-v26';
+// A release is cached together. Existing tabs opt in before activating an update.
+const CACHE_NAME = 'workout-tracker-v27';
 const ASSETS_TO_CACHE = [
-  './',
-  './index.html',
-  './styles.css?v=26',
-  './app.js?v=26',
-  './routine-data.js?v=26',
-  './manifest.json',
-  './icon-192.png',
-  './icon-512.png'
+  './', './index.html', './styles.css?v=27', './app.js?v=27',
+  './routine-data.js?v=27', './update-manager.js?v=27', './accessibility.js?v=27',
+  './manifest.json', './icon-192.png', './icon-512.png'
 ];
 
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
-    })
-  );
+self.addEventListener('install', event => {
+  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS_TO_CACHE)));
 });
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
-      );
-    })
-  ).then(() => self.clients.claim());
+self.addEventListener('message', event => {
+  if (event.data?.type === 'APPLY_UPDATE') self.skipWaiting();
 });
-
-self.addEventListener('fetch', (event) => {
+self.addEventListener('activate', event => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(key => key.startsWith('workout-tracker-') && key !== CACHE_NAME)
+      .map(key => caches.delete(key)));
+    await self.clients.claim();
+  })());
+});
+self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
-
   const url = new URL(event.request.url);
-  const isCode =
-    event.request.mode === 'navigate' ||
-    url.pathname.endsWith('.html') ||
-    url.pathname.endsWith('.js') ||
-    url.pathname.endsWith('.css') ||
-    url.pathname === '/' ||
-    url.pathname.endsWith('/workout-tracker/') ||
-    url.search.includes('v=');
-
-  // Network-First for HTML, JS, CSS: always pull latest when online, fallback to cache offline
-  if (isCode) {
-    event.respondWith(
-      fetch(event.request)
-        .then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const responseClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
-          }
-          return networkResponse;
-        })
-        .catch(() => caches.match(event.request).then(cached => cached || caches.match(event.request, { ignoreSearch: true })))
-    );
-    return;
-  }
-
-  // Cache-First for static media/icons
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      return cachedResponse || caches.match(event.request, { ignoreSearch: true }).then(r => r || fetch(event.request));
-    })
-  );
+  if (url.origin !== self.location.origin) return;
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(event.request);
+    if (cached) return cached;
+    if (event.request.mode === 'navigate') {
+      const shell = await cache.match('./index.html');
+      if (shell) return shell;
+    }
+    return fetch(event.request);
+  })());
 });
