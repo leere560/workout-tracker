@@ -6,7 +6,7 @@
   let reloading = false;
 
   function offerUpdate() {
-    if (!registration?.waiting || document.getElementById('appUpdateNotice')) return;
+    if (!navigator.serviceWorker.controller || !registration?.waiting || document.getElementById('appUpdateNotice')) return;
     const notice = document.createElement('aside');
     notice.id = 'appUpdateNotice';
     notice.className = 'app-update-notice';

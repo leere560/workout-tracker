@@ -93,3 +93,16 @@ test('active set snapshots never inherit the muscle of a later swap',()=>{
  const {app}=setup();const ex=app.routine[0].exercises[0];app.session={id:'snapshot',dayId:app.routine[0].id,startTime:new Date(Date.now()-1000).toISOString(),swaps:{[ex.id]:{name:'Cable Lateral Raise',muscle:'Shoulders'}},logs:{[ex.id]:[{completed:true,exerciseName:ex.name}]}};
  const volume=app.calculateWeeklyVolume();assert.equal(volume.completed.Chest.direct,1);assert.equal(volume.completed['Side Delts'].direct,0);
 });
+
+test('history rebuild retains the newest normal baseline without stale extra sets',()=>{
+ const {app}=setup();
+ app.history=[{date:'2026-10-15',deload:true,exercises:{Lift:{sets:[{weight:70,reps:8}]}}},{date:'2026-10-10',exercises:{Lift:{sets:[{weight:110,reps:8}]}}},{date:'2026-10-01',exercises:{Lift:{sets:[{weight:100,reps:8},{weight:100,reps:8}]}}}];
+ app.rebuildLastWeightsFromHistory();assert.equal(app.lastWeights.Lift.sets.length,1);assert.equal(app.lastWeights.Lift.sets[0].weight,110);
+});
+
+test('warmup uses the current equipment baseline rather than an earlier completed swap',()=>{
+ const {app}=setup(); const ex=app.routine[0].exercises[0];
+ app.session={logs:{[ex.id]:[{exerciseName:ex.name,weight:200,completed:true},{exerciseName:'New equipment',weight:null,completed:false}]},swaps:{[ex.id]:{name:'New equipment',targetReps:'10-12'}}};
+ let rendered=null;app.renderWarmupModalContent=(...args)=>{rendered=args;};app.openWarmupModal(ex.id,ex.name);assert.equal(rendered,null);
+ app.session.logs[ex.id][1].weight=50;app.openWarmupModal(ex.id,ex.name);assert.equal(rendered[1],'New equipment');assert.equal(rendered[2],50);assert.equal(rendered[3],'10-12');
+});

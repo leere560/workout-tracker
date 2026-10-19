@@ -120,6 +120,59 @@ test('swaps use their own historical load', () => {
   assert.equal(app.session.logs[ex.id][0].needsBaseline, false);
 });
 
+test('permanent swaps update routine muscle but preserve completed set muscle and rep targets', () => {
+  const { app } = harness();
+  const ex = app.routine[0].exercises[0];
+  const original = { name: ex.name, muscle: ex.muscle, targetReps: ex.targetReps };
+  app.toggleSetCompletion(ex.id, 0);
+  app.applyExerciseSwap(ex.id, { name: 'Alternative shoulder press', muscle: 'Shoulders', targetReps: '10–12' }, 'permanent');
+  const [completed, pending] = app.session.logs[ex.id];
+  assert.equal(ex.muscle, 'Shoulders');
+  assert.equal(ex.targetReps, '10–12');
+  assert.equal(completed.exerciseName, original.name);
+  assert.equal(completed.muscle, original.muscle);
+  assert.equal(completed.targetReps, original.targetReps);
+  assert.equal(pending.muscle, 'Shoulders');
+  assert.equal(pending.targetReps, '10–12');
+  const nextSession = app.initNewSession(0);
+  assert.equal(nextSession.logs[ex.id][0].muscle, 'Shoulders');
+  assert.equal(nextSession.logs[ex.id][0].targetReps, '10–12');
+  assert.deepEqual(nextSession.initialLogs, nextSession.logs);
+  assert.notEqual(nextSession.initialLogs[ex.id], nextSession.logs[ex.id]);
+});
+
+test('repeated swaps preserve completed rep targets from each equipment choice', () => {
+  const { app } = harness();
+  const ex = app.routine[0].exercises[0];
+  app.applyExerciseSwap(ex.id, { name: 'Alternative row', muscle: 'Back / Lats', targetReps: '8–10' }, 'today');
+  const set = app.session.logs[ex.id][0];
+  set.weight = 50;
+  set.needsBaseline = false;
+  // A legacy set without snapshots is stamped from the active alternative on completion.
+  delete set.muscle;
+  delete set.targetReps;
+  app.toggleSetCompletion(ex.id, 0);
+  assert.equal(set.muscle, 'Back / Lats');
+  assert.equal(set.targetReps, '8–10');
+  app.applyExerciseSwap(ex.id, { name: 'Alternative curl', muscle: 'Biceps', targetReps: '12–15' }, 'permanent');
+  assert.equal(set.exerciseName, 'Alternative row');
+  assert.equal(set.muscle, 'Back / Lats');
+  assert.equal(set.targetReps, '8–10');
+  assert.equal(app.session.logs[ex.id][1].targetReps, '12–15');
+  assert.equal(ex.muscle, 'Biceps');
+});
+
+test('swapping snapshots legacy completed targets before mutating the routine', () => {
+  const { app } = harness();
+  const ex = app.routine[0].exercises[0];
+  const set = app.session.logs[ex.id][0];
+  set.completed = true;
+  delete set.targetReps;
+  app.applyExerciseSwap(ex.id, { name: 'Another chest press', targetReps: '10–12' }, 'permanent');
+  assert.equal(set.targetReps, '6–8');
+  assert.equal(ex.targetReps, '10–12');
+});
+
 test('final effort stays visible until selected or skipped', () => {
   const { app } = harness();
   const ex = app.routine[0].exercises[0];
@@ -130,6 +183,33 @@ test('final effort stays visible until selected or skipped', () => {
   app.setSetRIR(ex.id, 2, null);
   assert.equal(app.pendingRir, null);
   assert.equal(app.collapsedCards.has(ex.id), true);
+});
+
+test('adding sets after a completed exercise is swapped uses the current equipment baseline and identity', () => {
+  const { app } = harness();
+  const ex = app.routine[0].exercises[0];
+  app.session.logs[ex.id].forEach(set => set.completed = true);
+  app.applyExerciseSwap(ex.id, { name: 'Alternative shoulder press', muscle: 'Shoulders', targetReps: '10–12' }, 'permanent');
+  app.addSetToExercise(ex.id);
+  const list = app.session.logs[ex.id];
+  const pending = list[list.length - 1];
+  assert.equal(pending.weight, null);
+  assert.equal(pending.needsBaseline, true);
+  assert.equal(pending.exerciseName, 'Alternative shoulder press');
+  assert.equal(pending.muscle, 'Shoulders');
+  assert.equal(pending.targetReps, '10–12');
+  assert.equal(pending.reps, 10);
+  pending.weight = 25;
+  pending.needsBaseline = false;
+  app.addSetToExercise(ex.id);
+  assert.equal(list[list.length - 1].weight, 25);
+  assert.equal(list[list.length - 1].needsBaseline, false);
+  app.applyExerciseSwap(ex.id, { name: 'Alternative row', muscle: 'Back / Lats', targetReps: '8–10' }, 'today');
+  app.addSetToExercise(ex.id);
+  assert.equal(list[list.length - 1].weight, null);
+  assert.equal(list[list.length - 1].exerciseName, 'Alternative row');
+  assert.equal(list[list.length - 1].muscle, 'Back / Lats');
+  assert.equal(list[list.length - 1].targetReps, '8–10');
 });
 
 test('straight timers clamp duration, block early skip, and permit skip after 120 seconds', () => {
