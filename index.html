@@ -44,19 +44,11 @@
 
     <!-- WORKOUT VIEW -->
     <section id="workoutView">
-      
+
       <!-- Day Selector Carousel/Grid -->
       <div class="day-selector-wrap">
         <div class="day-selector" id="daySelector">
           <!-- Populated dynamically by app.js -->
-        </div>
-      </div>
-
-      <!-- 60-Min Cap Info Bar -->
-      <div class="time-saver-banner">
-        <span style="font-size: 1.1rem;">⏱️</span>
-        <div class="time-saver-text">
-          <strong>60-Min Gym Cap:</strong> Antagonist & same-machine supersets keep full sessions around ~35–45m while hitting every target muscle group!
         </div>
       </div>
 
@@ -97,14 +89,15 @@
 
   </main>
 
+  <aside class="workout-dock" aria-label="Next set and rest timer">
   <!-- Persistent Now-Lifting Dock -->
   <div class="now-lifting-dock" id="nowLiftingDock" style="display: none;">
     <div class="now-lifting-left">
-      <div class="now-lifting-pulse"></div>
+
       <div class="now-lifting-title" id="nowLiftingTitle">Next Lift</div>
       <div class="now-lifting-meta" id="nowLiftingMeta">Set 1</div>
     </div>
-    <button type="button" class="now-lifting-jump-btn" id="nowLiftingJumpBtn">Go to Lift ▾</button>
+    <button type="button" class="now-lifting-jump-btn" id="nowLiftingJumpBtn">Next set</button>
   </div>
 
   <!-- Floating Rest Timer Dock -->
@@ -114,7 +107,7 @@
       <div class="timer-left">
         <span class="timer-icon">⏱️</span>
         <div>
-          <div class="timer-display" id="timerDisplay" aria-live="polite">2:00</div>
+          <div class="timer-display" id="timerDisplay" aria-label="Rest time remaining">2:00</div>
           <div class="timer-label">Rest Countdown</div>
         </div>
       </div>
@@ -125,6 +118,8 @@
       </div>
     </div>
   </div>
+
+  </aside>
 
   <!-- Workout Summary Modal -->
   <div class="modal-backdrop" id="summaryModal" role="dialog" aria-modal="true" aria-labelledby="summaryModalTitle">

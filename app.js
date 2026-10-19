@@ -618,36 +618,40 @@ class WorkoutApp {
   updateSetWeight(exId, setIdx, newWeight) {
     const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
-    if (this.session && !this.session.startTime) {
-      this.session.startTime = new Date().toISOString();
-    }
-    const val = Math.max(0, parseFloat(newWeight) || 0);
-    list[setIdx].weight = val;
-
-    // Set 1 weight propagation: auto-update subsequent uncompleted sets!
-    if (setIdx === 0 && list.length > 1) {
-      for (let i = 1; i < list.length; i++) {
-        if (!list[i].completed) {
-          list[i].weight = val;
-        }
-      }
-    }
-
+    if (!this.session.startTime) this.session.startTime = new Date().toISOString();
+    const parsed = newWeight === null || newWeight === '' ? NaN : Number(newWeight);
+    const value = Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+    const affected = [setIdx];
+    if (setIdx === 0 && value !== null) list.forEach((set, idx) => {
+      if (idx > 0 && !set.completed && (!set.exerciseName || !list[0].exerciseName || set.exerciseName === list[0].exerciseName)) affected.push(idx);
+    });
+    affected.forEach(idx => {
+      list[idx].weight = value;
+      list[idx].needsBaseline = value === null;
+      const row = this.exerciseListEl.querySelector(`.set-row[data-exid="${exId}"][data-setidx="${idx}"]`);
+      if (!row) return;
+      const input = row.querySelector('.set-weight-input');
+      if (input && document.activeElement !== input) input.value = value === null ? '' : value;
+      const button = row.querySelector('.set-check-btn');
+      if (button) button.disabled = value === null && !list[idx].completed;
+      const prompt = row.querySelector('.baseline-prompt');
+      if (prompt) prompt.hidden = value !== null;
+    });
+    const warmup = this.exerciseListEl.querySelector(`#card_${exId} .warmup-btn`);
+    if (warmup) warmup.disabled = list.some(set => set.needsBaseline || set.weight === null);
     this.saveCurrentSession();
-    this.renderWorkout();
+    this.updateNowLiftingHUD();
   }
 
   updateSetReps(exId, setIdx, newReps) {
     const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
-    if (this.session && !this.session.startTime) {
-      this.session.startTime = new Date().toISOString();
-    }
-    const val = Math.max(0, parseInt(newReps, 10) || 0);
-    list[setIdx].reps = val;
-
+    if (!this.session.startTime) this.session.startTime = new Date().toISOString();
+    list[setIdx].reps = Math.max(0, parseInt(newReps, 10) || 0);
+    const input = this.exerciseListEl.querySelector(`.set-reps-input[data-exid="${exId}"][data-setidx="${setIdx}"]`);
+    if (input && document.activeElement !== input) input.value = list[setIdx].reps;
     this.saveCurrentSession();
-    this.renderWorkout();
+    this.updateNowLiftingHUD();
   }
 
   getPreviousExercisePerformance(exerciseName) {
@@ -903,389 +907,151 @@ class WorkoutApp {
   }
 
   renderDaySelector() {
-    const todayIndex = this.getSuggestedDayIndex();
-    this.daySelectorEl.innerHTML = this.routine.map((day, idx) => {
-      const isActive = idx === this.activeDayIndex;
-      const isToday = idx === todayIndex;
-      
-      let dayAbbr = 'DAY';
-      let routineName = day.title;
-      if (day.title.includes('Wed')) { dayAbbr = 'WED'; routineName = 'Upper A'; }
-      else if (day.title.includes('Fri')) { dayAbbr = 'FRI'; routineName = 'Lower A'; }
-      else if (day.title.includes('Sat')) { dayAbbr = 'SAT'; routineName = 'Upper B'; }
-      else if (day.title.includes('Sun')) { dayAbbr = 'SUN'; routineName = 'DB Arms'; }
-      else if (day.title.includes('Mon')) { dayAbbr = 'MON'; routineName = 'Lower B'; }
-
-      const coreCount = day.exercises.filter(e => !e.isOptional).length;
-
-      return `
-        <button class="day-btn ${isActive ? 'active' : ''}" data-index="${idx}">
-          <div class="day-btn-header">
-            <span class="day-btn-day">${dayAbbr}</span>
-            ${isToday ? '<span class="today-dot">● Today</span>' : `<span style="font-size: 0.65rem; color: var(--text-muted);">${coreCount} lifts</span>`}
-          </div>
-          <div class="day-btn-title">${routineName}</div>
-        </button>
-      `;
-    }).join('');
-
-    this.daySelectorEl.querySelectorAll('.day-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const idx = parseInt(btn.dataset.index, 10);
-        this.activeDayIndex = idx;
-        this.session = this.loadSession();
-        this.renderDaySelector();
-        this.renderWorkout();
-      });
+    const todayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()];
+    this.daySelectorEl.innerHTML = `<label class="day-picker-label" for="workoutDayPicker">Workout day</label>
+      <select id="workoutDayPicker" class="day-picker">${this.routine.map((day, idx) =>
+        `<option value="${idx}" ${idx === this.activeDayIndex ? 'selected' : ''}>${this.escapeHtml(day.title)}${day.title.startsWith(todayName) ? ' · Today' : ''}</option>`).join('')}</select>`;
+    document.getElementById('workoutDayPicker').addEventListener('change', e => {
+      this.saveCurrentSession();
+      this.activeDayIndex = Number(e.target.value);
+      this.focusedExerciseId = null;
+      this.pendingRir = null;
+      this.session = this.loadSession();
+      this.renderDaySelector();
+      this.renderWorkout();
     });
   }
 
   renderWorkout() {
-    const currentDay = this.routine[this.activeDayIndex];
-    if (!currentDay) return;
-
-    // Separate Core Lifts and Exclusively Optional Finishers
-    const coreExercises = currentDay.exercises.filter(ex => !ex.isOptional);
-    const optionalExercises = currentDay.exercises.filter(ex => ex.isOptional);
-
-    const hasSuperset = coreExercises.some(ex => ex.superset);
-    const totalCoreSets = coreExercises.reduce((sum, ex) => sum + ((this.session.logs[ex.id] && this.session.logs[ex.id].length) || ex.sets), 0);
-    const completedCoreSets = coreExercises.reduce((sum, ex) => {
-      const logs = this.session.logs[ex.id] || [];
-      return sum + logs.filter(s => s.completed).length;
+    const day = this.routine[this.activeDayIndex];
+    if (!day) return;
+    const core = day.exercises.filter(ex => !ex.isOptional);
+    const total = core.reduce((sum, ex) => sum + (this.session.logs[ex.id] || []).length, 0);
+    const complete = core.reduce((sum, ex) => sum + (this.session.logs[ex.id] || []).filter(set => set.completed).length, 0);
+    const estimateSeconds = core.reduce((sum, ex) => {
+      const count = (this.session.logs[ex.id] || []).length;
+      return sum + count * 45 + Math.max(0, count - 1) * this.getRestSeconds(ex) + 90;
     }, 0);
-    const progressPct = totalCoreSets > 0 ? Math.round((completedCoreSets / totalCoreSets) * 100) : 0;
-    const estimatedMins = currentDay.id === 'sun___db_arms' ? 30 : (hasSuperset ? (coreExercises.length * 8) - 8 : (coreExercises.length * 8));
-
-    // Clean Day Title for header
-    let cleanDayTitle = currentDay.title;
-    if (cleanDayTitle.includes('Mon-')) cleanDayTitle = 'Mon - Lower B';
-
-    const deloadBannerHTML = this.deloadActive ? `
-      <div class="deload-banner">
-        <div class="deload-banner-icon">🌿</div>
-        <div class="deload-banner-text">
-          <div class="deload-banner-title">Deload Week Active (${this.getDeloadDaysLeft()} day${this.getDeloadDaysLeft() === 1 ? '' : 's'} remaining)</div>
-          <div>Volume automatically reduced by ~50% & loads eased by ~10% for systemic joint & CNS recovery.</div>
-        </div>
-      </div>
-    ` : '';
-
-    this.sessionInfoEl.innerHTML = `
-      ${deloadBannerHTML}
-      <h2>${this.escapeHtml(cleanDayTitle)}</h2>
-      <div class="session-meta">
-        <span>🏋️ ${coreExercises.length} Core Lifts</span>
-        <span>•</span>
-        <span>⚡ ${totalCoreSets} Sets</span>
-        <span>•</span>
-        <span>⏱️ ~${estimatedMins}m ${hasSuperset ? '<strong style="color: var(--accent-purple);">(⚡ Superset)</strong>' : ''}</span>
-      </div>
-      <div class="workout-progress-bar-wrap">
-        <div class="workout-progress-info">
-          <span>⚡ <strong>${completedCoreSets} of ${totalCoreSets}</strong> sets completed</span>
-          <span class="workout-progress-pct">${progressPct}%</span>
-        </div>
-        <div class="workout-progress-track">
-          <div class="workout-progress-fill" style="width: ${progressPct}%;"></div>
-        </div>
-      </div>
-    `;
-
-    // Render Core Cards
-    const coreHTML = coreExercises.map(ex => this.renderExerciseCard(ex, false)).join('');
-
-    // Render Dedicated Optional Drawer
-    const isOptionalOpen = this.expandedOptionalDays.has(currentDay.id);
-    const optionalHTML = optionalExercises.length > 0 ? `
-      <div class="optional-section-wrap">
-        <div class="optional-section-header" id="optionalToggleHeader">
-          <div class="optional-header-left">
-            <span class="optional-badge-pill">⚡ 100% EXCLUSIVELY OPTIONAL</span>
-            <div class="optional-section-title">${optionalExercises.length} Bonus Finisher${optionalExercises.length > 1 ? 's' : ''}</div>
-            <div class="optional-section-subtitle">Only do this if you have 10+ mins left on your 60m timer!</div>
-          </div>
-          <span class="optional-toggle-pill" id="optionalTogglePill">${isOptionalOpen ? 'Hide Finisher ▴' : 'View Finisher (+5m) ▾'}</span>
-        </div>
-        <div class="optional-cards-list ${isOptionalOpen ? 'open' : ''}" id="optionalCardsList">
-          ${optionalExercises.map(ex => this.renderExerciseCard(ex, true)).join('')}
-        </div>
-      </div>
-    ` : '';
-
-    this.exerciseListEl.innerHTML = coreHTML + optionalHTML;
+    const normalSets = core.reduce((sum, ex) => sum + ex.sets, 0);
+    const reducedSets = core.reduce((sum, ex) => sum + Math.max(2, Math.floor(ex.sets * .67)), 0);
+    this.sessionInfoEl.innerHTML = `${this.deloadActive ? `<div class="deload-banner">Deload: ${reducedSets} of ${normalSets} planned sets (${Math.round((normalSets - reducedSets) / normalSets * 100)}% fewer), loads eased 10%.</div>` : ''}
+      <h2>${this.escapeHtml(day.title)}</h2>
+      <div class="session-meta">${complete}/${total} sets · Estimated ${Math.ceil(estimateSeconds / 60)} min</div>
+      <div class="workout-progress-track" role="progressbar" aria-label="Workout sets" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${complete}"><div class="workout-progress-fill" style="width:${total ? complete / total * 100 : 0}%"></div></div>`;
+    const next = this.getNextSet();
+    const pending = this.pendingRir && day.exercises.find(ex => ex.id === this.pendingRir.exId);
+    const focus = pending || day.exercises.find(ex => ex.id === this.focusedExerciseId) || (next && next.ex) || core[0];
+    const visible = focus ? day.exercises.filter(ex => ex.id === focus.id ||
+      (this.isSupersetEnabled(focus) && this.isSupersetEnabled(ex) && ex.superset.id === focus.superset.id)) : [];
+    this.exerciseListEl.innerHTML = `<details class="workout-overview">
+      <summary>Workout overview · ${day.exercises.length} exercises</summary>
+      <div class="overview-list">${day.exercises.map(ex => {
+        const sets = this.session.logs[ex.id] || [];
+        return `<button type="button" class="overview-exercise ${visible.includes(ex) ? 'selected' : ''}" data-exid="${ex.id}"><span>${this.escapeHtml(this.getEffectiveExerciseName(ex.id, ex))}${ex.isOptional ? ' · Optional' : ''}</span><span>${sets.filter(set => set.completed).length}/${sets.length}</span></button>`;
+      }).join('')}</div>
+    </details>${this.focusedExerciseId && next && this.focusedExerciseId !== next.ex.id ? '<button type="button" class="secondary-btn return-next-btn">Return to next set</button>' : ''}
+    ${visible.map(ex => this.renderExerciseCard(ex, ex.isOptional)).join('')}`;
     this.bindWorkoutCardEvents();
   }
 
   renderExerciseCard(ex, isBonus) {
-    const activeSub = this.session && this.session.swaps && this.session.swaps[ex.id];
-    const isSwapped = Boolean(activeSub);
-    const effectiveName = activeSub ? activeSub.name : ex.name;
-    const sessionSets = this.session.logs[ex.id] || [];
-    const prev = this.getPreviousExercisePerformance(effectiveName);
-    const pr = this.getPersonalRecord(effectiveName);
-    const machineSetting = this.machineSettings[ex.id] || '';
-    const isAllDone = sessionSets.length > 0 && sessionSets.every(s => s.completed);
-    const isCollapsed = isAllDone && this.collapsedCards.has(ex.id);
-
-    const displayName = isSwapped ? `${activeSub.name} (Alt for ${ex.name})` : ex.name;
-    const effectiveTargetReps = isSwapped && activeSub.targetReps ? activeSub.targetReps : ex.targetReps;
-    const effectiveNotes = isSwapped && activeSub.notes ? activeSub.notes : ex.notes;
-    const effectiveVideo = isSwapped && activeSub.videoUrl ? activeSub.videoUrl : ex.videoUrl;
-
-    const cleanTag = ex.muscle.replace(/[^a-zA-Z]/g, '');
-    const effectiveRest = ex.superset ? ex.superset.rest : (ex.rest || '2 min');
-
-    // Progression Flag Checks: only unlock weight increase if top-end reps hit on ALL sets
-    const maxTarget = this.getMaxTargetReps(effectiveTargetReps);
-    const completedSets = sessionSets.filter(s => s.completed);
-    const topCurrentWeight = completedSets.length > 0 ? Math.max(...completedSets.map(s => s.weight || 0)) : 0;
-    const setsHittingMax = completedSets.filter(s => (s.reps || 0) >= maxTarget && (topCurrentWeight === 0 || (s.weight || 0) >= topCurrentWeight));
-    const targetSetsCount = (this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets) || sessionSets.length || 3;
-    const allCurrentHit = !this.deloadActive && sessionSets.length >= targetSetsCount && completedSets.length === sessionSets.length && completedSets.every(s => s.completed && (s.reps || 0) >= maxTarget && (topCurrentWeight === 0 || (s.weight || 0) >= topCurrentWeight));
-    const prevProgression = this.getPreviousProgressionFlag(effectiveName, effectiveTargetReps, targetSetsCount, ex);
-    const nextIncompleteIdx = sessionSets.findIndex(s => !s.completed);
-    const prevSummaryText = this.formatPreviousSetsSummary(prev ? prev.sets : null);
-
-    return `
-      <div class="exercise-card ${isAllDone ? 'completed' : ''} ${isBonus ? 'is-optional' : ''} ${ex.superset ? 'is-superset' : ''}" id="card_${ex.id}" data-exid="${ex.id}">
-        
-        ${ex.superset && ex.superset.tag.endsWith('A') ? `
-          <div class="superset-guide-banner">
-            <span style="font-size: 1.1rem;">⚡</span>
-            <div>
-              <strong>${ex.superset.name}</strong><br>
-              <span>${ex.superset.tip}</span>
-            </div>
-          </div>
-        ` : ''}
-
-        <div class="card-header">
-          <div class="card-meta-row">
-            <div class="card-tags-group">
-              <span class="muscle-tag tag-${cleanTag}">${ex.muscle}</span>
-              ${ex.superset ? `<span class="superset-badge">⚡ SUPERSET ${ex.superset.tag}</span>` : ''}
-              ${isBonus ? '<span class="optional-badge">⚡ Optional Bonus</span>' : ''}
-              ${isSwapped ? '<span class="optional-badge alt-tag">🔄 Alt Equipment</span>' : ''}
-              ${allCurrentHit ? `<span class="progression-badge full">🚀 All ${sessionSets.length} Sets Hit ${maxTarget} Reps! Increase Weight Next Time</span>` : (setsHittingMax.length > 0 ? `<span class="progression-badge partial">🎯 ${setsHittingMax.length}/${sessionSets.length} sets @ ${maxTarget} reps</span>` : '')}
-            </div>
-            <div class="card-meta-actions">
-              ${effectiveVideo ? `
-                <a href="${effectiveVideo}" target="_blank" rel="noopener noreferrer" class="video-link-btn" title="Watch form guide">
-                  ▶ Form
-                </a>
-              ` : ''}
-              ${isAllDone ? `
-                <button type="button" class="card-collapse-toggle-btn" data-exid="${ex.id}" aria-label="Toggle exercise details">
-                  ${isCollapsed ? 'Show Details ▾' : 'Collapse ▴'}
-                </button>
-              ` : ''}
-            </div>
-          </div>
-
-          <h3 class="exercise-name">${this.escapeHtml(displayName)}</h3>
-
-          <div class="card-tools-row">
-            ${prevSummaryText ? `
-              <button type="button" class="prev-weight-pill-btn" data-exname="${this.escapeHtml(effectiveName)}" title="Tap to view performance log">⏱️ Last: ${prevSummaryText} ▾</button>
-            ` : '<div class="card-tools-spacer"></div>'}
-            <div class="card-actions-pills">
-              <button type="button" class="action-pill-btn warmup-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(displayName)}" title="Calculate neural warmup ramp sets">
-                🔥 Warmup
-              </button>
-              <button type="button" class="action-pill-btn swap-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(ex.name)}" title="Swap with alternative equipment">
-                🔄 Swap
-              </button>
-            </div>
-          </div>
-        </div>
-
-        ${isCollapsed ? `
-          <div class="completed-summary-row">
-            <span class="completed-check-icon">✓</span>
-            <div class="completed-summary-text">
-              <strong>All ${sessionSets.length} Sets Completed!</strong>
-              <span>${sessionSets.map(s => `${s.weight}lbs×${s.reps}`).join(' • ')}</span>
-            </div>
-          </div>
-        ` : ''}
-
-        <div class="card-body-collapsible" style="display: ${isCollapsed ? 'none' : 'block'};">
-          <div class="exercise-meta-box">
-            <div class="target-targets">
-              <div class="target-item"><strong>Target:</strong> ${ex.sets} sets × ${effectiveTargetReps} reps</div>
-              <div class="target-item"><strong>Rest:</strong> <span style="${ex.superset ? 'color: #d8b4fe; font-weight: 700;' : ''}">${effectiveRest}</span></div>
-              <div class="target-item"><strong>Start Weight:</strong> ${ex.startingWeight || 'Moderate'}</div>
-              ${pr.maxWeight > 0 ? `<div class="target-item"><strong>PR:</strong> ${pr.maxWeight} lbs</div>` : ''}
-            </div>
-            ${effectiveNotes ? `
-              <details class="form-notes-collapsible">
-                <summary class="form-notes-summary">
-                  <span>ℹ️ Setup & Form Guide</span>
-                  <span class="chevron">▾</span>
-                </summary>
-                <div class="form-notes-content">${this.escapeHtml(effectiveNotes)}</div>
-              </details>
-            ` : ''}
-            
-            <div class="machine-settings-row">
-              <span class="machine-settings-label">⚙️ Pin / Seat:</span>
-              <input type="text" class="machine-settings-input" 
-                     placeholder="e.g. Seat #4, Pin #8" 
-                     value="${this.escapeHtml(machineSetting)}" 
-                     data-exid="${ex.id}" />
-            </div>
-
-            <div class="exercise-note-wrap">
-              <span class="note-icon">📝</span>
-              <input type="text" class="exercise-note-input" 
-                     placeholder="Note to self (e.g. seat #4, pause at bottom, handle width)..." 
-                     value="${this.escapeHtml(this.exerciseNotes[effectiveName] || '')}" 
-                     data-exname="${this.escapeHtml(effectiveName)}"
-                     data-exid="${ex.id}" />
-            </div>
-          </div>
-
-          ${prevProgression.unlocked ? (() => {
-            const isBumped = sessionSets.length > 0 && sessionSets[0].weight > prevProgression.topWeight;
-            return `
-            <div class="progression-banner">
-              <div class="progression-banner-left">
-                <span class="progression-icon">🚀</span>
-                <div class="progression-text">
-                  <strong>Double Progression Auto-Bump (+${prevProgression.increment} lbs):</strong> Hit ${prevProgression.maxReps} reps across all ${prevProgression.setsCount} sets last workout! ${isBumped ? `Weight auto-bumped +${prevProgression.increment} lbs.` : `Staying at ${prevProgression.topWeight} lbs.`}
-                </div>
-              </div>
-              ${isBumped ? `
-                <button class="bump-weight-btn revert" data-exid="${ex.id}" data-bump="-${prevProgression.increment}" title="Revert to previous session weight (${prevProgression.topWeight} lbs)">
-                  ↩️ Keep ${prevProgression.topWeight} lbs (-${prevProgression.increment} lbs)
-                </button>
-              ` : `
-                <button class="bump-weight-btn" data-exid="${ex.id}" data-bump="${prevProgression.increment}" title="Apply +${prevProgression.increment} lbs progression bump">
-                  +${prevProgression.increment} lbs All Sets
-                </button>
-              `}
-            </div>
-            `;
-          })() : ''}
-
-          <div class="sets-table-wrap">
-            <table class="sets-table">
-              <thead>
-                <tr>
-                  <th>Prev</th>
-                  <th>Target</th>
-                  <th>Lbs</th>
-                  <th>Reps</th>
-                  <th>Done</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${sessionSets.map((s, sIdx) => {
-                  const prevSet = prev && prev.sets && prev.sets[sIdx];
-                  let prevText = '—';
-                  if (prevSet) {
-                    if (prevSet.weight > 0) {
-                      prevText = `${prevSet.weight}×${prevSet.reps}`;
-                    } else if (prevSet.weight === 0 && prevSet.reps > 0) {
-                      prevText = `BW×${prevSet.reps}`;
-                    }
-                  }
-                  const isActiveNext = sIdx === nextIncompleteIdx;
-                  const target = this.getSetTarget(ex, sIdx, effectiveName);
-
-                  // Micro-PR badge calculation
-                  let microBadge = '';
-                  if (s.completed && prevSet && (prevSet.weight > 0 || (prevSet.weight === 0 && prevSet.reps > 0))) {
-                    const weightDiff = (s.weight || 0) - (prevSet.weight || 0);
-                    const repsDiff = (s.reps || 0) - (prevSet.reps || 0);
-                    if (weightDiff > 0) {
-                      microBadge = `<span class="micro-badge weight-pr">🚀 +${weightDiff} lbs</span>`;
-                    } else if (weightDiff === 0 && repsDiff > 0) {
-                      microBadge = `<span class="micro-badge reps-pr">🔥 +${repsDiff} rep${repsDiff > 1 ? 's' : ''}</span>`;
-                    } else if (weightDiff === 0 && repsDiff === 0) {
-                      microBadge = `<span class="micro-badge match-prev">✓ Match</span>`;
-                    }
-                  }
-
-                  return `
-                    <tr class="set-row ${s.completed ? 'completed' : ''} ${isActiveNext ? 'active-next-set' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}">
-                      <td class="prev-cell">
-                        <div>${prevText}</div>
-                        ${microBadge ? `<div>${microBadge}</div>` : ''}
-                      </td>
-                      <td class="target-cell">
-                        <div class="target-val">${target.targetRepsDisplay} <span style="font-size: 0.65rem; color: var(--text-muted); font-weight: normal;">reps</span></div>
-                        ${target.targetWeight > 0 ? `<div class="target-wt">${target.targetWeightDisplay} lbs</div>` : (target.targetWeight === 0 && ex.startingWeight && ex.startingWeight.toLowerCase().includes('bodyweight') ? `<div class="target-wt">Bodyweight</div>` : '')}
-                        ${target.isProgressionIncrease ? `<span class="target-bump-badge">▲ +${this.getExerciseIncrement(ex, effectiveName)} lbs</span>` : ''}
-                      </td>
-                      <td>
-                        <div class="stepper-wrap weight-stepper">
-                          <button type="button" class="stepper-btn minus" data-type="weight" data-delta="-5" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Decrease weight by 5 lbs">−</button>
-                          <input type="number" class="set-input set-weight-input" 
-                                 value="${s.weight}" 
-                                 data-exid="${ex.id}" data-setidx="${sIdx}" 
-                                 step="5" min="0" placeholder="0" 
-                                 inputmode="decimal" pattern="[0-9]*"
-                                 aria-label="Set ${s.setNum} weight in lbs" />
-                          <button type="button" class="stepper-btn plus" data-type="weight" data-delta="5" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Increase weight by 5 lbs">+</button>
-                        </div>
-                      </td>
-                      <td>
-                        <div class="stepper-wrap reps-stepper">
-                          <button type="button" class="stepper-btn minus" data-type="reps" data-delta="-1" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Decrease reps by 1">−</button>
-                          <input type="number" class="set-input set-reps-input" 
-                                 value="${s.reps}" 
-                                 data-exid="${ex.id}" data-setidx="${sIdx}" 
-                                 step="1" min="0" placeholder="0" 
-                                 inputmode="numeric" pattern="[0-9]*"
-                                 aria-label="Set ${s.setNum} reps" />
-                          <button type="button" class="stepper-btn plus" data-type="reps" data-delta="1" data-exid="${ex.id}" data-setidx="${sIdx}" aria-label="Increase reps by 1">+</button>
-                        </div>
-                      </td>
-                      <td>
-                        <button class="set-check-btn" data-exid="${ex.id}" data-setidx="${sIdx}" data-rest="${effectiveRest}" aria-label="Mark set ${s.setNum} ${s.completed ? 'incomplete' : 'complete'}">
-                          ${s.completed ? '✓' : '○'}
-                        </button>
-                      </td>
-                    </tr>
-                    ${s.completed ? `
-                      <tr class="rir-tr" data-exid="${ex.id}" data-setidx="${sIdx}">
-                        <td colspan="5" style="padding: 0; border-top: none;">
-                          <div class="rir-selector-row">
-                            <span class="rir-prompt">RIR:</span>
-                            <button type="button" class="rir-chip ${s.rir === 3 ? 'active' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}" data-rir="3">3+ (Light)</button>
-                            <button type="button" class="rir-chip ${s.rir === 2 ? 'active' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}" data-rir="2">2 (Solid)</button>
-                            <button type="button" class="rir-chip ${s.rir === 1 ? 'active' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}" data-rir="1">1 (Tough)</button>
-                            <button type="button" class="rir-chip ${s.rir === 0 ? 'active' : ''}" data-exid="${ex.id}" data-setidx="${sIdx}" data-rir="0">0 (Max)</button>
-                          </div>
-                        </td>
-                      </tr>
-                    ` : ''}
-                  `;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-
-          <div class="card-footer">
-            <button class="add-set-btn" data-exid="${ex.id}">
-              <span>+</span> Add Set
-            </button>
-            <div class="card-footer-right">
-              ${sessionSets.length > 1 ? `
-                <button class="icon-btn remove-set-btn" data-exid="${ex.id}" title="Remove last set">
-                  − Remove Set
-                </button>
-              ` : ''}
-            </div>
-          </div>
-        </div>
+    const name = this.getEffectiveExerciseName(ex.id, ex);
+    const swapped = this.session.swaps && this.session.swaps[ex.id];
+    const sets = this.session.logs[ex.id] || [];
+    const previous = this.getPreviousExercisePerformance(name);
+    const targetReps = (swapped && swapped.targetReps) || ex.targetReps;
+    const notes = (swapped && swapped.notes) || ex.notes;
+    const video = (swapped && swapped.videoUrl) || ex.videoUrl;
+    const rest = this.formatRest(this.getRestSeconds(ex));
+    const increment = this.getExerciseIncrement(ex, name);
+    const pref = (this.exercisePreferences || {})[name] || {};
+    const convention = pref.loadConvention || (/smith/i.test(name) ? 'plates-only' : /dumbbell|\bdb\b/i.test(name) ? (/overhead.*extension|goblet/i.test(name) ? 'total' : 'per-hand') : 'total');
+    const conventionLabel = {'per-hand':'per hand', 'total':'total load', 'plates-only':'plates only; exclude Smith bar', 'including-bar':'including Smith bar'}[convention] || 'total load';
+    const next = this.getNextSet();
+    const allDone = sets.length > 0 && sets.every(set => set.completed);
+    const pending = this.pendingRir && this.pendingRir.exId === ex.id;
+    const collapsed = allDone && this.collapsedCards.has(ex.id) && !pending;
+    const enabled = this.isSupersetEnabled(ex);
+    const progression = this.getPreviousProgressionFlag(name, targetReps, this.deloadActive ? Math.max(2, Math.floor(ex.sets * .67)) : ex.sets, ex);
+    return `<article class="exercise-card focused-card ${allDone ? 'completed' : ''}" id="card_${ex.id}" data-exid="${ex.id}">
+      <div class="card-header">
+        <div class="focus-card-eyebrow">${this.escapeHtml(ex.muscle)}${isBonus ? ' · Optional' : ''}${enabled ? ` · Superset ${this.escapeHtml(ex.superset.tag)}` : ''}</div>
+        <h3 class="exercise-name">${this.escapeHtml(name)}</h3>
+        ${swapped ? `<div class="muted-text">Alternative for ${this.escapeHtml(ex.name)}</div>` : ''}
+        <div class="focus-prescription">${sets.length} sets × ${this.escapeHtml(targetReps)} reps · Rest ${rest}</div>
+        <div class="load-convention">Weight in lbs · ${conventionLabel}</div>
       </div>
-    `;
+      ${collapsed ? `<button type="button" class="card-collapse-toggle-btn" data-exid="${ex.id}">✓ All sets complete · Review sets</button>` : `<div class="set-blocks">
+      ${sets.map((set, idx) => {
+        const prev = previous && previous.sets && previous.sets[idx];
+        const target = this.getSetTarget(ex, idx, name);
+        const needsBaseline = set.needsBaseline || set.weight === null;
+        return `<section class="set-row set-block ${set.completed ? 'completed' : ''} ${next && next.ex.id === ex.id && next.setIdx === idx ? 'active-next-set' : ''}" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Set ${idx + 1}">
+          <div class="set-heading"><strong>Set ${idx + 1}${next && next.ex.id === ex.id && next.setIdx === idx ? ' · Up next' : ''}</strong><span>Target ${this.escapeHtml(target.targetRepsDisplay)} reps${!needsBaseline && target.targetWeight > 0 ? ` · ${target.targetWeightDisplay} lb` : ''}</span></div>
+          <div class="previous-set">Last: ${prev ? `${prev.weight === 0 ? 'BW' : prev.weight + ' lb'} × ${prev.reps}` : 'No previous set'}${set.completed && set.exerciseName && set.exerciseName !== name ? ` · Logged as ${this.escapeHtml(set.exerciseName)}` : ''}</div>
+          ${needsBaseline ? '<p class="baseline-prompt">Enter a baseline weight for this equipment (0 for bodyweight).</p>' : ''}
+          <div class="set-entry-grid">
+            <label>Weight (lb)<span class="stepper-wrap weight-stepper"><button type="button" class="stepper-btn" data-type="weight" data-delta="-${increment}" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Decrease set ${idx + 1} weight by ${increment} pounds">−</button><input type="number" class="set-input set-weight-input" value="${set.weight === null ? '' : set.weight}" data-exid="${ex.id}" data-setidx="${idx}" min="0" step="${increment}" inputmode="decimal" placeholder="Enter" aria-label="Set ${idx + 1} weight in pounds"><button type="button" class="stepper-btn" data-type="weight" data-delta="${increment}" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Increase set ${idx + 1} weight by ${increment} pounds">+</button></span></label>
+            <label>Reps<span class="stepper-wrap reps-stepper"><button type="button" class="stepper-btn" data-type="reps" data-delta="-1" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Decrease set ${idx + 1} reps">−</button><input type="number" class="set-input set-reps-input" value="${set.reps}" data-exid="${ex.id}" data-setidx="${idx}" min="0" step="1" inputmode="numeric" aria-label="Set ${idx + 1} reps"><button type="button" class="stepper-btn" data-type="reps" data-delta="1" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Increase set ${idx + 1} reps">+</button></span></label>
+          </div>
+          <button type="button" class="set-check-btn" data-exid="${ex.id}" data-setidx="${idx}" data-rest="${rest}" ${needsBaseline && !set.completed ? 'disabled' : ''} aria-pressed="${set.completed}">${set.completed ? '✓ Completed · Undo' : 'Complete set'}</button>
+          ${set.completed ? `<div class="rir-selector-row"><span class="rir-prompt">Reps left in reserve</span>${[3,2,1,0].map(rir => `<button type="button" class="rir-chip ${set.rir === rir ? 'active' : ''}" data-exid="${ex.id}" data-setidx="${idx}" data-rir="${rir}" aria-pressed="${set.rir === rir}">${rir === 3 ? '3+' : rir}</button>`).join('')}<button type="button" class="rir-chip" data-exid="${ex.id}" data-setidx="${idx}" data-rir="skip">Skip effort</button></div>` : ''}
+        </section>`;
+      }).join('')}</div>`}
+      <details class="exercise-details"><summary>Setup, notes & exercise options</summary>
+        <div class="exercise-detail-content">
+          <p>${this.escapeHtml(notes || '')}</p>
+          ${video ? `<a class="video-link-btn" href="${this.escapeHtml(video)}" target="_blank" rel="noopener noreferrer">Watch form guide ↗</a>` : ''}
+          <div class="exercise-option-buttons"><button type="button" class="warmup-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(name)}" ${sets.some(set => set.needsBaseline || set.weight === null) ? 'disabled title="Enter a baseline weight first"' : ''}>Warmup</button><button type="button" class="swap-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(ex.name)}">Swap equipment</button><button type="button" class="prev-weight-pill-btn" data-exname="${this.escapeHtml(name)}">Performance history</button></div>
+          ${ex.superset ? `<label class="superset-mode"><input type="checkbox" class="superset-enabled-input" data-group="${ex.superset.id}" ${enabled ? 'checked' : ''}> Alternate this superset</label><p class="muted-text">When off, use straight sets with at least 2 minutes of rest.</p>` : ''}
+          <label>Weight increment<select class="exercise-increment-input" data-exname="${this.escapeHtml(name)}">${[1,2.5,5,10].map(value => `<option value="${value}" ${increment === value ? 'selected' : ''}>${value} lb</option>`).join('')}</select></label>
+          <label>Weight convention<select class="exercise-convention-input" data-exname="${this.escapeHtml(name)}">${[['total','Total load'],['per-hand','Dumbbell weight per hand'],['plates-only','Smith plates only (exclude bar)'],['including-bar','Smith total including bar']].map(([value,label]) => `<option value="${value}" ${convention === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+          <p class="muted-text">Changing the label keeps your recorded numbers unchanged.</p>
+          <label>Pin / seat<input type="text" class="machine-settings-input" value="${this.escapeHtml(this.machineSettings[ex.id] || '')}" data-exid="${ex.id}" placeholder="Seat #4, pin #8"></label>
+          <label>Note to self<input type="text" class="exercise-note-input" value="${this.escapeHtml(this.exerciseNotes[name] || '')}" data-exname="${this.escapeHtml(name)}" data-exid="${ex.id}" placeholder="Setup or technique reminders"></label>
+          ${progression.unlocked ? `<p>All previous sets reached ${progression.maxReps} reps. Progression step: ${progression.increment} lb.</p><button class="bump-weight-btn" data-exid="${ex.id}" data-bump="${sets[0] && sets[0].weight > progression.topWeight ? -progression.increment : progression.increment}">${sets[0] && sets[0].weight > progression.topWeight ? 'Revert' : 'Apply'} ${progression.increment} lb progression</button>` : ''}
+          <div class="card-footer"><button type="button" class="add-set-btn" data-exid="${ex.id}">+ Add set</button>${sets.length > 1 ? `<button type="button" class="remove-set-btn icon-btn" data-exid="${ex.id}">− Remove set</button>` : ''}</div>
+        </div>
+      </details>
+    </article>`;
   }
 
   bindWorkoutCardEvents() {
+    this.exerciseListEl.querySelectorAll('.overview-exercise').forEach(button => {
+      button.addEventListener('click', () => {
+        this.focusedExerciseId = button.dataset.exid;
+        this.collapsedCards.delete(button.dataset.exid);
+        this.renderWorkout();
+      });
+    });
+    this.exerciseListEl.querySelector('.return-next-btn')?.addEventListener('click', () => {
+      this.focusedExerciseId = null;
+      this.renderWorkout();
+    });
+    this.exerciseListEl.querySelectorAll('.superset-enabled-input').forEach(input => {
+      input.addEventListener('input', () => {
+        this.session.disabledSupersets = this.session.disabledSupersets || {};
+        this.session.disabledSupersets[input.dataset.group] = !input.checked;
+        this.saveCurrentSession();
+        this.renderWorkout();
+      });
+    });
+    this.exerciseListEl.querySelectorAll('.exercise-increment-input, .exercise-convention-input').forEach(input => {
+      input.addEventListener('input', () => {
+        const name = input.dataset.exname;
+        this.exercisePreferences = this.exercisePreferences || {};
+        const preference = this.exercisePreferences[name] || {};
+        if (input.classList.contains('exercise-increment-input')) preference.increment = Number(input.value);
+        else preference.loadConvention = input.value;
+        this.exercisePreferences[name] = preference;
+        this.saveExercisePreferences();
+        const details = input.closest('details');
+        const exId = details.closest('.exercise-card').dataset.exid;
+        this.renderWorkout();
+        const replacement = this.exerciseListEl.querySelector(`#card_${exId} details`);
+        if (replacement) replacement.open = true;
+      });
+    });
     // Optional finisher drawer toggle
     const optHeader = document.getElementById('optionalToggleHeader');
     const optList = document.getElementById('optionalCardsList');
@@ -1374,6 +1140,7 @@ class WorkoutApp {
         const exId = btn.dataset.exid;
         const setIdx = parseInt(btn.dataset.setidx, 10);
         const rest = btn.dataset.rest;
+        this.focusedExerciseId = null;
         this.toggleSetCompletion(exId, setIdx, rest);
       });
     });
@@ -1389,16 +1156,16 @@ class WorkoutApp {
 
     // Weight and Rep input changes - auto-save immediately to persistent store
     this.exerciseListEl.querySelectorAll('.set-weight-input').forEach(input => {
-      input.addEventListener('change', () => {
+      input.addEventListener('input', () => {
         const exId = input.dataset.exid;
         const setIdx = parseInt(input.dataset.setidx, 10);
-        const val = parseFloat(input.value) || 0;
+        const val = input.value === '' ? null : parseFloat(input.value);
         this.updateSetWeight(exId, setIdx, val);
       });
     });
 
     this.exerciseListEl.querySelectorAll('.set-reps-input').forEach(input => {
-      input.addEventListener('change', () => {
+      input.addEventListener('input', () => {
         const exId = input.dataset.exid;
         const setIdx = parseInt(input.dataset.setidx, 10);
         const val = parseInt(input.value, 10) || 0;
@@ -1408,7 +1175,7 @@ class WorkoutApp {
 
     // Machine Settings input changes
     this.exerciseListEl.querySelectorAll('.machine-settings-input').forEach(input => {
-      input.addEventListener('change', () => {
+      input.addEventListener('input', () => {
         const exId = input.dataset.exid;
         this.machineSettings[exId] = input.value;
         this.saveMachineSettings();
@@ -1417,7 +1184,7 @@ class WorkoutApp {
 
     // Exercise Notes input changes
     this.exerciseListEl.querySelectorAll('.exercise-note-input').forEach(input => {
-      input.addEventListener('change', () => {
+      input.addEventListener('input', () => {
         const key = input.dataset.exname || input.dataset.exid;
         this.exerciseNotes[key] = input.value.trim();
         this.saveExerciseNotes();
@@ -1430,7 +1197,7 @@ class WorkoutApp {
         e.stopPropagation();
         const exId = chip.dataset.exid;
         const setIdx = parseInt(chip.dataset.setidx, 10);
-        const rir = parseInt(chip.dataset.rir, 10);
+        const rir = chip.dataset.rir === 'skip' ? null : parseInt(chip.dataset.rir, 10);
         this.setSetRIR(exId, setIdx, rir);
       });
     });
@@ -1528,87 +1295,26 @@ class WorkoutApp {
   updateNowLiftingHUD() {
     const dock = document.getElementById('nowLiftingDock');
     if (!dock) return;
-
-    if (this.activeView !== 'workout' || !this.session) {
-      dock.style.display = 'none';
-      return;
-    }
-
-    const currentDay = this.routine && this.routine[this.activeDayIndex];
-    if (!currentDay || !currentDay.exercises) {
-      dock.style.display = 'none';
-      return;
-    }
-
-    // Find first exercise that has at least one incomplete set
-    let activeEx = null;
-    let activeSetIdx = -1;
-
-    for (const ex of currentDay.exercises) {
-      const sets = this.session.logs[ex.id] || [];
-      const idx = sets.findIndex(s => !s.completed);
-      if (idx !== -1) {
-        activeEx = ex;
-        activeSetIdx = idx;
-        break;
-      }
-    }
-
-    if (!activeEx) {
-      dock.style.display = 'none';
-      return;
-    }
-
-    const effectiveName = this.getEffectiveExerciseName(activeEx.id, activeEx);
-    const sets = this.session.logs[activeEx.id] || [];
-    const activeSet = sets[activeSetIdx];
-
-    const titleEl = document.getElementById('nowLiftingTitle');
-    const metaEl = document.getElementById('nowLiftingMeta');
-
-    if (titleEl) titleEl.textContent = effectiveName;
-    if (metaEl) {
-      const wtStr = (activeSet && activeSet.weight > 0) ? ` • ${activeSet.weight} lbs` : '';
-      metaEl.textContent = `Set ${activeSetIdx + 1}/${sets.length}${wtStr}`;
-    }
-
-    dock.dataset.activeExid = activeEx.id;
+    const next = this.activeView === 'workout' && this.session ? this.getNextSet() : null;
+    if (!next) { dock.style.display = 'none'; return; }
+    const set = this.session.logs[next.ex.id][next.setIdx];
+    const name = this.getEffectiveExerciseName(next.ex.id, next.ex);
+    const swap = this.session.swaps && this.session.swaps[next.ex.id];
+    const targetReps = (swap && swap.targetReps) || next.ex.targetReps;
+    document.getElementById('nowLiftingTitle').textContent = name;
+    document.getElementById('nowLiftingMeta').textContent = `Next: set ${next.setIdx + 1} · ${targetReps} reps · ${set.weight === null ? 'Enter baseline' : set.weight + ' lb'}`;
+    dock.dataset.activeExid = next.ex.id;
     dock.style.display = 'flex';
   }
 
   jumpToActiveExercise() {
-    const dock = document.getElementById('nowLiftingDock');
-    const exId = dock ? dock.dataset.activeExid : null;
-    if (!exId) return;
-
-    // If target exercise is an optional finisher and drawer is closed, open it
-    const currentDay = this.routine && this.routine[this.activeDayIndex];
-    const targetEx = currentDay && currentDay.exercises.find(e => e.id === exId);
-    if (targetEx && targetEx.isOptional) {
-      this.expandedOptionalDays.add(currentDay.id);
-      const optList = document.getElementById('optionalCardsList');
-      if (optList) optList.classList.add('open');
-      const optPill = document.getElementById('optionalTogglePill');
-      if (optPill) optPill.textContent = 'Hide Finisher ▴';
-    }
-
-    // Uncollapse if collapsed
-    if (this.collapsedCards.has(exId)) {
-      this.collapsedCards.delete(exId);
-      this.renderWorkout();
-    }
-
-    const card = document.getElementById('card_' + exId) || document.querySelector(`.exercise-card[data-exid="${exId}"]`);
-    if (card) {
-      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      card.style.transition = 'box-shadow 0.3s ease, border-color 0.3s ease';
-      card.style.borderColor = 'var(--accent-blue)';
-      card.style.boxShadow = '0 0 25px rgba(59, 130, 246, 0.45)';
-      setTimeout(() => {
-        card.style.borderColor = '';
-        card.style.boxShadow = '';
-      }, 1400);
-    }
+    const next = this.getNextSet();
+    if (!next) return;
+    this.focusedExerciseId = null;
+    this.collapsedCards.delete(next.ex.id);
+    this.renderWorkout();
+    const card = document.getElementById('card_' + next.ex.id);
+    if (card) card.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start'});
   }
 
   // Rest Timer Controller
@@ -3023,6 +2729,9 @@ class WorkoutApp {
 
   // Routine & Customizer View
   renderRoutineEditor() {
+    const exercises = this.routine.flatMap(day => day.exercises).filter(ex => !ex.isOptional);
+    const normalSets = exercises.reduce((sum, ex) => sum + ex.sets, 0);
+    const deloadSets = exercises.reduce((sum, ex) => sum + Math.max(2, Math.floor(ex.sets * .67)), 0);
     this.routineEditorEl.innerHTML = `
       <div style="margin-bottom: 20px;">
         <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 8px;">Routine Customization & Preferences</h3>
@@ -3039,7 +2748,7 @@ class WorkoutApp {
             ${this.deloadActive ? `<span style="font-size: 0.68rem; background: rgba(16, 185, 129, 0.25); color: #a7f3d0; padding: 1px 6px; border-radius: var(--radius-full);">Active</span>` : ''}
           </div>
           <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
-            Auto-scales workout sets down by ~50% and eases loads by ~10% for systemic joint & CNS restoration. Auto-expires after 7 days.
+            Reduces planned sets from ${normalSets} to ${deloadSets} (${Math.round((normalSets - deloadSets) / normalSets * 100)}% fewer) and eases loads by 10%. Auto-expires after 7 days.
             ${this.deloadActive ? `<span style="display:block; color: #a7f3d0; font-weight: 700; margin-top: 4px;">⏳ ${this.getDeloadDaysLeft()} day${this.getDeloadDaysLeft() === 1 ? '' : 's'} remaining</span>` : ''}
           </p>
         </div>
@@ -3072,7 +2781,7 @@ class WorkoutApp {
           </span>
         </div>
         <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 12px;">
-          Browser storage is persistent, but downloading an offline JSON backup guarantees your workout history, personal records, and exercise notes remain 100% immune to browser cache clearing or phone switches.
+          Download a JSON backup to keep a separate copy of your history, active workouts, routine and preferences. Keep the backup file somewhere you can retrieve after changing phones.
         </p>
         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
           <button class="secondary-btn" id="exportDataBtn" style="flex: 1; min-width: 140px; font-size: 0.82rem; padding: 8px 12px;">
@@ -3101,7 +2810,7 @@ class WorkoutApp {
       <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
           <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-emerald);">🔔 Rest Timer Chime & Haptic Check</div>
-          <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Test the 3-tone chime & tactile vibration pattern.</div>
+          <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Test sound and vibration while this page is open. Locked-screen and background alerts may not fire on iPhone; reopening restores the countdown.</div>
         </div>
         <button class="secondary-btn" id="testChimeBtn" style="padding: 6px 14px; font-size: 0.8rem; border-color: rgba(16, 185, 129, 0.4); color: #6ee7b7;">
           🔊 Test Chime & Vibrate
@@ -3111,11 +2820,11 @@ class WorkoutApp {
       <!-- Version & Cache Reset -->
       <div style="background: rgba(148, 163, 184, 0.08); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0;">⚡ MachineMaster v2.6 <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;">(Build v26 • Rev ${localStorage.getItem(this.storageKeys.routineRev) || '14'})</span></div>
-          <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Smart +10/+5lb Auto-Bump • Core-Only Split • Deload Engine • SVG 1RM Curve • Active HUD</div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0;">⚡ MachineMaster <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;">(Build v26 • Rev ${localStorage.getItem(this.storageKeys.routineRev) || '14'})</span></div>
+          <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Saved workouts, configurable progression & focused logging</div>
         </div>
         <button class="secondary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">
-          🔄 Force Sync & Reload
+          🔄 Check for App Update
         </button>
       </div>
 
