@@ -936,8 +936,7 @@ class WorkoutApp {
     const normalSets = core.reduce((sum, ex) => sum + ex.sets, 0);
     const reducedSets = core.reduce((sum, ex) => sum + Math.max(2, Math.floor(ex.sets * .67)), 0);
     this.sessionInfoEl.innerHTML = `${this.deloadActive ? `<div class="deload-banner">Deload: ${reducedSets} of ${normalSets} planned sets (${Math.round((normalSets - reducedSets) / normalSets * 100)}% fewer), loads eased 10%.</div>` : ''}
-      <h2>${this.escapeHtml(day.title)}</h2>
-      <div class="session-meta">${complete}/${total} sets · Estimated ${Math.ceil(estimateSeconds / 60)} min</div>
+      <div class="session-meta"><span class="session-completion"><strong>${complete}</strong> / ${total} sets</span><span class="session-duration">~${Math.ceil(estimateSeconds / 60)} min planned</span></div>
       <div class="workout-progress-track" role="progressbar" aria-label="Workout sets" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${complete}"><div class="workout-progress-fill" style="width:${total ? complete / total * 100 : 0}%"></div></div>`;
     const next = this.getNextSet();
     const pending = this.pendingRir && day.exercises.find(ex => ex.id === this.pendingRir.exId);
@@ -2817,7 +2816,7 @@ class WorkoutApp {
       <!-- Version & Cache Reset -->
       <div style="background: rgba(148, 163, 184, 0.08); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0;">⚡ MachineMaster <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;">(Build v27 • Rev ${localStorage.getItem(this.storageKeys.routineRev) || '14'})</span></div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0;">⚡ MachineMaster <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;">(Build v28 • Rev ${localStorage.getItem(this.storageKeys.routineRev) || '14'})</span></div>
           <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Saved workouts, configurable progression & focused logging</div>
         </div>
         <button class="secondary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">

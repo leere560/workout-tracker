@@ -29,6 +29,7 @@ test('all published release assets exist and the script versions match the worke
 });
 
 test('service worker waits for explicit update and preserves unrelated caches', async () => {
+  const currentCache = /const CACHE_NAME = '([^']+)'/.exec(read('sw.js'))[1];
   const handlers = {};
   const deleted = [];
   let skips = 0;
@@ -40,7 +41,7 @@ test('service worker waits for explicit update and preserves unrelated caches', 
     },
     caches: {
       open: async () => ({ addAll: async () => {} }),
-      keys: async () => ['unrelated-cache', 'workout-tracker-v26', 'workout-tracker-v27'],
+      keys: async () => ['unrelated-cache', 'workout-tracker-old', currentCache],
       delete: async key => { deleted.push(key); }
     }
   };
@@ -53,7 +54,7 @@ test('service worker waits for explicit update and preserves unrelated caches', 
   assert.equal(skips, 1);
   handlers.activate({ waitUntil: promise => { completion = promise; } });
   await completion;
-  assert.deepEqual(deleted, ['workout-tracker-v26']);
+  assert.deepEqual(deleted, ['workout-tracker-old']);
   assert.equal(claimed, 1);
 });
 
