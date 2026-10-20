@@ -12,7 +12,13 @@ document.addEventListener('DOMContentLoaded', () => {
       modal.inert = modal !== opened;
       modal.setAttribute('aria-hidden', String(modal !== opened));
     });
-    if (opened === activeModal) return;
+    if (opened === activeModal) {
+      // Review and confirmation can replace the contents of the same dialog.
+      if (opened && !opened.contains(document.activeElement)) {
+        (focusable(opened)[0] || opened).focus({ preventScroll: true });
+      }
+      return;
+    }
     if (opened) {
       if (!activeModal) returnFocus = document.activeElement;
       activeModal = opened;
