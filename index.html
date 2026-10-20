@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Track your 5-day machine hypertrophy routine with progressive overload, rest timers, and superset pacing.">
   <title>5-Day Machine Lifting Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=27">
+  <link rel="stylesheet" href="styles.css?v=28">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
   <meta name="theme-color" content="#0a0e17">
@@ -53,19 +53,22 @@
       </div>
 
       <!-- Active Session Control Bar -->
-      <div class="session-bar">
-        <div class="session-info" id="sessionInfo">
-          <!-- Populated dynamically -->
-        </div>
-        <div class="session-actions-group">
-          <div class="wake-lock-status-badge" id="wakeLockBadge" title="Screen awake status">
-            🛡️ <span class="wake-dot">●</span> Screen Awake
+      <section class="session-bar" aria-labelledby="sessionHeading">
+        <div class="session-heading">
+          <h2 id="sessionHeading">Session progress</h2>
+          <div class="session-actions-group">
+            <div class="wake-lock-status-badge" id="wakeLockBadge" title="Screen awake status">
+              🛡️ <span class="wake-dot">●</span> Screen Awake
+            </div>
+            <button class="finish-btn" id="finishWorkoutBtn">
+              <span aria-hidden="true">✓</span> Finish workout
+            </button>
           </div>
-          <button class="finish-btn" id="finishWorkoutBtn">
-            <span>✓</span> Finish Workout
-          </button>
         </div>
-      </div>
+        <div class="session-info" id="sessionInfo">
+          <!-- Progress and duration populated dynamically -->
+        </div>
+      </section>
 
       <!-- Exercise Cards List -->
       <div id="exerciseList">
@@ -186,9 +189,9 @@
   <input type="file" id="importFileInput" accept=".json,application/json" style="display: none;">
 
   <!-- Scripts -->
-  <script src="routine-data.js?v=27"></script>
-  <script src="app.js?v=27"></script>
-  <script src="accessibility.js?v=27"></script>
-  <script src="update-manager.js?v=27"></script>
+  <script src="routine-data.js?v=28"></script>
+  <script src="app.js?v=28"></script>
+  <script src="accessibility.js?v=28"></script>
+  <script src="update-manager.js?v=28"></script>
 </body>
 </html>
