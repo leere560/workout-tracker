@@ -1952,6 +1952,15 @@ class WorkoutApp {
     return true;
   }
 
+  getMinimumRestLabel() {
+    const minimum = Number(this.timer.minimumDuration) || 0;
+    const remaining = Math.max(0, Math.ceil(((Number(this.timer.startedAt) || 0) + minimum * 1000 - Date.now()) / 1000));
+    if (minimum > 0 && remaining > 0) {
+      return `Minimum rest: ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')} left`;
+    }
+    return minimum > 0 ? 'Minimum rest complete' : 'Superset rest';
+  }
+
   updateTimerUI() {
     const mins = Math.floor(this.timer.remaining / 60);
     const secs = this.timer.remaining % 60;
@@ -1959,6 +1968,8 @@ class WorkoutApp {
 
     const pct = ((this.timer.totalDuration - this.timer.remaining) / this.timer.totalDuration) * 100;
     this.timerProgressBarEl.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+    const status = document.getElementById('timerMinimumStatus');
+    if (status) status.textContent = this.getMinimumRestLabel();
     const skip = document.getElementById('timerSkipBtn');
     if (skip) {
       skip.disabled = this.timer.active && Date.now() < this.timer.startedAt + this.timer.minimumDuration * 1000;
