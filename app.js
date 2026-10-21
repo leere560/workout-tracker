@@ -519,7 +519,7 @@ class WorkoutApp {
     this.session = next;
     this.pendingRir = null;
     this.editingCompletedSet = null;
-    this.editingWarmup = null;
+    this.editingCompletedWarmup = null;
     this.focusedExerciseId = null;
     this.collapsedCards = new Set();
     this.summaryModalEl?.classList.remove('open');
@@ -547,7 +547,7 @@ class WorkoutApp {
     this.session = this.normalizeSessionFlow(draft);
     this.pendingRir = null;
     this.editingCompletedSet = null;
-    this.editingWarmup = null;
+    this.editingCompletedWarmup = null;
     this.focusedExerciseId = null;
     this.collapsedCards = new Set();
     this.summaryModalEl?.classList.remove('open');
@@ -736,12 +736,13 @@ class WorkoutApp {
     const currentIds = new Set(current.map(ex => ex.id));
     const remaining = groups.slice(firstUnfinished).filter(group =>
       !group.some(ex => targetIds.has(ex.id) || currentIds.has(ex.id)));
-    this.session.exerciseOrder = [...groups.slice(0, firstUnfinished), target, current, ...remaining].flat().map(ex => ex.id);
+    if (!this.saveSessionFlowChange(() => {
+      this.session.exerciseOrder = [...groups.slice(0, firstUnfinished), target, current, ...remaining].flat().map(ex => ex.id);
+    }, false)) return false;
     this.pendingRir = null;
     this.editingCompletedSet = null;
-    this.editingWarmup = null;
+    this.editingCompletedWarmup = null;
     this.focusedExerciseId = target[0].id;
-    this.saveCurrentSession();
     this.renderWorkout();
     this.updateNowLiftingHUD();
     this.jumpToActiveExercise();
@@ -1004,9 +1005,6 @@ class WorkoutApp {
     this.swapModalEl = document.getElementById('swapModal');
     this.swapContentEl = document.getElementById('swapContent');
     this.swapModalTitleEl = document.getElementById('swapModalTitle');
-    this.warmupModalEl = document.getElementById('warmupModal');
-    this.warmupContentEl = document.getElementById('warmupContent');
-    this.warmupModalTitleEl = document.getElementById('warmupModalTitle');
     this.quickHistoryModalEl = document.getElementById('quickHistoryModal');
     this.quickHistoryContentEl = document.getElementById('quickHistoryContent');
     this.quickHistoryTitleEl = document.getElementById('quickHistoryTitle');
@@ -1229,8 +1227,8 @@ class WorkoutApp {
         ${swapped ? `<div class="muted-text">Alternative for ${this.escapeHtml(ex.name)}</div>` : ''}
         <div class="focus-prescription">${sets.length} sets × ${this.escapeHtml(targetReps)} reps · Rest ${rest}</div>
         <div class="load-convention">Weight in lbs · ${conventionLabel}</div>
-        <div class="exercise-heading-tools">${this.renderWarmupButton(ex)}<button type="button" class="swap-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(ex.name)}">Swap equipment</button></div>
-        <div class="machine-availability-control"><button type="button" class="machine-taken-btn secondary-btn" data-exid="${ex.id}" ${canDefer ? '' : `disabled aria-describedby="machineTakenHelp_${ex.id}"`}>Machine taken</button>${canDefer ? '' : `<small id="machineTakenHelp_${ex.id}" class="muted-text">${deferHelp}</small>`}</div>
+        <div class="exercise-heading-tools">${this.renderWarmupButton(ex)}<button type="button" class="swap-btn secondary-btn" aria-label="Swap equipment" data-exid="${ex.id}" data-exname="${this.escapeHtml(ex.name)}">Swap</button><button type="button" class="machine-taken-btn secondary-btn" data-exid="${ex.id}" ${canDefer ? '' : `disabled aria-describedby="machineTakenHelp_${ex.id}"`}>Machine taken</button></div>
+        ${canDefer ? '' : `<small id="machineTakenHelp_${ex.id}" class="machine-availability-help muted-text">${deferHelp}</small>`}
         <div class="saved-setup-cue" ${!seat && !note ? 'hidden' : ''}><span class="saved-seat-cue">${seat ? `Seat / pin: ${this.escapeHtml(seat)}` : ''}</span><span class="saved-note-cue">${this.escapeHtml(note)}</span></div>
       </div>
       ${this.renderWarmupSets(ex)}
@@ -1340,6 +1338,7 @@ class WorkoutApp {
         const error = this.getSetValidationError(this.session.logs[exId][setIdx]);
         if (error) { this.showToast(error); return; }
         this.editingCompletedSet = null;
+        this.editingCompletedWarmup = null;
         this.renderWorkout();
         this.revealWorkoutSet(exId, setIdx, true);
       });
@@ -1427,6 +1426,7 @@ class WorkoutApp {
         const rest = btn.dataset.rest;
         this.focusedExerciseId = null;
         this.editingCompletedSet = null;
+        this.editingCompletedWarmup = null;
         this.toggleSetCompletion(exId, setIdx, rest);
         if (this.session.logs[exId]?.[setIdx]?.completed) this.jumpToActiveExercise({automatic: true});
       });
@@ -1609,7 +1609,8 @@ class WorkoutApp {
     const swap = this.session.swaps && this.session.swaps[next.ex.id];
     const targetReps = (swap && swap.targetReps) || next.ex.targetReps;
     document.getElementById('nowLiftingTitle').textContent = name;
-    document.getElementById('nowLiftingMeta').textContent = `Next: ${next.type === 'warmup' ? 'warm-up' : 'set'} ${next.setIdx + 1} · ${next.type === 'warmup' ? set.reps : targetReps} reps · ${set.weight === null || set.weight === '' ? 'Enter load' : set.weight + ' lb'}`;
+    const number = next.type === 'warmup' ? this.getWarmupNumber(set, next.setIdx) : next.setIdx + 1;
+    document.getElementById('nowLiftingMeta').textContent = `Next: ${next.type === 'warmup' ? 'warm-up' : 'set'} ${number} · ${next.type === 'warmup' ? set.reps : targetReps} reps · ${set.weight === null || set.weight === '' ? 'Enter load' : set.weight + ' lb'}`;
     dock.dataset.activeExid = next.ex.id;
     dock.style.display = 'flex';
   }
@@ -1633,7 +1634,7 @@ class WorkoutApp {
       const targetTop = Math.max(0, window.scrollY + rect.top - top);
       window.scrollTo({top: targetTop, behavior: automatic || window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
     }
-    if (focus) (row.querySelector('.rir-selector-row') || row.querySelector('.set-heading, .edit-set-btn') || row).focus({preventScroll: true});
+    if (focus) (row.querySelector('.rir-selector-row') || row.querySelector('.set-heading, .edit-set-btn, .warmup-edit-btn') || row).focus({preventScroll: true});
   }
 
   jumpToActiveExercise({automatic = false} = {}) {
@@ -1852,7 +1853,7 @@ class WorkoutApp {
       // Bind restore button
       document.getElementById('restoreSwapBtn')?.addEventListener('click', () => {
         if (this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed);
-        this.editingWarmup = null;
+        this.editingCompletedWarmup = null;
         if (this.session && this.session.swaps) {
           delete this.session.swaps[exId];
         }
@@ -1863,6 +1864,12 @@ class WorkoutApp {
             const target = this.getSetTarget(ex, sIdx, ex.name);
             s.weight = target.targetWeight;
             s.reps = target.targetReps;
+            s.needsBaseline = Boolean(target.needsBaseline);
+            s.exerciseName = ex.name;
+            s.muscle = ex.muscle;
+            s.targetReps = ex.targetReps;
+            s.rir = null;
+            delete s.rirAnswered;
           }
         });
         this.saveCurrentSession();
@@ -1896,7 +1903,7 @@ class WorkoutApp {
     const previousName = this.getEffectiveExerciseName(exId, ex);
     const previousSwap = this.session?.swaps?.[exId];
     if (this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed);
-    this.editingWarmup = null;
+    this.editingCompletedWarmup = null;
     const sets = this.session?.logs?.[exId] || [];
     sets.filter(s => s.completed).forEach(s => {
       s.exerciseName = s.exerciseName || previousName;
@@ -1953,6 +1960,10 @@ class WorkoutApp {
     return Array.isArray(rows) ? rows : [];
   }
 
+  getWarmupNumber(set, index) {
+    return Number.isInteger(set.setNum) && set.setNum > 0 ? set.setNum : index + 1;
+  }
+
   getWarmupWorkingSet(exId) {
     const ex = this.findExerciseById(exId);
     if (!ex) return null;
@@ -1976,11 +1987,11 @@ class WorkoutApp {
     return ex && setIdx >= 0 ? {ex, setIdx, type: 'warmup'} : null;
   }
 
-  saveWarmupChange(change) {
+  saveSessionFlowChange(change, startWorkout = true) {
     const before = JSON.parse(JSON.stringify(this.session));
     try {
       change();
-      this.session.startTime ||= new Date().toISOString();
+      if (startWorkout) this.session.startTime ||= new Date().toISOString();
       if (this.session.dayId) {
         this.session.id ||= `s_${this.session.dayId}_${Date.now()}`;
         this.session.updatedAt = new Date().toISOString();
@@ -1992,7 +2003,7 @@ class WorkoutApp {
       return true;
     } catch (_) {
       this.session = before;
-      this.showToast('Could not save this warm-up. Free some device storage and try again.');
+      this.showToast('Could not save this change. Your saved workout is unchanged. Free some device storage and try again.');
       return false;
     }
   }
@@ -2016,14 +2027,15 @@ class WorkoutApp {
       completed: false,
       exerciseName: name
     }));
-    if (!this.saveWarmupChange(() => {
+    if (!this.saveSessionFlowChange(() => {
       this.session.warmups ||= {};
       this.session.warmups[exId] = [...this.getWarmupSets(exId), ...ramp];
     })) return false;
     this.focusedExerciseId = exId;
     this.renderWorkout();
     this.updateNowLiftingHUD();
-    this.jumpToActiveExercise({automatic: true});
+    const firstWarmup = this.getNextWarmup(exId);
+    this.revealWorkoutSet(exId, firstWarmup.setIdx, true, true, 'warmup');
     return true;
   }
 
@@ -2033,7 +2045,7 @@ class WorkoutApp {
     const blank = rawValue === null || String(rawValue).trim() === '';
     const parsed = blank ? NaN : Number(rawValue);
     const value = blank ? (field === 'weight' ? null : '') : Number.isFinite(parsed) ? parsed : String(rawValue);
-    if (!this.saveWarmupChange(() => { set[field] = value; })) return false;
+    if (!this.saveSessionFlowChange(() => { set[field] = value; })) return false;
     // Keep the focused number input mounted while the user types.
     const input = this.exerciseListEl?.querySelector(`.warmup-input[data-exid="${exId}"][data-warmupidx="${setIdx}"][data-field="${field}"]`);
     if (input && document.activeElement !== input) input.value = value ?? '';
@@ -2048,7 +2060,7 @@ class WorkoutApp {
     const validationError = this.getSetValidationError(set);
     if (!set.completed && validationError) { this.showToast(validationError); return false; }
     const completed = !set.completed;
-    if (!this.saveWarmupChange(() => {
+    if (!this.saveSessionFlowChange(() => {
       set.completed = completed;
       if (completed) {
         set.weight = Number(set.weight);
@@ -2067,13 +2079,14 @@ class WorkoutApp {
     this.renderWorkout();
     this.updateNowLiftingHUD();
     if (completed) this.jumpToActiveExercise({automatic: true});
+    else this.revealWorkoutSet(exId, setIdx, true, true, 'warmup');
     return true;
   }
 
   removeWarmupSet(exId, setIdx) {
     const set = this.getWarmupSets(exId)[setIdx];
     if (!set || set.completed) return false;
-    if (!this.saveWarmupChange(() => { this.session.warmups[exId].splice(setIdx, 1); })) return false;
+    if (!this.saveSessionFlowChange(() => { this.session.warmups[exId].splice(setIdx, 1); })) return false;
     this.editingCompletedWarmup = null;
     this.renderWorkout();
     this.updateNowLiftingHUD();
@@ -2084,7 +2097,7 @@ class WorkoutApp {
     const added = this.hasWarmupRamp(ex.id);
     const disabled = added || !this.getWarmupWorkingSet(ex.id);
     const title = added ? 'Warm-up sets are already on this card' : 'Enter a working load greater than 0 lb first';
-    return `<button type="button" class="warmup-btn secondary-btn" data-exid="${ex.id}" ${disabled ? `disabled title="${title}"` : ''}>${added ? 'Warm-ups added' : 'Add warm-up sets'}</button>`;
+    return `<button type="button" class="warmup-btn secondary-btn" aria-label="${added ? 'Warm-ups added' : 'Add warm-up sets'}" data-exid="${ex.id}" ${disabled ? `disabled title="${title}"` : ''}>${added ? 'Warm-ups ✓' : 'Warm-ups'}</button>`;
   }
 
   renderWarmupSets(ex) {
@@ -2094,7 +2107,7 @@ class WorkoutApp {
     const next = this.getNextSet();
     const remaining = rows.filter(set => !set.completed).length;
     return `<section class="warmup-sets" aria-label="Warm-up sets for ${this.escapeHtml(name)}"><div class="warmup-section-heading"><strong>Warm-up sets</strong><span>This workout only</span></div>${rows.map((set, idx) => {
-      const label = `Warm-up ${set.setNum || idx + 1}`;
+      const label = `Warm-up ${this.getWarmupNumber(set, idx)}`;
       const editing = this.editingCompletedWarmup?.exId === ex.id && this.editingCompletedWarmup.setIdx === idx;
       const active = next?.type === 'warmup' && next.ex.id === ex.id && next.setIdx === idx;
       const equipment = set.exerciseName && set.exerciseName !== name ? `<small>${this.escapeHtml(set.exerciseName)}</small>` : '';
@@ -2117,7 +2130,9 @@ class WorkoutApp {
     this.exerciseListEl.querySelectorAll('.warmup-remove-btn').forEach(button => button.addEventListener('click', () => this.removeWarmupSet(button.dataset.exid, Number(button.dataset.warmupidx))));
     this.exerciseListEl.querySelectorAll('.warmup-edit-btn').forEach(button => button.addEventListener('click', () => {
       this.editingCompletedWarmup = {exId: button.dataset.exid, setIdx: Number(button.dataset.warmupidx)};
+      this.focusedExerciseId = button.dataset.exid;
       this.renderWorkout();
+      this.revealWorkoutSet(button.dataset.exid, Number(button.dataset.warmupidx), true, false, 'warmup');
     }));
     this.exerciseListEl.querySelectorAll('.warmup-done-editing-btn').forEach(button => button.addEventListener('click', () => {
       const set = this.getWarmupSets(button.dataset.exid)[Number(button.dataset.warmupidx)];
@@ -2126,6 +2141,7 @@ class WorkoutApp {
       if (error) { this.showToast(error); return; }
       this.editingCompletedWarmup = null;
       this.renderWorkout();
+      this.revealWorkoutSet(button.dataset.exid, Number(button.dataset.warmupidx), true, false, 'warmup');
     }));
   }
 
@@ -2565,6 +2581,7 @@ class WorkoutApp {
     this.stopTimer();
     this.pendingRir = null;
     this.editingCompletedSet = null;
+    this.editingCompletedWarmup = null;
     this.focusedExerciseId = null;
     this.collapsedCards = new Set();
     // Reset current session
@@ -2660,6 +2677,7 @@ class WorkoutApp {
     this.lastWeights = weights;
     this.pendingRir = null;
     this.editingCompletedSet = null;
+    this.editingCompletedWarmup = null;
     this.focusedExerciseId = null;
     this.collapsedCards = new Set();
     this.summaryModalEl?.classList.remove('open');
@@ -3194,6 +3212,7 @@ class WorkoutApp {
       (session.exerciseOrder === undefined || (Array.isArray(session.exerciseOrder) && session.exerciseOrder.every(id => typeof id === 'string') && new Set(session.exerciseOrder).size === session.exerciseOrder.length)) &&
       (session.warmups === undefined || (object(session.warmups) && Object.values(session.warmups).every(sets => draftSetsValid(sets) && sets.every(set =>
         (set.completed === undefined || typeof set.completed === 'boolean') &&
+        (set.setNum === undefined || (Number.isInteger(set.setNum) && set.setNum > 0)) &&
         (set.exerciseName === undefined || typeof set.exerciseName === 'string')))));
     const sessionValid = session => object(session) && typeof session.dayId === 'string' && object(session.logs) && Object.values(session.logs).every(draftSetsValid) && flowValid(session);
     if (!object(data) || !['routine', 'history', 'sessions'].some(key => key in data)) throw new Error('This is not a workout backup');

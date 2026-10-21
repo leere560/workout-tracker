@@ -52,3 +52,18 @@ Screenshots use local test data. Physical iPhone Safari keyboard, VoiceOver and 
 
 ![Workout workflow](workflow-preview.jpg)
 ![Recent workouts and lift comparison](progress-preview.jpg)
+
+## Machine availability and inline warm-ups v30 (2026-10-21)
+
+Implementation delegated to exercise-order and warm-up agents, followed by parent integration, an independent persistence/code review, and mobile browser acceptance.
+
+- Machine taken moves the next unfinished exercise ahead of the current one, then returns after every remaining destination set. Enabled superset pairs move together. Repeated deferrals, partial sets, overview selections, running timers, and the final remaining group are covered.
+- Warm-ups are editable card rows with Complete, Undo, Edit, and removal of unfinished rows. Suggestions use the current equipment load and configured increment. Duplicate ramps are prevented. Intermediate completion starts 90 seconds; the final remaining warm-up uses the exercise's regular rest. Browser verification on hack squat produced 1:30, 1:30, then 3:00.
+- Warm-ups and order survive reload, retained drafts, backup/restore, and reopening a finished workout. New workouts reset both. Warm-ups remain outside working-set logs, progression, volume, previous working-set suggestions, and prescribed set counts. The original routine fixture remains unchanged.
+- Review fixes cover restoring original equipment metadata, consistent warm-up numbering after removal/swaps, safe imported numbering, accessible edit focus/scrolling, and transactional rollback when warm-up/order storage fails. Backups add optional flow metadata in version 3.2 and continue accepting legacy files.
+
+Validation: all 69 Node tests pass, JavaScript syntax checks pass, and git diff checks are clean. Responsive browser checks at 375, 390, 402, and 430 pixels found no horizontal overflow, visible buttons at least 44px high, and visible input text at least 16px. The parent verified deferral through all destination sets, paired movement, inline completion and validation, final-rest timing, reload recovery, and Start new/Restore draft. Browser warning/error logs were empty.
+
+Screenshots use isolated local test data. Physical iPhone Safari, keyboard, VoiceOver, and locked-screen alerts remain device checks. Release assets are versioned together as v30; this change is pushed to a feature branch for deployment separately.
+
+![Trackable warm-ups and regular final rest](machine-warmups-preview.png)

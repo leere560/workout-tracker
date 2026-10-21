@@ -59,10 +59,29 @@ test('finish/reopen and backup retain warmups and order without affecting workin
 
 test('invalid flow metadata in backups is rejected before changing saved values',()=>{
  const {app,values}=setup();const before=[...values.entries()];
- for(const flow of [{exerciseOrder:['same','same']},{exerciseOrder:'bad'},{warmups:[]},{warmups:{ex:[null]}},{warmups:{ex:[{weight:10,reps:2,completed:'yes'}]}}]) {
+ for(const flow of [{exerciseOrder:['same','same']},{exerciseOrder:'bad'},{warmups:[]},{warmups:{ex:[null]}},{warmups:{ex:[{weight:10,reps:2,completed:'yes'}]}},{warmups:{ex:[{weight:10,reps:2,setNum:'<img src=x onerror=alert(1)>'}]}}]) {
   const data=clone(app.createBackupData());Object.assign(data.sessions[0],flow);assert.throws(()=>app.validateBackup(data));assert.deepEqual([...values.entries()],before);
  }
  const old=clone(app.createBackupData());delete old.sessions[0].warmups;delete old.sessions[0].exerciseOrder;assert.doesNotThrow(()=>app.validateBackup(old));
+});
+
+test('machine deferral storage failure preserves order, data, focus and the running timer',()=>{
+ const {app,values,failOnce}=setup();const ex=app.routine[0].exercises[0];app.timer.active=true;app.focusedExerciseId=ex.id;
+ const session=clone(app.session),stored=[...values.entries()],timer=clone(app.timer);failOnce('gym_last_active_day_v1');
+ assert.equal(app.deferExercise(ex.id),false);assert.deepEqual(clone(app.session),session);assert.deepEqual([...values.entries()],stored);assert.deepEqual(clone(app.timer),timer);assert.equal(app.focusedExerciseId,ex.id);
+});
+
+test('equipment swap retains completed warmups and restore resets pending equipment metadata',()=>{
+ const {app,handlers}=setup();const ex=app.routine[0].exercises[0];
+ app.session.warmups[ex.id]=[{setNum:1,weight:50,reps:10,completed:true,exerciseName:ex.name},{setNum:2,weight:70,reps:5,completed:false,exerciseName:ex.name}];
+ const original=clone(app.session.warmups[ex.id][0]);
+ app.applyExerciseSwap(ex.id,{name:'Test replacement',muscle:'Chest',targetReps:'8–12'},'today');
+ assert.deepEqual(clone(app.session.warmups[ex.id]),[original]);assert.equal(app.getWarmupWorkingSet(ex.id),null);
+ app.updateSetWeight(ex.id,0,40);assert.equal(app.addWarmupSets(ex.id),true);
+ app.swapContentEl={innerHTML:'',querySelectorAll:()=>[]};app.swapModalEl={classList:{add(){},remove(){}}};app.openSwapModal(ex.id,ex.name);
+ handlers.get('restoreSwapBtn:click')();
+ const pending=app.session.logs[ex.id][0];assert.equal(pending.exerciseName,ex.name);assert.equal(pending.muscle,ex.muscle);assert.equal(pending.targetReps,ex.targetReps);assert.equal(pending.needsBaseline,false);
+ assert.deepEqual(clone(app.session.warmups[ex.id]),[original]);assert.equal(app.getWarmupWorkingSet(ex.id).weight,pending.weight);
 });
 
 test('confirm saves exactly once, retains draft snapshot and reports actual short duration',()=>{

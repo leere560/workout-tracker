@@ -50,6 +50,13 @@ test('warm-up ramp uses configured increments, is capped and cannot duplicate wo
   assert.ok(app.getWarmupSets(ex.id).every(set => set.weight <= 7 && set.weight >= 0));
 });
 
+test('warmup numbers remain stable after removal and unsafe stored numbers cannot render markup', () => {
+ const {app,ex}=setup();app.addWarmupSets(ex.id);app.removeWarmupSet(ex.id,1);
+ assert.equal(app.getWarmupNumber(app.getWarmupSets(ex.id)[1],1),3);
+ app.session.warmups[ex.id][0].setNum='<img src=x onerror=alert(1)>';
+ const html=app.renderWarmupSets(ex);assert.doesNotMatch(html,/<img|onerror/);assert.match(html,/Warm-up 1/);
+});
+
 test('warm-up generation requires the current equipment to have a positive valid working load', () => {
   const {app, ex} = setup();
   for (const weight of [null, '', 0, -10, 'invalid']) {

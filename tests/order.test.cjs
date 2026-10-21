@@ -47,6 +47,24 @@ test('machine taken completes the destination exercise before returning to the d
   assert.equal(app.navigationTarget.ex.id, 'B');
 });
 
+test('group warmups precede alternating working sets and warmups respect deferred order', () => {
+ const {app,exercises}=setup(['A1','A2','B']);
+ for(const ex of exercises.slice(0,2)) ex.superset={id:'pair',restSeconds:60};
+ app.session.warmups.A1=[{weight:50,reps:10,completed:false}];app.session.warmups.A2=[{weight:50,reps:10,completed:false}];
+ assert.equal(app.getNextSet().type,'warmup');assert.equal(app.getNextSet().ex.id,'A1');app.session.warmups.A1[0].completed=true;
+ assert.equal(app.getNextSet().type,'warmup');assert.equal(app.getNextSet().ex.id,'A2');app.session.warmups.A2[0].completed=true;
+ assert.equal(app.getNextSet().type,'working');assert.equal(app.getNextSet().ex.id,'A1');
+ app.session.warmups.A2[0].completed=false;app.deferExercise('A1');assert.equal(app.getNextSet().ex.id,'B');finish(app,'B');assert.equal(app.getNextSet().type,'warmup');assert.equal(app.getNextSet().ex.id,'A2');
+});
+
+test('deferred superset effort does not pull focus ahead of the destination group', () => {
+ const {app,exercises,App}=setup(['A1','A2','B']);
+ for(const ex of exercises.slice(0,2)) ex.superset={id:'pair',restSeconds:60};
+ finish(app,'A1');app.session.logs.A1.at(-1).rirAnswered=false;
+ app.deferExercise('A2');App.prototype.renderWorkout.call(app);
+ assert.equal(app.pendingRir,null);assert.equal(app.getNextSet().ex.id,'B');assert.match(app.exerciseListEl.innerHTML,/data-exid="B"/);
+});
+
 test('deferrals preserve partially completed sets, warm-ups, values, and the running timer', () => {
   const { app } = setup();
   Object.assign(app.session.logs.A[0], { completed: true, weight: 135 });

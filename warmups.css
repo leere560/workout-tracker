@@ -18,3 +18,5 @@
 .warmup-row .warmup-complete-btn.primary-btn { width: 100%; min-height: 44px; margin-top: 12px; padding: 10px 12px; font-size: 16px; box-shadow: none; }
 .warmup-done-editing-btn { min-height: 44px; margin-top: 8px; font-size: 14px; }
 .exercise-heading-tools { flex-wrap: wrap; }
+.exercise-heading-tools button { width: auto; flex: 1 0 auto; padding: 8px; }
+.machine-availability-help { display: block; margin-top: 8px; }
