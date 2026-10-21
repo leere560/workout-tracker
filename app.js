@@ -437,10 +437,24 @@ class WorkoutApp {
 
   hasSessionProgress(session) {
     if (!session?.logs) return false;
+    const day = this.routine?.find(day => day.id === session.dayId);
+    const defaultOrder = day?.exercises.map(ex => ex.id);
+    const orderChanged = Array.isArray(session.exerciseOrder) && defaultOrder &&
+      JSON.stringify(session.exerciseOrder) !== JSON.stringify(defaultOrder);
     return Boolean(session.startTime || Object.values(session.logs).some(sets => sets.some(s => s.completed)) ||
       (!session.initialLogs && Object.values(session.logs).some(sets => sets.length)) ||
       (session.initialLogs && JSON.stringify(session.logs) !== JSON.stringify(session.initialLogs)) ||
+      Object.values(session.warmups || {}).some(sets => Array.isArray(sets) && sets.length) || orderChanged ||
+      Object.values(session.disabledSupersets || {}).some(Boolean) ||
       Object.keys(session.swaps || {}).length);
+  }
+
+  normalizeSessionFlow(session, day = this.routine.find(day => day.id === session.dayId)) {
+    const ids = day?.exercises.map(ex => ex.id) || [];
+    const order = Array.isArray(session.exerciseOrder) ? session.exerciseOrder : [];
+    session.exerciseOrder = [...new Set([...order.filter(id => ids.includes(id)), ...ids])];
+    if (!session.warmups || typeof session.warmups !== 'object' || Array.isArray(session.warmups)) session.warmups = {};
+    return session;
   }
 
   writeStorageTransaction(writes) {
@@ -505,6 +519,7 @@ class WorkoutApp {
     this.session = next;
     this.pendingRir = null;
     this.editingCompletedSet = null;
+    this.editingWarmup = null;
     this.focusedExerciseId = null;
     this.collapsedCards = new Set();
     this.summaryModalEl?.classList.remove('open');
@@ -529,9 +544,10 @@ class WorkoutApp {
     } catch (_) { this.showToast('Could not restore the draft. Both workouts are still saved.'); return false; }
     this.stopTimer();
     this.activeDayIndex = dayIndex;
-    this.session = draft;
+    this.session = this.normalizeSessionFlow(draft);
     this.pendingRir = null;
     this.editingCompletedSet = null;
+    this.editingWarmup = null;
     this.focusedExerciseId = null;
     this.collapsedCards = new Set();
     this.summaryModalEl?.classList.remove('open');
@@ -550,11 +566,11 @@ class WorkoutApp {
           parsed.dayTitle ||= day.title;
           parsed.swaps ||= {};
           // Only a provably untouched session may be recalculated when deload changes.
-          const untouched = parsed.initialLogs && JSON.stringify(parsed.logs) === JSON.stringify(parsed.initialLogs) && !parsed.startTime && Object.keys(parsed.swaps).length === 0;
+          const untouched = parsed.initialLogs && !this.hasSessionProgress(parsed);
           if (untouched && Boolean(parsed.deload) !== Boolean(this.deloadActive)) return this.initNewSession(dayIndex);
           if (typeof parsed.deload !== 'boolean') parsed.deload = Boolean(this.deloadActive);
           parsed.id ||= `s_${day.id}_${parsed.startTime || Date.now()}`;
-          return parsed;
+          return this.normalizeSessionFlow(parsed, day);
         }
       } catch (e) { console.error(e); }
     }
@@ -578,6 +594,8 @@ class WorkoutApp {
       startTime: null,
       createdAt: new Date().toISOString(),
       logs: {},
+      warmups: {},
+      exerciseOrder: day.exercises.map(ex => ex.id),
       swaps: {},
       disabledSupersets: {},
       deload: Boolean(this.deloadActive)
@@ -1747,6 +1765,8 @@ class WorkoutApp {
 
       // Bind restore button
       document.getElementById('restoreSwapBtn')?.addEventListener('click', () => {
+        if (this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed);
+        this.editingWarmup = null;
         if (this.session && this.session.swaps) {
           delete this.session.swaps[exId];
         }
@@ -1789,6 +1809,8 @@ class WorkoutApp {
     if (!ex) return;
     const previousName = this.getEffectiveExerciseName(exId, ex);
     const previousSwap = this.session?.swaps?.[exId];
+    if (this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed);
+    this.editingWarmup = null;
     const sets = this.session?.logs?.[exId] || [];
     sets.filter(s => s.completed).forEach(s => {
       s.exerciseName = s.exerciseName || previousName;
@@ -2286,7 +2308,7 @@ class WorkoutApp {
 
   finishSession(expectedId = this.session?.id) {
     if (!this.session || expectedId !== this.session.id || this.history.some(w => w.sessionId === expectedId)) return false;
-    const invalid = Object.values(this.session.logs || {}).flat().find(set => set.completed && this.getSetValidationError(set));
+    const invalid = [...Object.values(this.session.logs || {}), ...Object.values(this.session.warmups || {})].flat().find(set => set.completed && this.getSetValidationError(set));
     if (invalid) { this.showToast(this.getSetValidationError(invalid)); return false; }
     const currentDay = this.routine[this.activeDayIndex];
     if (!currentDay) return;
@@ -2479,7 +2501,7 @@ class WorkoutApp {
     } catch (_) { this.showToast('Could not reopen this workout. The saved workout is still in history.'); return false; }
     this.stopTimer();
     this.activeDayIndex = dayIndex;
-    this.session = snapshot;
+    this.session = this.normalizeSessionFlow(snapshot);
     this.history = history;
     this.lastWeights = weights;
     this.pendingRir = null;
@@ -2984,7 +3006,7 @@ class WorkoutApp {
       try { const draft = JSON.parse(localStorage.getItem(key)); if (draft?.id && draft.logs) savedDrafts.push(draft); } catch (_) {}
     }
     return {
-      version: '3.1', routine: this.routine, history: this.history,
+      version: '3.2', routine: this.routine, history: this.history,
       machineSettings: this.machineSettings, exerciseNotes: this.exerciseNotes,
       lastWeights: this.lastWeights, exercisePreferences: this.exercisePreferences || {},
       wakeLockEnabled: this.wakeLockEnabled, routineRev: localStorage.getItem(this.storageKeys.routineRev) || '15',
@@ -3014,7 +3036,12 @@ class WorkoutApp {
     const setsValid = sets => Array.isArray(sets) && sets.every(s => object(s) && (s.weight === null || Number.isFinite(Number(s.weight))) && Number.isFinite(Number(s.reps)) && Number(s.reps) >= 0 && Number(s.weight) >= 0);
     const draftSetsValid = sets => Array.isArray(sets) && sets.every(s => object(s) &&
       [s.weight, s.reps].every(value => value === null || typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))));
-    const sessionValid = session => object(session) && typeof session.dayId === 'string' && object(session.logs) && Object.values(session.logs).every(draftSetsValid);
+    const flowValid = session =>
+      (session.exerciseOrder === undefined || (Array.isArray(session.exerciseOrder) && session.exerciseOrder.every(id => typeof id === 'string') && new Set(session.exerciseOrder).size === session.exerciseOrder.length)) &&
+      (session.warmups === undefined || (object(session.warmups) && Object.values(session.warmups).every(sets => draftSetsValid(sets) && sets.every(set =>
+        (set.completed === undefined || typeof set.completed === 'boolean') &&
+        (set.exerciseName === undefined || typeof set.exerciseName === 'string')))));
+    const sessionValid = session => object(session) && typeof session.dayId === 'string' && object(session.logs) && Object.values(session.logs).every(draftSetsValid) && flowValid(session);
     if (!object(data) || !['routine', 'history', 'sessions'].some(key => key in data)) throw new Error('This is not a workout backup');
     if (data.routine !== undefined && (!Array.isArray(data.routine) || !data.routine.length || !data.routine.every(d => object(d) && typeof d.id === 'string' && Array.isArray(d.exercises) && d.exercises.every(ex => object(ex) && typeof ex.id === 'string' && typeof ex.name === 'string' && Number.isInteger(ex.sets) && ex.sets > 0 && typeof ex.targetReps === 'string')))) throw new Error('Invalid routine in backup');
     if (data.history !== undefined && (!Array.isArray(data.history) || !data.history.every(h => object(h) && typeof h.id === 'string' && Number.isFinite(new Date(h.date).getTime()) && object(h.exercises) && Object.values(h.exercises).every(ex => object(ex) && setsValid(ex.sets))))) throw new Error('Invalid workout history in backup');

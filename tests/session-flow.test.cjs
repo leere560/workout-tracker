@@ -31,6 +31,40 @@ test('finish review and Keep training do not archive or reset entries',()=>{
  handlers.get('keepTrainingBtn:click')();assert.deepEqual(clone(app.session),before);assert.equal(app.history.length,0);
 });
 
+test('warmup-only and reordered drafts resume and survive deload changes',()=>{
+ const {app,values}=setup();app.activeDayIndex=1;app.session=app.initNewSession(1);
+ const day=app.routine[1],ex=day.exercises[0];
+ app.session.warmups[ex.id]=[{weight:50,reps:10,completed:false,exerciseName:ex.name}];
+ app.saveCurrentSession();assert.equal(app.hasSessionProgress(app.session),true);assert.equal(app.getResumeDayIndex(),1);
+ app.deloadActive=true;assert.equal(app.loadSession(1).warmups[ex.id].length,1);
+ app.session.warmups={};app.session.exerciseOrder.reverse();app.saveCurrentSession();
+ assert.equal(app.hasSessionProgress(app.session),true);assert.deepEqual(clone(app.loadSession(1).exerciseOrder),clone(app.session.exerciseOrder));
+ assert.equal(app.startNewSession(),true);assert.deepEqual(clone(app.session.warmups),{});assert.deepEqual(clone(app.session.exerciseOrder),clone(day.exercises.map(ex=>ex.id)));
+ const id=app.getSessionResumeInfo().savedDraftId;assert.ok(values.has('gym_saved_draft_'+id));
+ assert.equal(app.restoreSavedDraft(id),true);assert.deepEqual(clone(app.session.exerciseOrder),clone(day.exercises.map(ex=>ex.id).reverse()));
+});
+
+test('finish/reopen and backup retain warmups and order without affecting working totals',()=>{
+ const {app,complete,first}=setup();const day=app.routine[0],ex=day.exercises[0];complete();
+ app.session.warmups[ex.id]=[{weight:50,reps:10,completed:true,exerciseName:ex.name},{weight:'',reps:'',completed:false,exerciseName:ex.name}];
+ app.session.exerciseOrder.reverse();app.saveCurrentSession();const original=clone(app.session);
+ assert.equal(app.finishSession(),true);const record=app.history[0];
+ assert.equal(record.totalVolume,800);assert.equal(record.exercises[ex.name].sets.length,1);
+ assert.deepEqual(clone(app.session.warmups),{});assert.deepEqual(clone(app.session.exerciseOrder),clone(day.exercises.map(ex=>ex.id)));
+ const backup=clone(app.createBackupData());assert.doesNotThrow(()=>app.validateBackup(backup));
+ assert.deepEqual(backup.history[0].sessionSnapshot.warmups,original.warmups);
+ assert.equal(app.reopenWorkout(record.id),true);assert.deepEqual(clone(app.session.warmups),original.warmups);assert.deepEqual(clone(app.session.exerciseOrder),original.exerciseOrder);assert.equal(first().weight,100);
+ const activeBackup=clone(app.createBackupData());app.session.warmups={};app.importData(JSON.stringify(activeBackup));assert.deepEqual(clone(app.session.warmups),original.warmups);
+});
+
+test('invalid flow metadata in backups is rejected before changing saved values',()=>{
+ const {app,values}=setup();const before=[...values.entries()];
+ for(const flow of [{exerciseOrder:['same','same']},{exerciseOrder:'bad'},{warmups:[]},{warmups:{ex:[null]}},{warmups:{ex:[{weight:10,reps:2,completed:'yes'}]}}]) {
+  const data=clone(app.createBackupData());Object.assign(data.sessions[0],flow);assert.throws(()=>app.validateBackup(data));assert.deepEqual([...values.entries()],before);
+ }
+ const old=clone(app.createBackupData());delete old.sessions[0].warmups;delete old.sessions[0].exerciseOrder;assert.doesNotThrow(()=>app.validateBackup(old));
+});
+
 test('confirm saves exactly once, retains draft snapshot and reports actual short duration',()=>{
  const {app,complete,first}=setup();complete();app.timer.active=true;const id=app.session.id;
  assert.equal(app.finishSession(id),true);assert.equal(app.history.length,1);assert.equal(app.history[0].durationSeconds,42);assert.equal(app.history[0].durationLabel,'<1 min');assert.equal(app.history[0].sessionSnapshot.id,id);assert.equal(app.timer.active,false);assert.notEqual(app.session.id,id);assert.equal(first().completed,false);
