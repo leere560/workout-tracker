@@ -36,6 +36,7 @@ class WorkoutApp {
 
     // Active Day: determine suggested day based on current weekday
     this.activeDayIndex = this.getResumeDayIndex();
+    this.selectionLocalDate = this.getLocalDateKey(new Date());
 
     // Audio & WakeLock state
     this.audioCtx = null;
@@ -65,18 +66,21 @@ class WorkoutApp {
     // Background App-Swap & Visibility Listeners for Rest Timer & Wake Lock
     document.addEventListener('visibilitychange', () => {
       this.syncTimerFromBackground();
+      if (document.visibilityState === 'visible') this.refreshWorkoutSelectionForDate();
       if (document.visibilityState === 'visible' && this.wakeLockEnabled && this.activeView === 'workout') {
         this.requestWakeLock();
       }
     });
     window.addEventListener('pageshow', () => {
       this.syncTimerFromBackground();
+      this.refreshWorkoutSelectionForDate();
       if (this.wakeLockEnabled && this.activeView === 'workout') {
         this.requestWakeLock();
       }
     });
     window.addEventListener('focus', () => {
       this.syncTimerFromBackground();
+      this.refreshWorkoutSelectionForDate();
       if (this.wakeLockEnabled && this.activeView === 'workout') {
         this.requestWakeLock();
       }
@@ -1040,6 +1044,7 @@ class WorkoutApp {
       btn.addEventListener('click', () => {
         const modal = btn.closest('.modal-backdrop');
         if (modal) modal.classList.remove('open');
+        this.refreshWorkoutSelectionForDate();
       });
     });
 
@@ -1047,6 +1052,7 @@ class WorkoutApp {
     document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
       backdrop.addEventListener('click', (e) => {
         if (e.target === backdrop) backdrop.classList.remove('open');
+        this.refreshWorkoutSelectionForDate();
       });
     });
 
@@ -1054,6 +1060,7 @@ class WorkoutApp {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         document.querySelectorAll('.modal-backdrop.open').forEach(m => m.classList.remove('open'));
+        this.refreshWorkoutSelectionForDate();
       }
     });
 
@@ -1121,6 +1128,29 @@ class WorkoutApp {
     this.renderWorkout();
   }
 
+  selectDefaultWorkout(now = new Date()) {
+    this.activeDayIndex = this.getResumeDayIndex(now);
+    this.session = this.loadSession();
+    this.selectionLocalDate = this.getLocalDateKey(now);
+    this.focusedExerciseId = null;
+    this.pendingRir = null;
+    this.editingCompletedSet = null;
+    this.editingCompletedWarmup = null;
+    this.collapsedCards = new Set();
+    this.render();
+  }
+
+  refreshWorkoutSelectionForDate(now = new Date()) {
+    if (document.visibilityState === 'hidden' || this.selectionLocalDate === this.getLocalDateKey(now)) return false;
+    // Let an open review or equipment dialog finish before changing its workout.
+    if (document.querySelector('.modal-backdrop.open')) return false;
+    try { this.saveCurrentSession(); }
+    catch (_) { this.showToast('Could not save your current workout. Try again before changing days.'); return false; }
+    this.selectDefaultWorkout(now);
+    this.showSessionResumePrompt();
+    return true;
+  }
+
   renderDaySelector() {
     const todayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()];
     this.daySelectorEl.innerHTML = `<label class="day-picker-label" for="workoutDayPicker">Workout day</label>
@@ -1129,8 +1159,11 @@ class WorkoutApp {
     document.getElementById('workoutDayPicker').addEventListener('change', e => {
       this.saveCurrentSession();
       this.activeDayIndex = Number(e.target.value);
+      this.selectionLocalDate = this.getLocalDateKey(new Date());
       this.focusedExerciseId = null;
       this.pendingRir = null;
+      this.editingCompletedSet = null;
+      this.editingCompletedWarmup = null;
       this.session = this.loadSession();
       this.renderDaySelector();
       this.renderWorkout();
@@ -2472,7 +2505,10 @@ class WorkoutApp {
     if (title) title.textContent = 'Review workout';
     this.summaryContentEl.innerHTML = `<p>${this.escapeHtml(this.session.dayTitle)}</p><p><strong>${completed} sets completed · ${remaining} remaining</strong></p><p>Your workout stays open until you confirm.</p><button class="primary-btn" id="keepTrainingBtn">Keep training</button><button class="secondary-btn" id="confirmFinishBtn">${remaining ? 'Finish early' : 'Finish workout'}</button>`;
     this.summaryModalEl.classList.add('open');
-    document.getElementById('keepTrainingBtn')?.addEventListener('click', () => this.summaryModalEl.classList.remove('open'));
+    document.getElementById('keepTrainingBtn')?.addEventListener('click', () => {
+      this.summaryModalEl.classList.remove('open');
+      this.refreshWorkoutSelectionForDate();
+    });
     document.getElementById('confirmFinishBtn')?.addEventListener('click', () => this.finishSession(sessionId));
   }
 
@@ -2644,7 +2680,7 @@ class WorkoutApp {
       document.querySelector('[data-view="analytics"]').click();
     });
 
-    this.renderWorkout();
+    this.selectDefaultWorkout();
     return true;
   }
 
@@ -2659,6 +2695,7 @@ class WorkoutApp {
       return false;
     }
     const snapshot = JSON.parse(JSON.stringify(record.sessionSnapshot));
+    snapshot.lastInteractionAt = new Date().toISOString();
     const history = this.history.filter(workout => workout.id !== recordId);
     const weights = this.buildLastWeightsFromHistory(history);
     try {
@@ -2672,6 +2709,7 @@ class WorkoutApp {
     } catch (_) { this.showToast('Could not reopen this workout. The saved workout is still in history.'); return false; }
     this.stopTimer();
     this.activeDayIndex = dayIndex;
+    this.selectionLocalDate = this.getLocalDateKey(new Date());
     this.session = this.normalizeSessionFlow(snapshot);
     this.history = history;
     this.lastWeights = weights;
