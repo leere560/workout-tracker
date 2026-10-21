@@ -471,17 +471,77 @@ class WorkoutApp {
     }
   }
 
-  getResumeDayIndex() {
+  getScheduleDate(value) {
+    if (value === null || value === undefined || value === '') return null;
+    // A legacy date without a time denotes a local calendar date, not UTC midnight.
+    const dateOnly = typeof value === 'string' && /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    const date = dateOnly ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]), 12) : new Date(value);
+    if (!Number.isFinite(date.getTime())) return null;
+    if (dateOnly && (date.getFullYear() !== Number(dateOnly[1]) || date.getMonth() !== Number(dateOnly[2]) - 1 || date.getDate() !== Number(dateOnly[3]))) return null;
+    return date;
+  }
+
+  getLocalDateKey(value = new Date()) {
+    const date = this.getScheduleDate(value);
+    if (!date) return null;
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  getLocalWeekKey(value = new Date()) {
+    const date = this.getScheduleDate(value);
+    if (!date) return null;
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+    return this.getLocalDateKey(date);
+  }
+
+  getScheduledWeekday(day) {
+    const defaults = typeof DEFAULT_ROUTINE === 'undefined' ? [] : DEFAULT_ROUTINE;
+    const title = defaults.find(original => original.id === day.id)?.title || day.title || '';
+    const weekday = /^\s*(sun(?:day)?|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?)\b/i.exec(title)?.[1].slice(0, 3).toLowerCase();
+    return ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(weekday);
+  }
+
+  getHistoryDayId(record) {
+    if (record?.dayId) return record.dayId;
+    if (record?.sessionSnapshot?.dayId) return record.sessionSnapshot.dayId;
+    const title = record?.dayTitle;
+    if (typeof title !== 'string') return null;
+    const day = this.routine.find(day => day.title === title);
+    if (day) return day.id;
+    const defaults = typeof DEFAULT_ROUTINE === 'undefined' ? [] : DEFAULT_ROUTINE;
+    const original = defaults.find(day => day.title === title);
+    return original && this.routine.some(day => day.id === original.id) ? original.id : null;
+  }
+
+  getSessionInteractionTime(session, now = new Date()) {
+    if (!session) return 0;
+    const today = this.getLocalDateKey(now);
+    if (!today) return 0;
+    const timestamps = Object.prototype.hasOwnProperty.call(session, 'lastInteractionAt') ? [session.lastInteractionAt] : [
+      session.startTime,
+      ...[session.logs, session.warmups].flatMap(collection => Object.values(collection || {}).flatMap(sets =>
+        Array.isArray(sets) ? sets.filter(set => set?.completed).map(set => set.completedAt) : []))
+    ];
+    return Math.max(0, ...timestamps.map(value => {
+      const date = this.getScheduleDate(value);
+      return date && this.getLocalDateKey(date) === today ? date.getTime() : 0;
+    }));
+  }
+
+  getResumeDayIndex(now = new Date()) {
     const lastDay = localStorage.getItem('gym_last_active_day_v1');
     const candidates = this.routine.map((day, index) => {
       try {
-        const session = JSON.parse(localStorage.getItem(this.getSessionKey(day.id)) || 'null');
-        return this.hasSessionProgress(session) && !(session.id && this.history.some(w => w.sessionId === session.id))
-          ? { index, dayId: day.id, updatedAt: Date.parse(session.updatedAt || session.startTime || session.createdAt) || 0 } : null;
+        const session = JSON.parse(localStorage.getItem(this.getSessionKey(day.id)) || localStorage.getItem(this.storageKeys.legacyCurrentSession) || 'null');
+        if (session?.dayId !== day.id || !this.hasSessionProgress(session) ||
+          (session.id && (this.history || []).some(record => (record.sessionId || record.sessionSnapshot?.id) === session.id))) return null;
+        const activity = this.getSessionInteractionTime(session, now);
+        return activity ? { index, dayId: day.id, activity } : null;
       } catch (_) { return null; }
     }).filter(Boolean);
-    return candidates.find(item => item.dayId === lastDay)?.index ??
-      candidates.sort((a, b) => b.updatedAt - a.updatedAt)[0]?.index ?? this.getSuggestedDayIndex();
+    candidates.sort((a, b) => b.activity - a.activity || Number(b.dayId === lastDay) - Number(a.dayId === lastDay) || a.index - b.index);
+    return candidates[0]?.index ?? this.getSuggestedDayIndex(now);
   }
 
   getSessionResumeInfo() {
@@ -771,16 +831,27 @@ class WorkoutApp {
     return null;
   }
 
-  getSuggestedDayIndex() {
-    // Current day of week: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
-    const day = new Date().getDay();
-    if (day === 0) return 3; // Sunday -> Sun DB Arms & Shoulders
-    if (day === 1) return 4; // Monday -> Mon Lower B
-    if (day === 2) return 0; // Tuesday -> Wed Upper A (upcoming)
-    if (day === 3) return 0; // Wednesday -> Wed Upper A
-    if (day === 4) return 1; // Thursday -> Fri Lower A (upcoming)
-    if (day === 5) return 1; // Friday -> Fri Lower A
-    if (day === 6) return 2; // Saturday -> Sat Upper B
+  getSuggestedDayIndex(now = new Date()) {
+    const schedule = this.routine.map((day, index) => ({ day, index, weekday: this.getScheduledWeekday(day) })).filter(item => item.weekday >= 0);
+    const date = this.getScheduleDate(now);
+    if (!schedule.length || !date) return 0;
+    const history = this.history || [];
+    const completed = new Map();
+    history.forEach(record => {
+      const id = this.getHistoryDayId(record), week = this.getLocalWeekKey(record?.date);
+      if (!id || !week) return;
+      if (!completed.has(week)) completed.set(week, new Set());
+      completed.get(week).add(id);
+    });
+    date.setHours(12, 0, 0, 0);
+    // Each saved record can skip at most one scheduled occurrence. Calendar-day
+    // arithmetic preserves local weekdays across daylight-saving changes.
+    for (let offset = 0; offset < (history.length + 1) * 7; offset++) {
+      const done = completed.get(this.getLocalWeekKey(date));
+      const next = schedule.find(item => item.weekday === date.getDay() && !done?.has(item.day.id));
+      if (next) return next.index;
+      date.setDate(date.getDate() + 1);
+    }
     return 0;
   }
 
