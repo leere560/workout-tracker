@@ -7,11 +7,11 @@ const clone = x => JSON.parse(JSON.stringify(x));
 function setup() {
  let now = Date.parse('2026-10-20T17:00:00Z');
  const values = new Map(), handlers = new Map(), elements = new Map();
- let failKey = null;
+ let failKey = null, modalOpen = false;
  const localStorage = {getItem:k=>values.get(k) ?? null,setItem(k,v){if(k===failKey){failKey=null;throw Error('Quota exceeded');}values.set(k,String(v));},removeItem:k=>values.delete(k),key:i=>[...values.keys()][i],get length(){return values.size;}};
  const classList={add(){},remove(){}};
  const element=id=>{if(!elements.has(id)) elements.set(id,{innerHTML:'',textContent:'',style:{},classList,addEventListener:(name,fn)=>handlers.set(id+':'+name,fn),click(){}});return elements.get(id);};
- const context=vm.createContext({console,localStorage,Date:class extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}},document:{addEventListener(){},getElementById:element,querySelector:()=>({click(){}}),body:{classList}},window:{},setInterval:()=>1,clearInterval(){},confirm:()=>true,alert(){}});
+ const context=vm.createContext({console,localStorage,Date:class extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}},document:{addEventListener(){},getElementById:element,querySelector:selector=>selector==='.modal-backdrop.open' ? (modalOpen ? {} : null) : {click(){}},body:{classList}},window:{},setInterval:()=>1,clearInterval(){},confirm:()=>true,alert(){}});
  vm.runInContext(fs.readFileSync(path.join(__dirname,'../routine-data.js'),'utf8'),context);
  vm.runInContext(fs.readFileSync(path.join(__dirname,'../app.js'),'utf8')+';globalThis.App=WorkoutApp;',context);
  const app=Object.create(context.App.prototype);
@@ -19,10 +19,10 @@ function setup() {
  app.storageKeys=Object.fromEntries(keys.map(k=>[k,k]));app.storageKeys.currentSessionPrefix='gym_session_';app.storageKeys.legacyCurrentSession='legacy';
  Object.assign(app,{routine:vm.runInContext('JSON.parse(JSON.stringify(DEFAULT_ROUTINE))',context),activeDayIndex:0,history:[],lastWeights:{},machineSettings:{},exerciseNotes:{},exercisePreferences:{},deloadActive:false,deloadStartDate:0,wakeLockEnabled:true,activeView:'workout',collapsedCards:new Set(),timer:{active:false,intervalId:null},timerDockEl:{classList},summaryContentEl:element('summaryContent'),summaryModalEl:element('summaryModal'),exerciseListEl:{querySelector:()=>null}});
  for(const method of ['renderWorkout','render','renderAnalytics','updateNowLiftingHUD','triggerHaptic','primeAudioContext','playTimerAlarm','showRestCompleteBanner','requestWakeLock','releaseWakeLock','restoreActiveTimer','jumpToActiveExercise']) app[method]=()=>{};
- app.showToast=message=>{app.toast=message;};app.session=app.initNewSession(0);app.saveCurrentSession();
+ app.showToast=message=>{app.toast=message;};app.session=app.initNewSession(0);app.selectionLocalDate=app.getLocalDateKey(new context.Date());app.saveCurrentSession();
  const first=()=>app.session.logs[app.routine[app.activeDayIndex].exercises[0].id][0];
  const complete=()=>{Object.assign(first(),{weight:100,reps:8,completed:true});app.session.startTime=new context.Date(now-42000).toISOString();app.saveCurrentSession();};
- return {app,values,handlers,first,complete,localStorage,advance:ms=>{now+=ms;},failOnce:key=>{failKey=key;}};
+ return {app,values,handlers,first,complete,localStorage,advance:ms=>{now+=ms;},failOnce:key=>{failKey=key;},setModal:open=>{modalOpen=open;}};
 }
 
 test('finish review and Keep training do not archive or reset entries',()=>{
@@ -31,11 +31,53 @@ test('finish review and Keep training do not archive or reset entries',()=>{
  handlers.get('keepTrainingBtn:click')();assert.deepEqual(clone(app.session),before);assert.equal(app.history.length,0);
 });
 
+test('finishing advances the picker default, and reopening selects the restored workout today',()=>{
+ const {app,complete}=setup();complete();const finishedDay=app.session.dayId;
+ assert.equal(app.finishSession(),true);assert.equal(app.activeDayIndex,1);assert.equal(app.session.dayId,app.routine[1].id);assert.equal(app.getResumeDayIndex(),1);
+ assert.equal(app.loadSession(0).dayId,finishedDay);assert.equal(app.hasSessionProgress(app.loadSession(0)),false);
+ assert.equal(app.reopenWorkout(app.history[0].id),true);assert.equal(app.activeDayIndex,0);assert.equal(app.getResumeDayIndex(),0);assert.ok(app.session.lastInteractionAt);
+});
+
+test('same-date manual selection survives foreground refresh; a new date follows the schedule',()=>{
+ const {app,advance,values}=setup();app.activeDayIndex=4;app.session=app.initNewSession(4);
+ const ex=app.routine[4].exercises[0];app.updateSetWeight(ex.id,0,135);const saved=clone(app.session);
+ app.timer.active=true;assert.equal(app.refreshWorkoutSelectionForDate(),false);assert.equal(app.activeDayIndex,4);
+ advance(86400000);assert.equal(app.refreshWorkoutSelectionForDate(),true);assert.equal(app.activeDayIndex,0);assert.equal(app.session.dayId,app.routine[0].id);assert.equal(app.timer.active,true);
+ assert.deepEqual(JSON.parse(values.get(app.getSessionKey(saved.dayId))).logs,saved.logs);assert.equal(app.refreshWorkoutSelectionForDate(),false);
+});
+
+test('new-date selection waits for an open dialog and preserves state if saving fails',()=>{
+ const {app,advance,setModal,failOnce}=setup();app.activeDayIndex=4;app.session=app.initNewSession(4);app.saveCurrentSession();const key=app.selectionLocalDate;
+ advance(86400000);setModal(true);assert.equal(app.refreshWorkoutSelectionForDate(),false);assert.equal(app.activeDayIndex,4);assert.equal(app.selectionLocalDate,key);
+ setModal(false);failOnce(app.getSessionKey(app.session.dayId));assert.equal(app.refreshWorkoutSelectionForDate(),false);assert.equal(app.activeDayIndex,4);assert.equal(app.selectionLocalDate,key);
+ assert.equal(app.refreshWorkoutSelectionForDate(),true);assert.equal(app.activeDayIndex,0);
+});
+
+test('explicit Resume and Keep training across midnight preserve the chosen workout for today',()=>{
+ const {app,complete,advance,handlers}=setup();complete();app.showWorkoutSummary();advance(86400000);
+ handlers.get('keepTrainingBtn:click')();assert.equal(app.activeDayIndex,0);assert.equal(app.refreshWorkoutSelectionForDate(),false);
+ advance(86400000);app.showSessionResumePrompt();handlers.get('resumeDraftBtn:click')();assert.equal(app.activeDayIndex,0);assert.equal(app.refreshWorkoutSelectionForDate(),false);
+});
+
+test('snapshot-only archived identities cannot revive completed drafts in the next week',()=>{
+ const {app,values,complete,advance}=setup();complete();const old=clone(app.session);
+ app.history=[{id:'legacy-snapshot',date:old.updatedAt,dayId:old.dayId,sessionSnapshot:old,exercises:{}}];
+ values.set(app.getSessionKey(old.dayId),JSON.stringify(old));advance(7*86400000);
+ assert.equal(app.getResumeDayIndex(),0);const fresh=app.loadSession(0);assert.notEqual(fresh.id,old.id);assert.equal(app.hasSessionProgress(fresh),false);
+});
+
+test('backup restores actual activity without passive import making old workouts active today',()=>{
+ const {app,advance}=setup();app.activeDayIndex=4;app.session=app.initNewSession(4);app.updateSetWeight(app.routine[4].exercises[0].id,0,135);
+ const time=app.session.lastInteractionAt,backup=clone(app.createBackupData());assert.doesNotThrow(()=>app.validateBackup(backup));
+ app.importData(JSON.stringify(backup));assert.equal(app.activeDayIndex,4);assert.equal(app.session.lastInteractionAt,time);
+ advance(86400000);app.importData(JSON.stringify(backup));assert.equal(app.activeDayIndex,0);assert.equal(app.loadSession(4).lastInteractionAt,time);
+});
+
 test('warmup-only and reordered drafts resume and survive deload changes',()=>{
  const {app,values}=setup();app.activeDayIndex=1;app.session=app.initNewSession(1);
  const day=app.routine[1],ex=day.exercises[0];
- app.session.warmups[ex.id]=[{weight:50,reps:10,completed:false,exerciseName:ex.name}];
- app.saveCurrentSession();assert.equal(app.hasSessionProgress(app.session),true);assert.equal(app.getResumeDayIndex(),1);
+ app.saveSessionFlowChange(()=>{app.session.warmups[ex.id]=[{weight:50,reps:10,completed:false,exerciseName:ex.name}];});
+ assert.equal(app.hasSessionProgress(app.session),true);assert.equal(app.getResumeDayIndex(),1);
  app.deloadActive=true;assert.equal(app.loadSession(1).warmups[ex.id].length,1);
  app.session.warmups={};app.session.exerciseOrder.reverse();app.saveCurrentSession();
  assert.equal(app.hasSessionProgress(app.session),true);assert.deepEqual(clone(app.loadSession(1).exerciseOrder),clone(app.session.exerciseOrder));
@@ -50,7 +92,7 @@ test('finish/reopen and backup retain warmups and order without affecting workin
  app.session.exerciseOrder.reverse();app.saveCurrentSession();const original=clone(app.session);
  assert.equal(app.finishSession(),true);const record=app.history[0];
  assert.equal(record.totalVolume,800);assert.equal(record.exercises[ex.name].sets.length,1);
- assert.deepEqual(clone(app.session.warmups),{});assert.deepEqual(clone(app.session.exerciseOrder),clone(day.exercises.map(ex=>ex.id)));
+ const freshFinished=app.loadSession(0);assert.deepEqual(clone(freshFinished.warmups),{});assert.deepEqual(clone(freshFinished.exerciseOrder),clone(day.exercises.map(ex=>ex.id)));
  const backup=clone(app.createBackupData());assert.doesNotThrow(()=>app.validateBackup(backup));
  assert.deepEqual(backup.history[0].sessionSnapshot.warmups,original.warmups);
  assert.equal(app.reopenWorkout(record.id),true);assert.deepEqual(clone(app.session.warmups),original.warmups);assert.deepEqual(clone(app.session.exerciseOrder),original.exerciseOrder);assert.equal(first().weight,100);
@@ -98,7 +140,7 @@ test('failed finish rolls back history and baseline without closing the draft or
 test('reopen recovers pending entries without double counting history or overwriting a newer draft',()=>{
  const {app,complete}=setup();complete();const ex=app.routine[0].exercises[0];app.session.logs[ex.id][1].reps='';const original=clone(app.session);app.finishSession();const record=app.history[0];
  assert.equal(app.reopenWorkout(record.id),true);assert.equal(app.history.length,0);assert.deepEqual(clone(app.session.logs),original.logs);assert.equal(app.lastWeights[ex.name],undefined);
- app.session.logs[ex.id][1].reps=6;app.finishSession();const newRecord=app.history[0];app.updateSetWeight(ex.id,0,125);const progressed=clone(app.session);
+ app.session.logs[ex.id][1].reps=6;app.finishSession();const newRecord=app.history[0];app.activeDayIndex=0;app.session=app.loadSession(0);app.updateSetWeight(ex.id,0,125);const progressed=clone(app.session);
  assert.equal(app.reopenWorkout(newRecord.id),false);assert.equal(app.history.length,1);assert.deepEqual(clone(app.session),progressed);
 });
 
@@ -107,11 +149,11 @@ test('reopen storage failure preserves archived record and existing active draft
  assert.equal(app.reopenWorkout(before[0].id),false);assert.equal(app.session.id,id);assert.deepEqual(clone(app.history),before);assert.deepEqual([...values.entries()],storage);
 });
 
-test('resume restores the last progressed off-schedule day and supports legacy drafts without IDs',()=>{
+test('resume restores today active off-schedule draft while undated legacy drafts stay accessible',()=>{
  const {app,values}=setup();app.activeDayIndex=1;app.session=app.initNewSession(1);const ex=app.routine[1].exercises[0];app.updateSetWeight(ex.id,0,145);app.saveCurrentSession();
  assert.equal(app.getResumeDayIndex(),1);assert.equal(app.loadSession(1).logs[ex.id][0].weight,145);
  values.set(app.getSessionKey(app.routine[1].id),JSON.stringify({dayId:app.routine[1].id,logs:{[ex.id]:[{weight:145,reps:7,completed:false}]}}));app.history=[{id:'old',exercises:{},date:'2026-10-01'}];
- assert.equal(app.getResumeDayIndex(),1);assert.equal(app.loadSession(1).logs[ex.id][0].weight,145);
+ assert.equal(app.getResumeDayIndex(),0);assert.equal(app.loadSession(1).logs[ex.id][0].weight,145);
 });
 
 test('Start new preserves and backs up a stale draft including blank or invalid pending edits',()=>{

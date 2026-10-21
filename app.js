@@ -564,6 +564,7 @@ class WorkoutApp {
     this.summaryContentEl.innerHTML = `<p>${this.escapeHtml(this.session.dayTitle)} · Started ${this.escapeHtml(new Date(info.date).toLocaleString())}</p><p>Resume keeps every saved set. Start new keeps this draft available for recovery.</p><button class="primary-btn" id="resumeDraftBtn">Resume workout</button><button class="secondary-btn" id="startNewDraftBtn">Start new workout</button>`;
     this.summaryModalEl.classList.add('open');
     document.getElementById('resumeDraftBtn')?.addEventListener('click', () => {
+      this.selectionLocalDate = this.getLocalDateKey(new Date());
       this.summaryModalEl.classList.remove('open');
       this.jumpToActiveExercise?.();
     });
@@ -589,6 +590,7 @@ class WorkoutApp {
     this.editingCompletedWarmup = null;
     this.focusedExerciseId = null;
     this.collapsedCards = new Set();
+    this.selectionLocalDate = this.getLocalDateKey(new Date());
     this.summaryModalEl?.classList.remove('open');
     this.renderWorkout();
     return true;
@@ -601,17 +603,19 @@ class WorkoutApp {
     if (dayIndex < 0 || !draft?.logs) return false;
     if (this.hasSessionProgress(this.loadSession(dayIndex))) { this.showToast('Save or finish the current workout before restoring the previous draft.'); return false; }
     try {
-      if (this.session.dayId !== draft.dayId) this.saveCurrentSession();
       draft.lastInteractionAt = new Date().toISOString();
-      this.writeStorageTransaction(new Map([
+      const writes = new Map([
         [this.getSessionKey(draft.dayId), JSON.stringify(draft)],
         ['gym_last_active_day_v1', draft.dayId],
         [`gym_saved_draft_${draftId}`, null],
         [`gym_saved_draft_for_${draft.dayId}`, null]
-      ]));
+      ]);
+      if (this.session.dayId !== draft.dayId) writes.set(this.getSessionKey(this.session.dayId), JSON.stringify(this.session));
+      this.writeStorageTransaction(writes);
     } catch (_) { this.showToast('Could not restore the draft. Both workouts are still saved.'); return false; }
     this.stopTimer();
     this.activeDayIndex = dayIndex;
+    this.selectionLocalDate = this.getLocalDateKey(new Date());
     this.session = this.normalizeSessionFlow(draft);
     this.pendingRir = null;
     this.editingCompletedSet = null;
@@ -630,7 +634,7 @@ class WorkoutApp {
       try {
         const parsed = JSON.parse(saved);
         if (parsed.dayId === day.id && parsed.logs && typeof parsed.logs === 'object') {
-          if (parsed.id && this.history.some(workout => workout.sessionId === parsed.id)) return this.initNewSession(dayIndex);
+          if (parsed.id && this.history.some(workout => (workout.sessionId || workout.sessionSnapshot?.id) === parsed.id)) return this.initNewSession(dayIndex);
           parsed.dayTitle ||= day.title;
           parsed.swaps ||= {};
           // Only a provably untouched session may be recalculated when deload changes.
@@ -1129,8 +1133,10 @@ class WorkoutApp {
     // Close on backdrop tap
     document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
       backdrop.addEventListener('click', (e) => {
-        if (e.target === backdrop) backdrop.classList.remove('open');
-        this.refreshWorkoutSelectionForDate();
+        if (e.target === backdrop) {
+          backdrop.classList.remove('open');
+          this.refreshWorkoutSelectionForDate();
+        }
       });
     });
 
@@ -2591,8 +2597,8 @@ class WorkoutApp {
     this.summaryContentEl.innerHTML = `<p>${this.escapeHtml(this.session.dayTitle)}</p><p><strong>${completed} sets completed · ${remaining} remaining</strong></p><p>Your workout stays open until you confirm.</p><button class="primary-btn" id="keepTrainingBtn">Keep training</button><button class="secondary-btn" id="confirmFinishBtn">${remaining ? 'Finish early' : 'Finish workout'}</button>`;
     this.summaryModalEl.classList.add('open');
     document.getElementById('keepTrainingBtn')?.addEventListener('click', () => {
+      this.selectionLocalDate = this.getLocalDateKey(new Date());
       this.summaryModalEl.classList.remove('open');
-      this.refreshWorkoutSelectionForDate();
     });
     document.getElementById('confirmFinishBtn')?.addEventListener('click', () => this.finishSession(sessionId));
   }
@@ -2784,13 +2790,14 @@ class WorkoutApp {
     const history = this.history.filter(workout => workout.id !== recordId);
     const weights = this.buildLastWeightsFromHistory(history);
     try {
-      if (this.session.dayId !== snapshot.dayId) this.saveCurrentSession();
-      this.writeStorageTransaction(new Map([
+      const writes = new Map([
         [this.storageKeys.history, JSON.stringify(history)],
         [this.storageKeys.lastWeights, JSON.stringify(weights)],
         [this.getSessionKey(snapshot.dayId), JSON.stringify(snapshot)],
         ['gym_last_active_day_v1', snapshot.dayId]
-      ]));
+      ]);
+      if (this.session.dayId !== snapshot.dayId) writes.set(this.getSessionKey(this.session.dayId), JSON.stringify(this.session));
+      this.writeStorageTransaction(writes);
     } catch (_) { this.showToast('Could not reopen this workout. The saved workout is still in history.'); return false; }
     this.stopTimer();
     this.activeDayIndex = dayIndex;
@@ -3229,7 +3236,7 @@ class WorkoutApp {
       </section>
       <section aria-labelledby="settingsBackupHeading"><h2 id="settingsBackupHeading">Settings & backup</h2>
         <div class="insight-panel"><div class="insight-section-heading"><h3>Backup</h3><span class="insight-meta">${this.escapeHtml(this.getBackupStatusText())}</span></div><p>Save a copy of your history, active workouts, program and preferences before changing phones.</p><div class="insight-actions"><button type="button" class="secondary-btn" id="exportDataBtn">Download backup</button><button type="button" class="secondary-btn" id="importBackupBtn">Restore backup</button></div></div>
-        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v29</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
+        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v31</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
         <div class="setting-row insight-panel"><div><label id="deloadSettingLabel" for="deloadSettingToggle">7-day deload</label><p id="deloadSettingDescription">${normalSets} → ${deloadSets} planned sets (${normalSets ? Math.round((normalSets-deloadSets)/normalSets*100) : 0}% fewer) and 10% lighter loads. Ends automatically after 7 days.${this.deloadActive ? ` ${this.getDeloadDaysLeft()} days remaining.` : ''}</p></div><label class="switch"><input type="checkbox" id="deloadSettingToggle" aria-labelledby="deloadSettingLabel" aria-describedby="deloadSettingDescription" ${this.deloadActive ? 'checked' : ''}><span class="slider"></span></label></div>
         <div class="setting-row insight-panel"><div><label id="wakeLockSettingLabel" for="wakeLockSettingToggle">Keep screen awake</label><p id="wakeLockSettingDescription">Keep the display on while logging a workout, when supported by your browser.</p></div><label class="switch"><input type="checkbox" id="wakeLockSettingToggle" aria-labelledby="wakeLockSettingLabel" aria-describedby="wakeLockSettingDescription" ${this.wakeLockEnabled ? 'checked' : ''}><span class="slider"></span></label></div>
         <details class="insight-panel insight-details"><summary>Rest sound & vibration</summary><p>Test alerts with the page open. Background and locked-screen alerts may not fire on iPhone; reopening restores the countdown.</p><button type="button" class="secondary-btn" id="testChimeBtn">Test sound & vibration</button></details>
@@ -3301,7 +3308,7 @@ class WorkoutApp {
       try { const draft = JSON.parse(localStorage.getItem(key)); if (draft?.id && draft.logs) savedDrafts.push(draft); } catch (_) {}
     }
     return {
-      version: '3.2', routine: this.routine, history: this.history,
+      version: '3.3', routine: this.routine, history: this.history,
       machineSettings: this.machineSettings, exerciseNotes: this.exerciseNotes,
       lastWeights: this.lastWeights, exercisePreferences: this.exercisePreferences || {},
       wakeLockEnabled: this.wakeLockEnabled, routineRev: localStorage.getItem(this.storageKeys.routineRev) || '15',
@@ -3395,6 +3402,7 @@ class WorkoutApp {
       if (restoreRoutine) this.routine = this.loadRoutine();
       this.activeDayIndex = this.getResumeDayIndex();
       this.session = this.loadSession();
+      this.selectionLocalDate = this.getLocalDateKey(new Date());
       if (data.timer) {
         if (this.timer?.intervalId) clearInterval(this.timer.intervalId);
         if (this.timer) { this.timer.active = false; this.timer.intervalId = null; }

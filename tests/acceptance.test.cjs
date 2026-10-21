@@ -26,6 +26,8 @@ test('all published release assets exist and the script versions match the worke
   const html = read('index.html');
   const scripts = [...html.matchAll(/(?:src|href)="([^" ]+\.(?:js|css)\?v=\d+)"/g)].map(m => './' + m[1]);
   for (const script of scripts) assert.ok(assets.includes(script), script + ' must be precached');
+  const version = /const CACHE_NAME = 'workout-tracker-v(\d+)'/.exec(read('sw.js'))[1];
+  assert.ok(read('app.js').includes(`Build v${version}`), 'Settings must display the installed release version');
 });
 
 test('service worker waits for explicit update and preserves unrelated caches', async () => {

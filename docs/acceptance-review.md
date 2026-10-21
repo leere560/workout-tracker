@@ -67,3 +67,17 @@ Validation: all 69 Node tests pass, JavaScript syntax checks pass, and git diff 
 Screenshots use isolated local test data. Physical iPhone Safari, keyboard, VoiceOver, and locked-screen alerts remain device checks. Release assets are versioned together as v30; this change is pushed to a feature branch for deployment separately.
 
 ![Trackable warm-ups and regular final rest](machine-warmups-preview.png)
+
+## Scheduled workout selection v31 (2026-10-21)
+
+Replaced last-draft priority with the next local scheduled workout, skipping confirmed completions in the matching Monday–Sunday week. The schedule remains Wednesday, Friday, Saturday, Sunday, Monday. Missed days do not displace the next scheduled day, and a previous week's completion never skips a new week's occurrence.
+
+An unfinished workout overrides the schedule only after actual activity today. The new optional lastInteractionAt timestamp records set/warm-up edits, completion, effort, exercise changes and deferrals. Passive saves, export/import and simply opening a day do not refresh it. Legacy drafts use start/completed-set timestamps instead of updatedAt. Explicit draft restoration/reopening records today's recovery action. Older drafts remain available through the picker and recovery controls.
+
+The picker advances after successful finish, including Finish early. Foreground, pageshow and focus refresh the selection on a changed local date; same-date manual selections stay in place. Open dialogs defer the change. Explicit Resume/Keep training across midnight preserve the chosen workout for that date. Cross-day restore/reopen writes are atomic, and archived snapshot-only identities cannot revive completed drafts. Backup version 3.3 preserves optional activity timestamps; cached assets and the displayed build version are v31.
+
+Validation: 94 Node tests pass, along with JavaScript syntax and git diff checks. Coverage includes every weekday, old Monday drafts with fresh automatic-save timestamps, today-only resume, completion/early completion, history ID/title compatibility, Sunday–Monday rollover, local midnight and both America/Chicago daylight-saving transitions, backup round trips, recovery, write rollback, and modal choices across midnight. Existing routine, machine deferral, warm-ups, rest and reporting tests also pass.
+
+Responsive browser acceptance at 402 x 874 confirmed a fresh Wednesday selection; today's Wednesday draft survives reload; finishing Wednesday selects Friday and Friday survives another reload; reopening returns to Wednesday with logged values intact; actual off-schedule Monday edits resume after reload; Start new clears that activity and the next reload follows Friday. Browser warning/error logs were empty. The screenshot uses isolated test data. Physical iPhone Safari and device alerts remain device checks.
+
+![Friday selected after finishing Wednesday](schedule-preview.png)
