@@ -670,20 +670,91 @@ class WorkoutApp {
     return Math.max(120, this.parseRestSeconds(ex?.restSeconds || ex?.rest));
   }
 
-  getNextSet() {
+  getOrderedExercises() {
     const exercises = this.routine?.[this.activeDayIndex]?.exercises || [];
+    const byId = new Map(exercises.map(ex => [ex.id, ex]));
+    const order = Array.isArray(this.session?.exerciseOrder) ? this.session.exerciseOrder : [];
+    const seen = new Set();
+    const ordered = [];
+    [...order, ...exercises.map(ex => ex.id)].forEach(id => {
+      if (!byId.has(id) || seen.has(id)) return;
+      seen.add(id);
+      ordered.push(byId.get(id));
+    });
+    // A saved order may predate a superset being enabled. Keep its members together.
+    const grouped = new Set();
+    return ordered.flatMap(ex => {
+      if (grouped.has(ex.id)) return [];
+      const members = this.isSupersetEnabled(ex)
+        ? ordered.filter(candidate => this.isSupersetEnabled(candidate) && candidate.superset.id === ex.superset.id)
+        : [ex];
+      members.forEach(candidate => grouped.add(candidate.id));
+      return members;
+    });
+  }
+
+  getExerciseGroups() {
+    const exercises = this.getOrderedExercises();
     const visited = new Set();
-    for (const ex of exercises) {
-      if (visited.has(ex.id)) continue;
+    return exercises.flatMap(ex => {
+      if (visited.has(ex.id)) return [];
       const group = this.isSupersetEnabled(ex)
-        ? exercises.filter(candidate => candidate.superset?.id === ex.superset.id)
+        ? exercises.filter(candidate => this.isSupersetEnabled(candidate) && candidate.superset.id === ex.superset.id)
         : [ex];
       group.forEach(candidate => visited.add(candidate.id));
+      return [group];
+    });
+  }
+
+  isExerciseGroupUnfinished(group) {
+    return group.some(ex => (this.session?.logs?.[ex.id] || []).some(set => !set.completed) ||
+      (this.session?.warmups?.[ex.id] || []).some(set => !set.completed));
+  }
+
+  getDeferTargetGroup(exId) {
+    const groups = this.getExerciseGroups();
+    const currentIndex = groups.findIndex(group => group.some(ex => ex.id === exId));
+    if (currentIndex < 0 || !this.isExerciseGroupUnfinished(groups[currentIndex])) return null;
+    for (let offset = 1; offset < groups.length; offset++) {
+      const group = groups[(currentIndex + offset) % groups.length];
+      if (this.isExerciseGroupUnfinished(group)) return group;
+    }
+    return null;
+  }
+
+  canDeferExercise(exId) {
+    return Boolean(this.getDeferTargetGroup(exId));
+  }
+
+  deferExercise(exId) {
+    const target = this.getDeferTargetGroup(exId);
+    if (!target) return false;
+    const groups = this.getExerciseGroups();
+    const current = groups.find(group => group.some(ex => ex.id === exId));
+    const firstUnfinished = groups.findIndex(group => this.isExerciseGroupUnfinished(group));
+    const targetIds = new Set(target.map(ex => ex.id));
+    const currentIds = new Set(current.map(ex => ex.id));
+    const remaining = groups.slice(firstUnfinished).filter(group =>
+      !group.some(ex => targetIds.has(ex.id) || currentIds.has(ex.id)));
+    this.session.exerciseOrder = [...groups.slice(0, firstUnfinished), target, current, ...remaining].flat().map(ex => ex.id);
+    this.pendingRir = null;
+    this.editingCompletedSet = null;
+    this.focusedExerciseId = target[0].id;
+    this.saveCurrentSession();
+    this.renderWorkout();
+    this.updateNowLiftingHUD();
+    this.jumpToActiveExercise();
+    this.showToast(`Switch to ${target.map(ex => this.getEffectiveExerciseName(ex.id, ex)).join(' + ')}. This exercise is next afterward.`);
+    return true;
+  }
+
+  getNextSet() {
+    for (const group of this.getExerciseGroups()) {
       const maxSets = Math.max(0, ...group.map(candidate => this.session?.logs?.[candidate.id]?.length || 0));
       for (let setIdx = 0; setIdx < maxSets; setIdx++) {
         for (const candidate of group) {
           const set = this.session?.logs?.[candidate.id]?.[setIdx];
-          if (set && !set.completed) return { ex: candidate, setIdx };
+          if (set && !set.completed) return { ex: candidate, setIdx, type: 'working' };
         }
       }
     }
@@ -1066,7 +1137,8 @@ class WorkoutApp {
   renderWorkout() {
     const day = this.routine[this.activeDayIndex];
     if (!day) return;
-    const core = day.exercises.filter(ex => !ex.isOptional);
+    const orderedExercises = this.getOrderedExercises();
+    const core = orderedExercises.filter(ex => !ex.isOptional);
     const total = core.reduce((sum, ex) => sum + (this.session.logs[ex.id] || []).length, 0);
     const complete = core.reduce((sum, ex) => sum + (this.session.logs[ex.id] || []).filter(set => set.completed).length, 0);
     const estimateSeconds = core.reduce((sum, ex) => {
@@ -1077,15 +1149,15 @@ class WorkoutApp {
     const reducedSets = core.reduce((sum, ex) => sum + Math.max(2, Math.floor(ex.sets * .67)), 0);
     const next = this.getNextSet();
     if (!this.pendingRir) {
-      const pendingExercise = day.exercises.find(ex => {
+      const pendingExercise = orderedExercises.find(ex => {
         const sets = this.session.logs[ex.id] || [];
         return sets.length && sets.every(set => set.completed) && !sets.at(-1).rirAnswered && sets.at(-1).rir == null;
       });
       if (pendingExercise) this.pendingRir = { exId: pendingExercise.id, setIdx: this.session.logs[pendingExercise.id].length - 1 };
     }
-    const pending = this.pendingRir && day.exercises.find(ex => ex.id === this.pendingRir.exId);
-    const focus = day.exercises.find(ex => ex.id === this.focusedExerciseId) || pending || (next && next.ex) || core[0];
-    const visible = focus ? day.exercises.filter(ex => ex.id === focus.id ||
+    const pending = this.pendingRir && orderedExercises.find(ex => ex.id === this.pendingRir.exId);
+    const focus = orderedExercises.find(ex => ex.id === this.focusedExerciseId) || pending || (next && next.ex) || core[0];
+    const visible = focus ? orderedExercises.filter(ex => ex.id === focus.id ||
       (this.isSupersetEnabled(focus) && this.isSupersetEnabled(ex) && ex.superset.id === focus.superset.id)) : [];
     const overviewOpen = this.sessionInfoEl.querySelector('.workout-overview')?.open || false;
     const resume = this.getSessionResumeInfo();
@@ -1095,7 +1167,7 @@ class WorkoutApp {
       ${resume.inProgress ? `<div class="session-resume-info">In progress${resume.date ? ` · Started ${this.escapeHtml(new Date(resume.date).toLocaleString())}` : ''}<button type="button" class="secondary-btn start-new-session-btn">Start new workout</button></div>` : ''}
       ${resume.savedDraftId ? '<button type="button" class="secondary-btn restore-draft-btn">Restore previous draft</button>' : ''}
       ${this.session.deload ? `<div class="deload-banner">Deload: ${reducedSets} of ${normalSets} planned sets (${Math.round((normalSets - reducedSets) / normalSets * 100)}% fewer), loads eased 10%.</div>` : ''}
-      <div class="overview-list">${day.exercises.map(ex => {
+      <div class="overview-list">${orderedExercises.map(ex => {
         const sets = this.session.logs[ex.id] || [];
         const pendingEffort = sets.filter(set => set.completed && !set.rirAnswered && set.rir == null).length;
         return `<button type="button" class="overview-exercise ${visible.includes(ex) ? 'selected' : ''}" data-exid="${ex.id}"><span>${this.escapeHtml(this.getEffectiveExerciseName(ex.id, ex))}${ex.isOptional ? ' · Optional' : ''}${pendingEffort ? `<small>${pendingEffort} effort ${pendingEffort === 1 ? 'entry' : 'entries'} pending</small>` : ''}</span><span>${sets.filter(set => set.completed).length}/${sets.length}</span></button>`;
@@ -1135,8 +1207,11 @@ class WorkoutApp {
     const collapsed = false; // Completed sets remain individually reviewable; effort is never hidden.
     const enabled = this.isSupersetEnabled(ex);
     const progression = this.getPreviousProgressionFlag(name, targetReps, this.deloadActive ? Math.max(2, Math.floor(ex.sets * .67)) : ex.sets, ex);
-    const position = this.routine[this.activeDayIndex].exercises.findIndex(item => item.id === ex.id) + 1;
+    const position = this.getOrderedExercises().findIndex(item => item.id === ex.id) + 1;
     const exerciseCount = this.routine[this.activeDayIndex].exercises.length;
+    const canDefer = this.canDeferExercise(ex.id);
+    const deferHelp = this.isExerciseGroupUnfinished(this.getExerciseGroups().find(group => group.some(item => item.id === ex.id)) || [])
+      ? 'No other unfinished exercise to switch to.' : 'This exercise is complete.';
     const seat = this.machineSettings[ex.id] || '';
     const note = this.exerciseNotes[name] || '';
     return `<article class="exercise-card focused-card ${allDone ? 'completed' : ''}" id="card_${ex.id}" data-exid="${ex.id}">
@@ -1147,6 +1222,7 @@ class WorkoutApp {
         <div class="focus-prescription">${sets.length} sets × ${this.escapeHtml(targetReps)} reps · Rest ${rest}</div>
         <div class="load-convention">Weight in lbs · ${conventionLabel}</div>
         <div class="exercise-heading-tools"><button type="button" class="warmup-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(name)}" ${sets.some(set => set.needsBaseline || set.weight === null) ? 'disabled title="Enter a baseline weight first"' : ''}>Warmup</button><button type="button" class="swap-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(ex.name)}">Swap equipment</button></div>
+        <div class="machine-availability-control"><button type="button" class="machine-taken-btn secondary-btn" data-exid="${ex.id}" ${canDefer ? '' : `disabled aria-describedby="machineTakenHelp_${ex.id}"`}>Machine taken</button>${canDefer ? '' : `<small id="machineTakenHelp_${ex.id}" class="muted-text">${deferHelp}</small>`}</div>
         <div class="saved-setup-cue" ${!seat && !note ? 'hidden' : ''}><span class="saved-seat-cue">${seat ? `Seat / pin: ${this.escapeHtml(seat)}` : ''}</span><span class="saved-note-cue">${this.escapeHtml(note)}</span></div>
       </div>
       ${collapsed ? `<button type="button" class="card-collapse-toggle-btn" data-exid="${ex.id}">✓ All sets complete · Review sets</button>` : `<div class="set-blocks">
@@ -1193,6 +1269,9 @@ class WorkoutApp {
   }
 
   bindWorkoutCardEvents() {
+    this.exerciseListEl.querySelectorAll('.machine-taken-btn').forEach(button => {
+      button.addEventListener('click', () => this.deferExercise(button.dataset.exid));
+    });
     this.exerciseListEl.querySelector('.review-finish-btn')?.addEventListener('click', () => this.showWorkoutSummary());
     this.sessionInfoEl.querySelector('.start-new-session-btn')?.addEventListener('click', () => this.startNewSession());
     this.sessionInfoEl.querySelector('.restore-draft-btn')?.addEventListener('click', () => this.restoreSavedDraft(this.getSessionResumeInfo().savedDraftId));
