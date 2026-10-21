@@ -425,13 +425,16 @@ class WorkoutApp {
   setSetRIR(exId, setIdx, rirVal) {
     const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
-    list[setIdx].rir = (list[setIdx].rir === rirVal) ? null : rirVal;
-    list[setIdx].rirAnswered = true;
+    const nextRir = (list[setIdx].rir === rirVal) ? null : rirVal;
+    if (nextRir === list[setIdx].rir && list[setIdx].rirAnswered) return;
+    if (!this.saveSessionFlowChange(() => {
+      list[setIdx].rir = nextRir;
+      list[setIdx].rirAnswered = true;
+    }, false)) return;
     if (this.pendingRir?.exId === exId && this.pendingRir?.setIdx === setIdx) {
       this.pendingRir = null;
       if (list.every(s => s.completed)) this.collapsedCards.add(exId);
     }
-    this.saveCurrentSession();
     this.renderWorkout();
   }
 
@@ -599,6 +602,7 @@ class WorkoutApp {
     if (this.hasSessionProgress(this.loadSession(dayIndex))) { this.showToast('Save or finish the current workout before restoring the previous draft.'); return false; }
     try {
       if (this.session.dayId !== draft.dayId) this.saveCurrentSession();
+      draft.lastInteractionAt = new Date().toISOString();
       this.writeStorageTransaction(new Map([
         [this.getSessionKey(draft.dayId), JSON.stringify(draft)],
         ['gym_last_active_day_v1', draft.dayId],
@@ -649,6 +653,10 @@ class WorkoutApp {
     localStorage.setItem('gym_last_active_day_v1', this.session.dayId);
   }
 
+  markSessionInteraction() {
+    if (this.session) this.session.lastInteractionAt = new Date().toISOString();
+  }
+
   initNewSession(dayIndex) {
     const day = this.routine[dayIndex] || this.routine[0];
     const session = {
@@ -656,6 +664,7 @@ class WorkoutApp {
       dayId: day.id,
       dayTitle: day.title,
       startTime: null,
+      lastInteractionAt: null,
       createdAt: new Date().toISOString(),
       logs: {},
       warmups: {},
@@ -885,21 +894,17 @@ class WorkoutApp {
   bumpExerciseWeight(exId, delta = 5) {
     const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list) return;
-    if (this.session && !this.session.startTime) {
-      this.session.startTime = new Date().toISOString();
-    }
-    list.forEach((s) => {
-      const cur = parseFloat(s.weight) || 0;
-      s.weight = Math.max(0, cur + delta);
-    });
-    this.saveCurrentSession();
+    const weights = list.map(set => Math.max(0, (parseFloat(set.weight) || 0) + delta));
+    if (!list.some((set, idx) => set.weight !== weights[idx])) return;
+    if (!this.saveSessionFlowChange(() => {
+      list.forEach((set, idx) => { set.weight = weights[idx]; });
+    })) return;
     this.renderWorkout();
   }
 
   updateSetWeight(exId, setIdx, newWeight) {
     const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
-    if (!this.session.startTime) this.session.startTime = new Date().toISOString();
     const blank = newWeight === null || String(newWeight).trim() === '';
     const parsed = blank ? NaN : Number(newWeight);
     const value = blank ? null : Number.isFinite(parsed) ? parsed : String(newWeight);
@@ -908,9 +913,12 @@ class WorkoutApp {
     if (setIdx === 0 && valid) list.forEach((set, idx) => {
       if (idx > 0 && !set.completed && (!set.exerciseName || !list[0].exerciseName || set.exerciseName === list[0].exerciseName)) affected.push(idx);
     });
-    affected.forEach(idx => {
+    if (!affected.some(idx => list[idx].weight !== value || Boolean(list[idx].needsBaseline) !== !valid)) return;
+    if (!this.saveSessionFlowChange(() => affected.forEach(idx => {
       list[idx].weight = value;
       list[idx].needsBaseline = !valid;
+    }))) return;
+    affected.forEach(idx => {
       const row = this.exerciseListEl.querySelector(`.set-row[data-exid="${exId}"][data-setidx="${idx}"]`);
       if (!row) return;
       const input = row.querySelector('.set-weight-input');
@@ -922,20 +930,19 @@ class WorkoutApp {
     });
     const warmup = this.exerciseListEl.querySelector(`#card_${exId} .warmup-btn`);
     if (warmup) warmup.disabled = this.hasWarmupRamp(exId) || !this.getWarmupWorkingSet(exId);
-    this.saveCurrentSession();
     this.updateNowLiftingHUD();
   }
 
   updateSetReps(exId, setIdx, newReps) {
     const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
-    if (!this.session.startTime) this.session.startTime = new Date().toISOString();
     const blank = newReps === null || String(newReps).trim() === '';
     const parsed = blank ? NaN : Number(newReps);
-    list[setIdx].reps = blank ? '' : Number.isFinite(parsed) ? parsed : String(newReps);
+    const value = blank ? '' : Number.isFinite(parsed) ? parsed : String(newReps);
+    if (list[setIdx].reps === value) return;
+    if (!this.saveSessionFlowChange(() => { list[setIdx].reps = value; })) return;
     const input = this.exerciseListEl.querySelector(`.set-reps-input[data-exid="${exId}"][data-setidx="${setIdx}"]`);
     if (input && document.activeElement !== input) input.value = list[setIdx].reps;
-    this.saveCurrentSession();
     this.updateNowLiftingHUD();
   }
 
@@ -1403,9 +1410,11 @@ class WorkoutApp {
     });
     this.exerciseListEl.querySelectorAll('.superset-enabled-input').forEach(input => {
       input.addEventListener('input', () => {
-        this.session.disabledSupersets = this.session.disabledSupersets || {};
-        this.session.disabledSupersets[input.dataset.group] = !input.checked;
-        this.saveCurrentSession();
+        if (Boolean(this.session.disabledSupersets?.[input.dataset.group]) === !input.checked) return;
+        if (!this.saveSessionFlowChange(() => {
+          this.session.disabledSupersets ||= {};
+          this.session.disabledSupersets[input.dataset.group] = !input.checked;
+        }, false)) return;
         this.renderWorkout();
       });
     });
@@ -1624,22 +1633,19 @@ class WorkoutApp {
       return;
     }
 
-    if (this.session && !this.session.startTime) {
-      this.session.startTime = new Date().toISOString();
-    }
-
-    setObj.completed = !setObj.completed;
-    delete setObj.rirAnswered;
-    if (setObj.completed) {
-      const activeSwap = this.session.swaps?.[exId];
-      setObj.exerciseName = setObj.exerciseName || this.getEffectiveExerciseName(exId, ex);
-      setObj.muscle = setObj.muscle || activeSwap?.muscle || ex?.muscle;
-      setObj.targetReps = setObj.targetReps || activeSwap?.targetReps || ex?.targetReps;
-      setObj.completedAt = new Date().toISOString();
-    } else {
-      delete setObj.completedAt;
-    }
-    this.saveCurrentSession();
+    if (!this.saveSessionFlowChange(() => {
+      setObj.completed = !setObj.completed;
+      delete setObj.rirAnswered;
+      if (setObj.completed) {
+        const activeSwap = this.session.swaps?.[exId];
+        setObj.exerciseName = setObj.exerciseName || this.getEffectiveExerciseName(exId, ex);
+        setObj.muscle = setObj.muscle || activeSwap?.muscle || ex?.muscle;
+        setObj.targetReps = setObj.targetReps || activeSwap?.targetReps || ex?.targetReps;
+        setObj.completedAt = new Date().toISOString();
+      } else {
+        delete setObj.completedAt;
+      }
+    })) return;
 
     // Tactile haptic pulse on completing set
     this.triggerHaptic([40]);
@@ -1679,7 +1685,7 @@ class WorkoutApp {
     const lastLoadedSet = [...currentSets].reverse().find(set => !set.needsBaseline && Number.isFinite(set.weight));
     const target = this.getSetTarget(ex, currentSets.length, effectiveName);
     const weight = lastLoadedSet ? lastLoadedSet.weight : target.targetWeight;
-    list.push({
+    if (!this.saveSessionFlowChange(() => list.push({
       setNum: list.length + 1,
       weight,
       reps: lastSet ? lastSet.reps : target.targetReps,
@@ -1689,16 +1695,14 @@ class WorkoutApp {
       muscle: activeSwap?.muscle || ex.muscle,
       targetReps: activeSwap?.targetReps || ex.targetReps,
       needsBaseline: !Number.isFinite(weight)
-    });
-    this.saveCurrentSession();
+    }), false)) return;
     this.renderWorkout();
   }
 
   removeLastSetFromExercise(exId) {
     const list = this.session.logs[exId];
     if (list && list.length > 1) {
-      list.pop();
-      this.saveCurrentSession();
+      if (!this.saveSessionFlowChange(() => list.pop(), false)) return;
       this.renderWorkout();
     }
   }
@@ -1956,27 +1960,27 @@ class WorkoutApp {
 
       // Bind restore button
       document.getElementById('restoreSwapBtn')?.addEventListener('click', () => {
-        if (this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed);
-        this.editingCompletedWarmup = null;
-        if (this.session && this.session.swaps) {
+        if (!this.session.swaps?.[exId]) return;
+        if (!this.saveSessionFlowChange(() => {
+          if (this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed);
           delete this.session.swaps[exId];
-        }
-        // Recalculate uncompleted sets back to original targets
-        const sets = (this.session && this.session.logs && this.session.logs[exId]) || [];
-        sets.forEach((s, sIdx) => {
-          if (!s.completed && ex) {
-            const target = this.getSetTarget(ex, sIdx, ex.name);
-            s.weight = target.targetWeight;
-            s.reps = target.targetReps;
-            s.needsBaseline = Boolean(target.needsBaseline);
-            s.exerciseName = ex.name;
-            s.muscle = ex.muscle;
-            s.targetReps = ex.targetReps;
-            s.rir = null;
-            delete s.rirAnswered;
-          }
-        });
-        this.saveCurrentSession();
+          // Recalculate uncompleted sets back to original targets.
+          const sets = this.session.logs?.[exId] || [];
+          sets.forEach((s, sIdx) => {
+            if (!s.completed && ex) {
+              const target = this.getSetTarget(ex, sIdx, ex.name);
+              s.weight = target.targetWeight;
+              s.reps = target.targetReps;
+              s.needsBaseline = Boolean(target.needsBaseline);
+              s.exerciseName = ex.name;
+              s.muscle = ex.muscle;
+              s.targetReps = ex.targetReps;
+              s.rir = null;
+              delete s.rirAnswered;
+            }
+          });
+        }, false)) return;
+        this.editingCompletedWarmup = null;
         if (this.swapModalEl) this.swapModalEl.classList.remove('open');
         this.showToast(`↩️ Restored original exercise "${ex ? ex.name : exName}"!`);
         this.renderWorkout();
@@ -2003,56 +2007,60 @@ class WorkoutApp {
 
   applyExerciseSwap(exId, sub, mode) {
     const ex = this.findExerciseById(exId);
-    if (!ex) return;
-    const previousName = this.getEffectiveExerciseName(exId, ex);
-    const previousSwap = this.session?.swaps?.[exId];
-    if (this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed);
+    if (!ex || !sub) return;
+    const changed = this.getEffectiveExerciseName(exId, ex) !== sub.name ||
+      (mode === 'permanent' && Boolean(this.session.swaps?.[exId]));
+    if (!changed) return;
+    const oldName = ex.name;
+    if (!this.saveSessionFlowChange(() => {
+      const previousName = this.getEffectiveExerciseName(exId, ex);
+      const previousSwap = this.session?.swaps?.[exId];
+      if (this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed);
+      const sets = this.session?.logs?.[exId] || [];
+      sets.filter(s => s.completed).forEach(s => {
+        s.exerciseName = s.exerciseName || previousName;
+        s.muscle = s.muscle || previousSwap?.muscle || ex.muscle;
+        s.targetReps = s.targetReps || previousSwap?.targetReps || ex.targetReps;
+      });
+      const hasHistory = Boolean(this.getPreviousExercisePerformance(sub.name));
+
+      if (mode === 'permanent') {
+        ex.name = sub.name;
+        if (sub.muscle) ex.muscle = sub.muscle;
+        if (sub.targetReps) ex.targetReps = sub.targetReps;
+        if (sub.notes) ex.notes = sub.notes;
+        if (sub.videoUrl) ex.videoUrl = sub.videoUrl;
+        ex.increment = this.getExerciseIncrement(sub, sub.name);
+        ex.startingWeight = '';
+        ex.needsBaseline = !hasHistory;
+        if (this.session && this.session.swaps) {
+          delete this.session.swaps[exId];
+        }
+      } else {
+        // Today only: mark in session
+        if (!this.session.swaps) this.session.swaps = {};
+        this.session.swaps[exId] = sub;
+      }
+
+      // Recalculate uncompleted sets in this.session.logs[exId]
+      const effectiveName = sub.name;
+      sets.forEach((s, sIdx) => {
+        if (!s.completed) {
+          const target = this.getSetTarget(ex, sIdx, effectiveName);
+          s.weight = hasHistory ? target.targetWeight : null;
+          s.reps = target.targetReps;
+          s.needsBaseline = !hasHistory;
+          s.exerciseName = effectiveName;
+          s.muscle = sub.muscle || ex.muscle;
+          s.targetReps = target.targetRepsDisplay;
+          s.rir = null;
+        }
+      });
+    }, false, mode === 'permanent')) return;
     this.editingCompletedWarmup = null;
-    const sets = this.session?.logs?.[exId] || [];
-    sets.filter(s => s.completed).forEach(s => {
-      s.exerciseName = s.exerciseName || previousName;
-      s.muscle = s.muscle || previousSwap?.muscle || ex.muscle;
-      s.targetReps = s.targetReps || previousSwap?.targetReps || ex.targetReps;
-    });
-    const hasHistory = Boolean(this.getPreviousExercisePerformance(sub.name));
-
-    if (mode === 'permanent') {
-      const oldName = ex.name;
-      ex.name = sub.name;
-      if (sub.muscle) ex.muscle = sub.muscle;
-      if (sub.targetReps) ex.targetReps = sub.targetReps;
-      if (sub.notes) ex.notes = sub.notes;
-      if (sub.videoUrl) ex.videoUrl = sub.videoUrl;
-      ex.increment = this.getExerciseIncrement(sub, sub.name);
-      ex.startingWeight = '';
-      ex.needsBaseline = !hasHistory;
-      if (this.session && this.session.swaps) {
-        delete this.session.swaps[exId];
-      }
-      this.saveRoutine();
-      this.showToast(`✅ Replaced "${oldName}" with "${sub.name}" permanently in your routine!`);
-    } else {
-      // Today only: mark in session
-      if (!this.session.swaps) this.session.swaps = {};
-      this.session.swaps[exId] = sub;
-      this.showToast(`⚡ Swapped to "${sub.name}" for today's workout!`);
-    }
-
-    // Recalculate uncompleted sets in this.session.logs[exId]
-    const effectiveName = sub.name;
-    sets.forEach((s, sIdx) => {
-      if (!s.completed) {
-        const target = this.getSetTarget(ex, sIdx, effectiveName);
-        s.weight = hasHistory ? target.targetWeight : null;
-        s.reps = target.targetReps;
-        s.needsBaseline = !hasHistory;
-        s.exerciseName = effectiveName;
-        s.muscle = sub.muscle || ex.muscle;
-        s.targetReps = target.targetRepsDisplay;
-        s.rir = null;
-      }
-    });
-    this.saveCurrentSession();
+    this.showToast(mode === 'permanent'
+      ? `✅ Replaced "${oldName}" with "${sub.name}" permanently in your routine!`
+      : `⚡ Swapped to "${sub.name}" for today's workout!`);
 
     if (this.swapModalEl) this.swapModalEl.classList.remove('open');
     this.renderWorkout();
@@ -2091,22 +2099,27 @@ class WorkoutApp {
     return ex && setIdx >= 0 ? {ex, setIdx, type: 'warmup'} : null;
   }
 
-  saveSessionFlowChange(change, startWorkout = true) {
+  saveSessionFlowChange(change, startWorkout = true, saveRoutine = false) {
     const before = JSON.parse(JSON.stringify(this.session));
+    const beforeRoutine = saveRoutine ? JSON.parse(JSON.stringify(this.routine)) : null;
     try {
       change();
       if (startWorkout) this.session.startTime ||= new Date().toISOString();
+      this.markSessionInteraction();
       if (this.session.dayId) {
         this.session.id ||= `s_${this.session.dayId}_${Date.now()}`;
         this.session.updatedAt = new Date().toISOString();
-        this.writeStorageTransaction(new Map([
+        const writes = new Map([
           [this.getSessionKey(this.session.dayId), JSON.stringify(this.session)],
           ['gym_last_active_day_v1', this.session.dayId]
-        ]));
+        ]);
+        if (saveRoutine) writes.set(this.storageKeys.routine, JSON.stringify(this.routine));
+        this.writeStorageTransaction(writes);
       } else this.saveCurrentSession();
       return true;
     } catch (_) {
       this.session = before;
+      if (beforeRoutine) this.routine = beforeRoutine;
       this.showToast('Could not save this change. Your saved workout is unchanged. Free some device storage and try again.');
       return false;
     }
@@ -2149,6 +2162,7 @@ class WorkoutApp {
     const blank = rawValue === null || String(rawValue).trim() === '';
     const parsed = blank ? NaN : Number(rawValue);
     const value = blank ? (field === 'weight' ? null : '') : Number.isFinite(parsed) ? parsed : String(rawValue);
+    if (set[field] === value) return true;
     if (!this.saveSessionFlowChange(() => { set[field] = value; })) return false;
     // Keep the focused number input mounted while the user types.
     const input = this.exerciseListEl?.querySelector(`.warmup-input[data-exid="${exId}"][data-warmupidx="${setIdx}"][data-field="${field}"]`);
@@ -3318,6 +3332,7 @@ class WorkoutApp {
     const draftSetsValid = sets => Array.isArray(sets) && sets.every(s => object(s) &&
       [s.weight, s.reps].every(value => value === null || typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))));
     const flowValid = session =>
+      (session.lastInteractionAt === undefined || session.lastInteractionAt === null || (typeof session.lastInteractionAt === 'string' && Number.isFinite(Date.parse(session.lastInteractionAt)))) &&
       (session.exerciseOrder === undefined || (Array.isArray(session.exerciseOrder) && session.exerciseOrder.every(id => typeof id === 'string') && new Set(session.exerciseOrder).size === session.exerciseOrder.length)) &&
       (session.warmups === undefined || (object(session.warmups) && Object.values(session.warmups).every(sets => draftSetsValid(sets) && sets.every(set =>
         (set.completed === undefined || typeof set.completed === 'boolean') &&
