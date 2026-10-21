@@ -845,7 +845,7 @@ class WorkoutApp {
       if (prompt) prompt.hidden = value !== null;
     });
     const warmup = this.exerciseListEl.querySelector(`#card_${exId} .warmup-btn`);
-    if (warmup) warmup.disabled = list.some(set => set.needsBaseline || set.weight === null);
+    if (warmup) warmup.disabled = this.hasWarmupRamp(exId) || !this.getWarmupWorkingSet(exId);
     this.saveCurrentSession();
     this.updateNowLiftingHUD();
   }
@@ -1229,10 +1229,11 @@ class WorkoutApp {
         ${swapped ? `<div class="muted-text">Alternative for ${this.escapeHtml(ex.name)}</div>` : ''}
         <div class="focus-prescription">${sets.length} sets × ${this.escapeHtml(targetReps)} reps · Rest ${rest}</div>
         <div class="load-convention">Weight in lbs · ${conventionLabel}</div>
-        <div class="exercise-heading-tools"><button type="button" class="warmup-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(name)}" ${sets.some(set => set.needsBaseline || set.weight === null) ? 'disabled title="Enter a baseline weight first"' : ''}>Warmup</button><button type="button" class="swap-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(ex.name)}">Swap equipment</button></div>
+        <div class="exercise-heading-tools">${this.renderWarmupButton(ex)}<button type="button" class="swap-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(ex.name)}">Swap equipment</button></div>
         <div class="machine-availability-control"><button type="button" class="machine-taken-btn secondary-btn" data-exid="${ex.id}" ${canDefer ? '' : `disabled aria-describedby="machineTakenHelp_${ex.id}"`}>Machine taken</button>${canDefer ? '' : `<small id="machineTakenHelp_${ex.id}" class="muted-text">${deferHelp}</small>`}</div>
         <div class="saved-setup-cue" ${!seat && !note ? 'hidden' : ''}><span class="saved-seat-cue">${seat ? `Seat / pin: ${this.escapeHtml(seat)}` : ''}</span><span class="saved-note-cue">${this.escapeHtml(note)}</span></div>
       </div>
+      ${this.renderWarmupSets(ex)}
       ${collapsed ? `<button type="button" class="card-collapse-toggle-btn" data-exid="${ex.id}">✓ All sets complete · Review sets</button>` : `<div class="set-blocks">
       ${sets.map((set, idx) => {
         const prev = previous && previous.sets && previous.sets[idx];
@@ -1363,14 +1364,7 @@ class WorkoutApp {
       });
     }
 
-    // Warmup ramp buttons
-    this.exerciseListEl.querySelectorAll('.warmup-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const exId = btn.dataset.exid;
-        const exName = btn.dataset.exname;
-        this.openWarmupModal(exId, exName);
-      });
-    });
+    this.bindWarmupEvents();
 
     // Equipment swap buttons
     this.exerciseListEl.querySelectorAll('.swap-btn').forEach(btn => {
@@ -1953,118 +1947,186 @@ class WorkoutApp {
     this.renderWorkout();
   }
 
-  // Warmup Pyramid Calculator Controller
-  openWarmupModal(exId, exName, targetWeight = null, targetReps = null) {
-    const ex = this.findExerciseById(exId);
-    const sessionSets = (this.session && this.session.logs && this.session.logs[exId]) || [];
-    
-    const effectiveName = ex ? this.getEffectiveExerciseName(exId, ex) : exName;
-    const matchingSets = sessionSets.filter(set => !set.exerciseName || set.exerciseName === effectiveName);
-    const workingSet = matchingSets.find(set => !set.completed && Number.isFinite(set.weight)) || matchingSets.find(set => Number.isFinite(set.weight));
-    const weight = Number.isFinite(targetWeight) && targetWeight > 0 ? targetWeight : workingSet?.weight;
-    if (!Number.isFinite(weight) || weight <= 0) {
-      this.showToast('Enter a working load for this equipment before calculating a warmup.');
-      return;
-    }
-    const repsStr = targetReps || this.session?.swaps?.[exId]?.targetReps || ex?.targetReps || '8–10';
-    if (this.warmupModalTitleEl) this.warmupModalTitleEl.textContent = `Warm-Up Ramp: ${effectiveName}`;
-
-    this.renderWarmupModalContent(exId, effectiveName, weight, repsStr);
-    if (this.warmupModalEl) this.warmupModalEl.classList.add('open');
+  // Warm-ups belong only to this workout and never enter the working-set log.
+  getWarmupSets(exId) {
+    const rows = this.session?.warmups?.[exId];
+    return Array.isArray(rows) ? rows : [];
   }
 
-  renderWarmupModalContent(exId, exName, workingWeight, repsStr) {
-    if (!this.warmupContentEl) return;
+  getWarmupWorkingSet(exId) {
+    const ex = this.findExerciseById(exId);
+    if (!ex) return null;
+    const name = this.getEffectiveExerciseName(exId, ex);
+    const matches = (this.session?.logs?.[exId] || []).filter(set =>
+      set.exerciseName === name || (!set.exerciseName && !this.session?.swaps?.[exId]));
+    const positive = set => !set.needsBaseline && set.weight !== null && String(set.weight).trim() !== '' && Number.isFinite(Number(set.weight)) && Number(set.weight) > 0;
+    return matches.find(set => !set.completed && positive(set)) || matches.find(positive) || null;
+  }
 
-    // Calculate smart ramp pyramid:
-    // Warmup 1: 50% for 10 reps (neural prep & synovial fluid)
-    const w1 = Math.max(10, Math.round((workingWeight * 0.50) / 5) * 5);
-    // Warmup 2: 70% for 5 reps (grooving motor pathway)
-    const w2 = Math.max(15, Math.round((workingWeight * 0.70) / 5) * 5);
-    // Warmup 3: 85% for 2 reps (neural potentiation, acclimation)
-    const w3 = Math.max(20, Math.round((workingWeight * 0.85) / 5) * 5);
+  hasWarmupRamp(exId) {
+    const ex = this.findExerciseById(exId);
+    if (!ex) return false;
+    const name = this.getEffectiveExerciseName(exId, ex);
+    return this.getWarmupSets(exId).some(set => set.exerciseName === name || (!set.exerciseName && !this.session?.swaps?.[exId]));
+  }
 
-    this.warmupContentEl.innerHTML = `
-      <div class="warmup-target-box">
-        <div>
-          <div style="font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em; color: #fbbf24; font-weight: 800;">Target Working Weight</div>
-          <div style="font-size: 1.15rem; font-weight: 800; color: #fff;">${workingWeight} lbs <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted);">(${repsStr} reps)</span></div>
-        </div>
-        <div class="warmup-target-input-group">
-          <button type="button" class="stepper-btn" id="warmupMinus5" style="width: 36px; height: 36px;">−5</button>
-          <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); padding: 0 4px;">Adjust</span>
-          <button type="button" class="stepper-btn" id="warmupPlus5" style="width: 36px; height: 36px;">+5</button>
-        </div>
-      </div>
+  getNextWarmup(exId) {
+    const setIdx = this.getWarmupSets(exId).findIndex(set => !set.completed);
+    const ex = this.findExerciseById(exId);
+    return ex && setIdx >= 0 ? {ex, setIdx, type: 'warmup'} : null;
+  }
 
-      <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px;">
-        Prep Ramp (3 Neural Acclimation Sets):
-      </div>
+  saveWarmupChange(change) {
+    const before = JSON.parse(JSON.stringify(this.session));
+    try {
+      change();
+      this.session.startTime ||= new Date().toISOString();
+      if (this.session.dayId) {
+        this.session.id ||= `s_${this.session.dayId}_${Date.now()}`;
+        this.session.updatedAt = new Date().toISOString();
+        this.writeStorageTransaction(new Map([
+          [this.getSessionKey(this.session.dayId), JSON.stringify(this.session)],
+          ['gym_last_active_day_v1', this.session.dayId]
+        ]));
+      } else this.saveCurrentSession();
+      return true;
+    } catch (_) {
+      this.session = before;
+      this.showToast('Could not save this warm-up. Free some device storage and try again.');
+      return false;
+    }
+  }
 
-      <div class="warmup-step-card">
-        <div class="warmup-step-badge">Ramp 1</div>
-        <div class="warmup-step-info">
-          <div class="warmup-step-title">
-            <span>${w1} lbs × 10 reps</span>
-            <span style="font-size: 0.75rem; color: #fbbf24; font-weight: 700;">(50%)</span>
-          </div>
-          <div class="warmup-step-desc">Neural activation & synovial fluid flow. Move with brisk cadence.</div>
-        </div>
-      </div>
+  addWarmupSets(exId) {
+    const ex = this.findExerciseById(exId);
+    if (!ex || this.hasWarmupRamp(exId)) return false;
+    const workingSet = this.getWarmupWorkingSet(exId);
+    if (!workingSet) {
+      this.showToast('Enter a working load greater than 0 lb for this equipment before adding warm-ups.');
+      return false;
+    }
+    const name = this.getEffectiveExerciseName(exId, ex);
+    const increment = Number(this.getExerciseIncrement(ex, name)) || 5;
+    const weight = Number(workingSet.weight);
+    const ramp = [[0.5, 10], [0.7, 5], [0.85, 2]].map(([portion, reps], index) => ({
+      setNum: index + 1,
+      type: 'warmup',
+      weight: Number(Math.min(weight, Math.max(0, Math.round(weight * portion / increment) * increment)).toFixed(4)),
+      reps,
+      completed: false,
+      exerciseName: name
+    }));
+    if (!this.saveWarmupChange(() => {
+      this.session.warmups ||= {};
+      this.session.warmups[exId] = [...this.getWarmupSets(exId), ...ramp];
+    })) return false;
+    this.focusedExerciseId = exId;
+    this.renderWorkout();
+    this.updateNowLiftingHUD();
+    this.jumpToActiveExercise({automatic: true});
+    return true;
+  }
 
-      <div class="warmup-step-card">
-        <div class="warmup-step-badge">Ramp 2</div>
-        <div class="warmup-step-info">
-          <div class="warmup-step-title">
-            <span>${w2} lbs × 5 reps</span>
-            <span style="font-size: 0.75rem; color: #fbbf24; font-weight: 700;">(70%)</span>
-          </div>
-          <div class="warmup-step-desc">Motor pattern grooving. Crisp form, moderate speed.</div>
-        </div>
-      </div>
+  updateWarmupSet(exId, setIdx, field, rawValue) {
+    const set = this.getWarmupSets(exId)[setIdx];
+    if (!set || !['weight', 'reps'].includes(field)) return false;
+    const blank = rawValue === null || String(rawValue).trim() === '';
+    const parsed = blank ? NaN : Number(rawValue);
+    const value = blank ? (field === 'weight' ? null : '') : Number.isFinite(parsed) ? parsed : String(rawValue);
+    if (!this.saveWarmupChange(() => { set[field] = value; })) return false;
+    // Keep the focused number input mounted while the user types.
+    const input = this.exerciseListEl?.querySelector(`.warmup-input[data-exid="${exId}"][data-warmupidx="${setIdx}"][data-field="${field}"]`);
+    if (input && document.activeElement !== input) input.value = value ?? '';
+    this.updateNowLiftingHUD();
+    return true;
+  }
 
-      <div class="warmup-step-card">
-        <div class="warmup-step-badge">Ramp 3</div>
-        <div class="warmup-step-info">
-          <div class="warmup-step-title">
-            <span>${w3} lbs × 2 reps</span>
-            <span style="font-size: 0.75rem; color: #fbbf24; font-weight: 700;">(85%)</span>
-          </div>
-          <div class="warmup-step-desc">Heavy neural potentiation. Zero fatigue build-up.</div>
-        </div>
-      </div>
+  toggleWarmupCompletion(exId, setIdx) {
+    const set = this.getWarmupSets(exId)[setIdx];
+    const ex = this.findExerciseById(exId);
+    if (!set || !ex) return false;
+    const validationError = this.getSetValidationError(set);
+    if (!set.completed && validationError) { this.showToast(validationError); return false; }
+    const completed = !set.completed;
+    if (!this.saveWarmupChange(() => {
+      set.completed = completed;
+      if (completed) {
+        set.weight = Number(set.weight);
+        set.reps = Number(set.reps);
+        set.completedAt = new Date().toISOString();
+      } else delete set.completedAt;
+    })) return false;
+    this.editingCompletedWarmup = null;
+    if (completed) {
+      const finalWarmup = !this.getWarmupSets(exId).some(row => !row.completed);
+      const seconds = finalWarmup ? this.getRestSeconds(ex) : 90;
+      this.triggerHaptic([40]);
+      this.startTimer(seconds, finalWarmup ? (this.isSupersetEnabled(ex) ? 0 : 120) : 90);
+      this.focusedExerciseId = null;
+    }
+    this.renderWorkout();
+    this.updateNowLiftingHUD();
+    if (completed) this.jumpToActiveExercise({automatic: true});
+    return true;
+  }
 
-      <div class="warmup-step-card" style="border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.05);">
-        <div class="warmup-step-badge working">Working</div>
-        <div class="warmup-step-info">
-          <div class="warmup-step-title" style="color: #34d399;">
-            <span>${workingWeight} lbs × ${repsStr} reps</span>
-            <span style="font-size: 0.75rem; color: #34d399; font-weight: 700;">(100%)</span>
-          </div>
-          <div class="warmup-step-desc" style="color: #a7f3d0;">Your working sets! Track progress on table below.</div>
-        </div>
-      </div>
+  removeWarmupSet(exId, setIdx) {
+    const set = this.getWarmupSets(exId)[setIdx];
+    if (!set || set.completed) return false;
+    if (!this.saveWarmupChange(() => { this.session.warmups[exId].splice(setIdx, 1); })) return false;
+    this.editingCompletedWarmup = null;
+    this.renderWorkout();
+    this.updateNowLiftingHUD();
+    return true;
+  }
 
-      <div style="margin-top: 14px; text-align: center;">
-        <button type="button" class="primary-btn" id="closeWarmupModalBtnInner" style="width: 100%;">
-          Got it, Ready to Lift!
-        </button>
-      </div>
-    `;
+  renderWarmupButton(ex) {
+    const added = this.hasWarmupRamp(ex.id);
+    const disabled = added || !this.getWarmupWorkingSet(ex.id);
+    const title = added ? 'Warm-up sets are already on this card' : 'Enter a working load greater than 0 lb first';
+    return `<button type="button" class="warmup-btn secondary-btn" data-exid="${ex.id}" ${disabled ? `disabled title="${title}"` : ''}>${added ? 'Warm-ups added' : 'Add warm-up sets'}</button>`;
+  }
 
-    document.getElementById('warmupMinus5')?.addEventListener('click', () => {
-      const nextW = Math.max(10, workingWeight - 5);
-      this.renderWarmupModalContent(exId, exName, nextW, repsStr);
-    });
+  renderWarmupSets(ex) {
+    const rows = this.getWarmupSets(ex.id);
+    if (!rows.length) return '';
+    const name = this.getEffectiveExerciseName(ex.id, ex);
+    const next = this.getNextSet();
+    const remaining = rows.filter(set => !set.completed).length;
+    return `<section class="warmup-sets" aria-label="Warm-up sets for ${this.escapeHtml(name)}"><div class="warmup-section-heading"><strong>Warm-up sets</strong><span>This workout only</span></div>${rows.map((set, idx) => {
+      const label = `Warm-up ${set.setNum || idx + 1}`;
+      const editing = this.editingCompletedWarmup?.exId === ex.id && this.editingCompletedWarmup.setIdx === idx;
+      const active = next?.type === 'warmup' && next.ex.id === ex.id && next.setIdx === idx;
+      const equipment = set.exerciseName && set.exerciseName !== name ? `<small>${this.escapeHtml(set.exerciseName)}</small>` : '';
+      if (set.completed && !editing) return `<section class="warmup-row completed-warmup-row" data-exid="${ex.id}" data-warmupidx="${idx}" aria-label="Completed ${label.toLowerCase()}"><div class="completed-set-summary"><span><strong>✓ ${label}</strong> · ${this.escapeHtml(String(set.weight))} lb × ${this.escapeHtml(String(set.reps))}${equipment}</span><span class="warmup-summary-actions"><button type="button" class="warmup-edit-btn" data-exid="${ex.id}" data-warmupidx="${idx}" aria-label="Edit ${label.toLowerCase()}">Edit</button><button type="button" class="warmup-complete-btn warmup-undo-btn" data-exid="${ex.id}" data-warmupidx="${idx}" aria-label="Undo ${label.toLowerCase()}" aria-pressed="true">Undo</button></span></div></section>`;
+      const increment = Number(this.getExerciseIncrement(ex, set.exerciseName || name)) || 5;
+      return `<section class="warmup-row set-block ${active ? 'active-next-set' : ''}" data-exid="${ex.id}" data-warmupidx="${idx}" aria-label="${label}"><div class="set-heading warmup-heading" tabindex="-1"><strong>${label}${active ? ' · Up next' : ''}</strong><span>${set.completed ? 'Completed' : remaining === 1 ? `Rest ${this.formatRest(this.getRestSeconds(ex))} before working sets` : 'Rest 90 sec'}</span></div>${equipment}<div class="set-entry-grid">${[['weight', 'Weight (lb)', increment, 'decimal'], ['reps', 'Reps', 1, 'numeric']].map(([field, fieldLabel, step, mode]) => `<label>${fieldLabel}<span class="stepper-wrap"><button type="button" class="warmup-stepper-btn" data-exid="${ex.id}" data-warmupidx="${idx}" data-field="${field}" data-delta="-${step}" aria-label="Decrease ${label.toLowerCase()} ${field}">−</button><input type="number" class="warmup-input" data-exid="${ex.id}" data-warmupidx="${idx}" data-field="${field}" value="${this.escapeHtml(String(set[field] ?? ''))}" min="${field === 'weight' ? 0 : 1}" step="${step}" inputmode="${mode}" aria-label="${label} ${field === 'weight' ? 'weight in pounds' : 'reps'}"><button type="button" class="warmup-stepper-btn" data-exid="${ex.id}" data-warmupidx="${idx}" data-field="${field}" data-delta="${step}" aria-label="Increase ${label.toLowerCase()} ${field}">+</button></span></label>`).join('')}</div><button type="button" class="warmup-complete-btn primary-btn" data-exid="${ex.id}" data-warmupidx="${idx}" aria-pressed="${set.completed}">${set.completed ? 'Completed · Undo' : 'Complete warm-up'}</button>${set.completed ? `<button type="button" class="warmup-done-editing-btn secondary-btn" data-exid="${ex.id}" data-warmupidx="${idx}">Done editing</button>` : `<button type="button" class="warmup-remove-btn" data-exid="${ex.id}" data-warmupidx="${idx}" aria-label="Remove ${label.toLowerCase()}">Remove warm-up</button>`}</section>`;
+    }).join('')}</section>`;
+  }
 
-    document.getElementById('warmupPlus5')?.addEventListener('click', () => {
-      const nextW = workingWeight + 5;
-      this.renderWarmupModalContent(exId, exName, nextW, repsStr);
-    });
-
-    document.getElementById('closeWarmupModalBtnInner')?.addEventListener('click', () => {
-      if (this.warmupModalEl) this.warmupModalEl.classList.remove('open');
-    });
+  bindWarmupEvents() {
+    this.exerciseListEl.querySelectorAll('.warmup-btn').forEach(button => button.addEventListener('click', () => this.addWarmupSets(button.dataset.exid)));
+    this.exerciseListEl.querySelectorAll('.warmup-input').forEach(input => input.addEventListener('input', () => this.updateWarmupSet(input.dataset.exid, Number(input.dataset.warmupidx), input.dataset.field, input.value)));
+    this.exerciseListEl.querySelectorAll('.warmup-stepper-btn').forEach(button => button.addEventListener('click', () => {
+      const {exid, warmupidx, field, delta} = button.dataset;
+      const set = this.getWarmupSets(exid)[Number(warmupidx)];
+      if (!set) return;
+      this.updateWarmupSet(exid, Number(warmupidx), field, Math.max(field === 'weight' ? 0 : 1, (Number(set[field]) || 0) + Number(delta)));
+    }));
+    this.exerciseListEl.querySelectorAll('.warmup-complete-btn').forEach(button => button.addEventListener('click', () => this.toggleWarmupCompletion(button.dataset.exid, Number(button.dataset.warmupidx))));
+    this.exerciseListEl.querySelectorAll('.warmup-remove-btn').forEach(button => button.addEventListener('click', () => this.removeWarmupSet(button.dataset.exid, Number(button.dataset.warmupidx))));
+    this.exerciseListEl.querySelectorAll('.warmup-edit-btn').forEach(button => button.addEventListener('click', () => {
+      this.editingCompletedWarmup = {exId: button.dataset.exid, setIdx: Number(button.dataset.warmupidx)};
+      this.renderWorkout();
+    }));
+    this.exerciseListEl.querySelectorAll('.warmup-done-editing-btn').forEach(button => button.addEventListener('click', () => {
+      const set = this.getWarmupSets(button.dataset.exid)[Number(button.dataset.warmupidx)];
+      if (!set) return;
+      const error = this.getSetValidationError(set);
+      if (error) { this.showToast(error); return; }
+      this.editingCompletedWarmup = null;
+      this.renderWorkout();
+    }));
   }
 
   // Quick Performance History Controller

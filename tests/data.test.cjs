@@ -103,6 +103,6 @@ test('history rebuild retains the newest normal baseline without stale extra set
 test('warmup uses the current equipment baseline rather than an earlier completed swap',()=>{
  const {app}=setup(); const ex=app.routine[0].exercises[0];
  app.session={logs:{[ex.id]:[{exerciseName:ex.name,weight:200,completed:true},{exerciseName:'New equipment',weight:null,completed:false}]},swaps:{[ex.id]:{name:'New equipment',targetReps:'10-12'}}};
- let rendered=null;app.renderWarmupModalContent=(...args)=>{rendered=args;};app.openWarmupModal(ex.id,ex.name);assert.equal(rendered,null);
- app.session.logs[ex.id][1].weight=50;app.openWarmupModal(ex.id,ex.name);assert.equal(rendered[1],'New equipment');assert.equal(rendered[2],50);assert.equal(rendered[3],'10-12');
+ app.updateNowLiftingHUD=()=>{};app.jumpToActiveExercise=()=>{};assert.equal(app.addWarmupSets(ex.id),false);assert.equal(app.getWarmupSets(ex.id).length,0);
+ app.session.logs[ex.id][1].weight=50;assert.equal(app.addWarmupSets(ex.id),true);const rows=app.getWarmupSets(ex.id);assert.equal(rows.length,3);assert.ok(rows.every(row=>row.exerciseName==='New equipment' && row.weight<=50));assert.equal(rows[0].weight,Math.round(25/app.getExerciseIncrement(ex,'New equipment'))*app.getExerciseIncrement(ex,'New equipment'));
 });

@@ -1,0 +1,20 @@
+/* Warm-ups are trackable session rows, visually separate from working sets. */
+.warmup-sets { padding: 0 12px 12px; }
+.warmup-section-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px; padding: 2px 0 8px; font-size: 14px; }
+.warmup-section-heading span { color: var(--text-muted); }
+.warmup-row { margin-bottom: 8px; border: 1px solid var(--border-color); border-left: 3px solid #d6a755; border-radius: 10px; background: rgba(214,167,85,.04); }
+.warmup-row:last-child { margin-bottom: 0; }
+.warmup-row.active-next-set { border-color: #d6a755; }
+.warmup-heading { margin-bottom: 10px; }
+.warmup-row small { display: block; color: var(--text-muted); font-size: 14px; overflow-wrap: anywhere; }
+.completed-warmup-row { padding: 6px 10px; }
+.warmup-summary-actions { display: flex; align-items: center; flex-shrink: 0; gap: 2px; }
+.warmup-row .warmup-edit-btn, .warmup-row .warmup-undo-btn, .warmup-row .warmup-remove-btn { min-height: 44px; min-width: 44px; padding: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--accent-blue); font-size: 14px; }
+.warmup-row .warmup-remove-btn { margin-top: 4px; }
+.warmup-row .stepper-wrap { display: flex; width: 100%; height: 48px; margin-top: 3px; overflow: hidden; border: 1px solid var(--border-color); border-radius: 8px; }
+.warmup-stepper-btn { flex: 0 0 44px; width: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 0; background: var(--bg-input); color: var(--text-secondary); font-size: 18px; }
+.warmup-input { width: 100%; min-width: 0; padding: 0 2px; border: 0; border-radius: 0; background: var(--bg-primary); color: var(--text-primary); text-align: center; font: inherit; font-size: 18px; font-weight: 650; appearance: textfield; -moz-appearance: textfield; }
+.warmup-input::-webkit-outer-spin-button, .warmup-input::-webkit-inner-spin-button { margin: 0; -webkit-appearance: none; }
+.warmup-row .warmup-complete-btn.primary-btn { width: 100%; min-height: 44px; margin-top: 12px; padding: 10px 12px; font-size: 16px; box-shadow: none; }
+.warmup-done-editing-btn { min-height: 44px; margin-top: 8px; font-size: 14px; }
+.exercise-heading-tools { flex-wrap: wrap; }
