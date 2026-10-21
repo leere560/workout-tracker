@@ -35,7 +35,7 @@ class WorkoutApp {
     this.routine = this.loadRoutine();
 
     // Active Day: determine suggested day based on current weekday
-    this.activeDayIndex = this.getSuggestedDayIndex();
+    this.activeDayIndex = this.getResumeDayIndex();
 
     // Audio & WakeLock state
     this.audioCtx = null;
@@ -86,6 +86,7 @@ class WorkoutApp {
     this.restoreActiveTimer();
 
     this.render();
+    this.showSessionResumePrompt();
     this.requestWakeLock();
   }
 
@@ -421,6 +422,7 @@ class WorkoutApp {
     const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
     list[setIdx].rir = (list[setIdx].rir === rirVal) ? null : rirVal;
+    list[setIdx].rirAnswered = true;
     if (this.pendingRir?.exId === exId && this.pendingRir?.setIdx === setIdx) {
       this.pendingRir = null;
       if (list.every(s => s.completed)) this.collapsedCards.add(exId);
@@ -433,6 +435,83 @@ class WorkoutApp {
     return `${this.storageKeys.currentSessionPrefix}${dayId}`;
   }
 
+  hasSessionProgress(session) {
+    if (!session?.logs) return false;
+    return Boolean(session.startTime || Object.values(session.logs).some(sets => sets.some(s => s.completed)) ||
+      (session.initialLogs && JSON.stringify(session.logs) !== JSON.stringify(session.initialLogs)) ||
+      Object.keys(session.swaps || {}).length);
+  }
+
+  getResumeDayIndex() {
+    const lastDay = localStorage.getItem('gym_last_active_day_v1');
+    const candidates = this.routine.map((day, index) => {
+      try {
+        const session = JSON.parse(localStorage.getItem(this.getSessionKey(day.id)) || 'null');
+        return this.hasSessionProgress(session) && !this.history.some(w => w.sessionId === session.id)
+          ? { index, dayId: day.id, updatedAt: Date.parse(session.updatedAt || session.startTime || session.createdAt) || 0 } : null;
+      } catch (_) { return null; }
+    }).filter(Boolean);
+    return candidates.find(item => item.dayId === lastDay)?.index ??
+      candidates.sort((a, b) => b.updatedAt - a.updatedAt)[0]?.index ?? this.getSuggestedDayIndex();
+  }
+
+  getSessionResumeInfo() {
+    const date = this.session?.startTime || this.session?.createdAt || this.session?.updatedAt;
+    const parsed = date ? new Date(date) : null;
+    return { date, inProgress: this.hasSessionProgress(this.session),
+      savedDraftId: localStorage.getItem(`gym_saved_draft_for_${this.session?.dayId}`),
+      stale: Boolean(parsed && !Number.isNaN(parsed.getTime()) && parsed.toDateString() !== new Date().toDateString()) };
+  }
+
+  showSessionResumePrompt() {
+    const info = this.getSessionResumeInfo();
+    if (!info.inProgress || !info.stale || !this.summaryContentEl) return;
+    const sessionId = this.session.id;
+    this.summaryContentEl.innerHTML = `<h2>Resume workout?</h2><p>${this.escapeHtml(this.session.dayTitle)} · Started ${this.escapeHtml(new Date(info.date).toLocaleString())}</p><p>Resume keeps every saved set. Start new keeps this draft available for recovery.</p><button class="primary-btn" id="resumeDraftBtn">Resume workout</button><button class="secondary-btn" id="startNewDraftBtn">Start new workout</button>`;
+    this.summaryModalEl.classList.add('open');
+    document.getElementById('resumeDraftBtn')?.addEventListener('click', () => {
+      this.summaryModalEl.classList.remove('open');
+      this.jumpToActiveExercise?.();
+    });
+    document.getElementById('startNewDraftBtn')?.addEventListener('click', () => this.startNewSession(sessionId));
+  }
+
+  startNewSession(expectedId = this.session?.id) {
+    if (expectedId !== this.session?.id) return false;
+    if (this.hasSessionProgress(this.session)) {
+      localStorage.setItem(`gym_saved_draft_${this.session.id}`, JSON.stringify(this.session));
+      localStorage.setItem(`gym_saved_draft_for_${this.session.dayId}`, this.session.id);
+    }
+    this.stopTimer();
+    this.session = this.initNewSession(this.activeDayIndex);
+    this.pendingRir = null;
+    this.collapsedCards = new Set();
+    this.saveCurrentSession();
+    this.summaryModalEl?.classList.remove('open');
+    this.renderWorkout();
+    return true;
+  }
+
+  restoreSavedDraft(draftId) {
+    let draft;
+    try { draft = JSON.parse(localStorage.getItem(`gym_saved_draft_${draftId}`)); } catch (_) { return false; }
+    const dayIndex = this.routine.findIndex(day => day.id === draft?.dayId);
+    if (dayIndex < 0 || !draft?.logs) return false;
+    if (this.hasSessionProgress(this.loadSession(dayIndex))) { this.showToast('Save or finish the current workout before restoring the previous draft.'); return false; }
+    this.saveCurrentSession();
+    this.stopTimer();
+    this.activeDayIndex = dayIndex;
+    this.session = draft;
+    this.pendingRir = null;
+    this.collapsedCards = new Set();
+    this.saveCurrentSession();
+    localStorage.removeItem(`gym_saved_draft_${draftId}`);
+    localStorage.removeItem(`gym_saved_draft_for_${draft.dayId}`);
+    this.summaryModalEl?.classList.remove('open');
+    this.render();
+    return true;
+  }
+
   loadSession(dayIndex = this.activeDayIndex) {
     const day = this.routine[dayIndex] || this.routine[0];
     const saved = localStorage.getItem(this.getSessionKey(day.id)) || localStorage.getItem(this.storageKeys.legacyCurrentSession);
@@ -440,6 +519,7 @@ class WorkoutApp {
       try {
         const parsed = JSON.parse(saved);
         if (parsed.dayId === day.id && parsed.logs && typeof parsed.logs === 'object') {
+          if (this.history.some(workout => workout.sessionId === parsed.id)) return this.initNewSession(dayIndex);
           parsed.swaps ||= {};
           // Only a provably untouched session may be recalculated when deload changes.
           const untouched = parsed.initialLogs && JSON.stringify(parsed.logs) === JSON.stringify(parsed.initialLogs) && !parsed.startTime && Object.keys(parsed.swaps).length === 0;
@@ -458,6 +538,7 @@ class WorkoutApp {
     this.session.id ||= `s_${this.session.dayId}_${Date.now()}`;
     this.session.updatedAt = new Date().toISOString();
     localStorage.setItem(this.getSessionKey(this.session.dayId), JSON.stringify(this.session));
+    localStorage.setItem('gym_last_active_day_v1', this.session.dayId);
   }
 
   initNewSession(dayIndex) {
@@ -467,6 +548,7 @@ class WorkoutApp {
       dayId: day.id,
       dayTitle: day.title,
       startTime: null,
+      createdAt: new Date().toISOString(),
       logs: {},
       swaps: {},
       disabledSupersets: {},
@@ -620,15 +702,17 @@ class WorkoutApp {
     const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
     if (!this.session.startTime) this.session.startTime = new Date().toISOString();
-    const parsed = newWeight === null || newWeight === '' ? NaN : Number(newWeight);
-    const value = Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+    const blank = newWeight === null || String(newWeight).trim() === '';
+    const parsed = blank ? NaN : Number(newWeight);
+    const value = blank ? null : Number.isFinite(parsed) ? parsed : String(newWeight);
+    const valid = Number.isFinite(value) && value >= 0;
     const affected = [setIdx];
-    if (setIdx === 0 && value !== null) list.forEach((set, idx) => {
+    if (setIdx === 0 && valid) list.forEach((set, idx) => {
       if (idx > 0 && !set.completed && (!set.exerciseName || !list[0].exerciseName || set.exerciseName === list[0].exerciseName)) affected.push(idx);
     });
     affected.forEach(idx => {
       list[idx].weight = value;
-      list[idx].needsBaseline = value === null;
+      list[idx].needsBaseline = !valid;
       const row = this.exerciseListEl.querySelector(`.set-row[data-exid="${exId}"][data-setidx="${idx}"]`);
       if (!row) return;
       const input = row.querySelector('.set-weight-input');
@@ -648,11 +732,21 @@ class WorkoutApp {
     const list = this.session && this.session.logs && this.session.logs[exId];
     if (!list || !list[setIdx]) return;
     if (!this.session.startTime) this.session.startTime = new Date().toISOString();
-    list[setIdx].reps = Math.max(0, parseInt(newReps, 10) || 0);
+    const blank = newReps === null || String(newReps).trim() === '';
+    const parsed = blank ? NaN : Number(newReps);
+    list[setIdx].reps = blank ? '' : Number.isFinite(parsed) ? parsed : String(newReps);
     const input = this.exerciseListEl.querySelector(`.set-reps-input[data-exid="${exId}"][data-setidx="${setIdx}"]`);
     if (input && document.activeElement !== input) input.value = list[setIdx].reps;
     this.saveCurrentSession();
     this.updateNowLiftingHUD();
+  }
+
+  getSetValidationError(set) {
+    if (set.weight === null || set.weight === '' || !Number.isFinite(set.weight) || set.weight < 0 || set.needsBaseline)
+      return 'Enter a valid load of 0 lb or more for this equipment.';
+    if (!Number.isInteger(set.reps) || set.reps <= 0)
+      return 'Enter a positive whole number of reps before completing this set.';
+    return '';
   }
 
   getPreviousExercisePerformance(exerciseName) {
@@ -1224,8 +1318,9 @@ class WorkoutApp {
     const setObj = this.session.logs[exId] && this.session.logs[exId][setIdx];
     if (!setObj) return;
     const ex = this.findExerciseById(exId);
-    if (!setObj.completed && (setObj.weight === null || setObj.needsBaseline || !Number.isFinite(Number(setObj.weight)))) {
-      this.showToast('Enter a load for this equipment before completing the set.');
+    const validationError = this.getSetValidationError(setObj);
+    if (!setObj.completed && validationError) {
+      this.showToast(validationError);
       return;
     }
 
@@ -1234,6 +1329,7 @@ class WorkoutApp {
     }
 
     setObj.completed = !setObj.completed;
+    delete setObj.rirAnswered;
     if (setObj.completed) {
       const activeSwap = this.session.swaps?.[exId];
       setObj.exerciseName = setObj.exerciseName || this.getEffectiveExerciseName(exId, ex);
@@ -2040,6 +2136,21 @@ class WorkoutApp {
 
   // Workout Completion & Summary
   showWorkoutSummary() {
+    const sets = Object.values(this.session?.logs || {}).flat();
+    const completed = sets.filter(set => set.completed).length;
+    if (!completed) { this.showToast('Complete at least one set before finishing.'); return; }
+    const sessionId = this.session.id;
+    const remaining = sets.length - completed;
+    this.summaryContentEl.innerHTML = `<h2>Review workout</h2><p>${this.escapeHtml(this.session.dayTitle)}</p><p><strong>${completed} sets completed · ${remaining} remaining</strong></p><p>Your workout stays open until you confirm.</p><button class="primary-btn" id="keepTrainingBtn">Keep training</button><button class="secondary-btn" id="confirmFinishBtn">${remaining ? 'Finish early' : 'Finish workout'}</button>`;
+    this.summaryModalEl.classList.add('open');
+    document.getElementById('keepTrainingBtn')?.addEventListener('click', () => this.summaryModalEl.classList.remove('open'));
+    document.getElementById('confirmFinishBtn')?.addEventListener('click', () => this.finishSession(sessionId));
+  }
+
+  finishSession(expectedId = this.session?.id) {
+    if (!this.session || expectedId !== this.session.id || this.history.some(w => w.sessionId === expectedId)) return false;
+    const invalid = Object.values(this.session.logs || {}).flat().find(set => set.completed && this.getSetValidationError(set));
+    if (invalid) { this.showToast(this.getSetValidationError(invalid)); return false; }
     const currentDay = this.routine[this.activeDayIndex];
     if (!currentDay) return;
 
@@ -2054,14 +2165,10 @@ class WorkoutApp {
       return;
     }
 
-    let durationMins = Math.max(15, totalCompletedSets * 3);
-    if (this.session && this.session.startTime) {
-      const startMs = new Date(this.session.startTime).getTime();
-      const elapsedMins = Math.round((Date.now() - startMs) / 60000);
-      if (elapsedMins > 0 && elapsedMins <= 240) {
-        durationMins = elapsedMins;
-      }
-    }
+    const startMs = Date.parse(this.session.startTime);
+    const durationSeconds = Number.isFinite(startMs) ? Math.max(0, Math.floor((Date.now() - startMs) / 1000)) : null;
+    const durationMins = durationSeconds === null ? null : Math.floor(durationSeconds / 60);
+    const durationLabel = durationSeconds === null ? 'Not recorded' : durationSeconds < 60 ? '<1 min' : `${durationMins} min`;
 
     let totalVolume = 0;
     const newPRs = [];
@@ -2107,7 +2214,7 @@ class WorkoutApp {
 
     // Save to history
     const workoutRecord = {
-      id: 'w_' + Date.now(),
+      id: 'w_' + this.session.id,
       sessionId: this.session.id,
       dayId: currentDay.id,
       date: new Date().toISOString(),
@@ -2116,12 +2223,18 @@ class WorkoutApp {
       totalVolume,
       totalCompletedSets,
       durationMins,
+      durationSeconds,
+      durationLabel,
+      sessionSnapshot: JSON.parse(JSON.stringify(this.session)),
       exercises: recordedExercises
     };
 
     this.history.push(workoutRecord);
     this.saveHistory();
 
+    this.stopTimer();
+    this.pendingRir = null;
+    this.collapsedCards = new Set();
     // Reset current session
     this.session = this.initNewSession(this.activeDayIndex);
     this.saveCurrentSession();
@@ -2144,7 +2257,7 @@ class WorkoutApp {
           <div class="stat-label">Sets Finished</div>
         </div>
         <div class="stat-box">
-          <div class="stat-val">${durationMins}m</div>
+          <div class="stat-val">${this.escapeHtml(durationLabel)}</div>
           <div class="stat-label">Duration</div>
         </div>
       </div>
@@ -2170,16 +2283,46 @@ class WorkoutApp {
       ` : ''}
 
       <button class="primary-btn" id="finishSummaryBtn">Done & View Progress</button>
+      <button class="secondary-btn" id="reopenSummaryBtn">Reopen this workout</button>
     `;
 
     this.summaryModalEl.classList.add('open');
 
+    document.getElementById('reopenSummaryBtn')?.addEventListener('click', () => this.reopenWorkout(workoutRecord.id));
     document.getElementById('finishSummaryBtn')?.addEventListener('click', () => {
       this.summaryModalEl.classList.remove('open');
       document.querySelector('[data-view="analytics"]').click();
     });
 
     this.renderWorkout();
+  }
+
+  reopenWorkout(recordId) {
+    const record = this.history.find(workout => workout.id === recordId);
+    if (!record?.sessionSnapshot) { this.showToast('This older workout has no recoverable session draft.'); return false; }
+    const dayIndex = this.routine.findIndex(day => day.id === record.dayId);
+    if (dayIndex < 0) { this.showToast('Restore this workout’s routine day before reopening.'); return false; }
+    const saved = this.loadSession(dayIndex);
+    if (this.hasSessionProgress(saved) && saved.id !== record.sessionId) {
+      this.showToast('A newer workout is in progress for this day. Finish it or start a new draft before reopening.');
+      return false;
+    }
+    this.saveCurrentSession();
+    this.stopTimer();
+    this.activeDayIndex = dayIndex;
+    this.session = JSON.parse(JSON.stringify(record.sessionSnapshot));
+    this.history = this.history.filter(workout => workout.id !== recordId);
+    this.saveHistory();
+    this.rebuildLastWeightsFromHistory();
+    this.pendingRir = null;
+    this.collapsedCards = new Set();
+    this.saveCurrentSession();
+    this.summaryModalEl?.classList.remove('open');
+    this.activeView = 'workout';
+    document.querySelector('[data-view="workout"]')?.click();
+    this.render();
+    this.jumpToActiveExercise?.();
+    return true;
   }
 
   getAllUniqueExercises() {
@@ -2927,10 +3070,12 @@ class WorkoutApp {
   validateBackup(data) {
     const object = value => value && typeof value === 'object' && !Array.isArray(value);
     const setsValid = sets => Array.isArray(sets) && sets.every(s => object(s) && (s.weight === null || Number.isFinite(Number(s.weight))) && Number.isFinite(Number(s.reps)) && Number(s.reps) >= 0 && Number(s.weight) >= 0);
+    const draftSetsValid = sets => Array.isArray(sets) && sets.every(s => object(s) &&
+      [s.weight, s.reps].every(value => value === null || typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))));
     if (!object(data) || !['routine', 'history', 'sessions'].some(key => key in data)) throw new Error('This is not a workout backup');
     if (data.routine !== undefined && (!Array.isArray(data.routine) || !data.routine.length || !data.routine.every(d => object(d) && typeof d.id === 'string' && Array.isArray(d.exercises) && d.exercises.every(ex => object(ex) && typeof ex.id === 'string' && typeof ex.name === 'string' && Number.isInteger(ex.sets) && ex.sets > 0 && typeof ex.targetReps === 'string')))) throw new Error('Invalid routine in backup');
     if (data.history !== undefined && (!Array.isArray(data.history) || !data.history.every(h => object(h) && typeof h.id === 'string' && Number.isFinite(new Date(h.date).getTime()) && object(h.exercises) && Object.values(h.exercises).every(ex => object(ex) && setsValid(ex.sets))))) throw new Error('Invalid workout history in backup');
-    if (data.sessions !== undefined && (!Array.isArray(data.sessions) || !data.sessions.every(session => object(session) && typeof session.dayId === 'string' && object(session.logs) && Object.values(session.logs).every(setsValid)))) throw new Error('Invalid sessions in backup');
+    if (data.sessions !== undefined && (!Array.isArray(data.sessions) || !data.sessions.every(session => object(session) && typeof session.dayId === 'string' && object(session.logs) && Object.values(session.logs).every(draftSetsValid)))) throw new Error('Invalid sessions in backup');
     ['machineSettings', 'exerciseNotes', 'lastWeights', 'exercisePreferences', 'timer'].forEach(key => { if (data[key] !== undefined && !object(data[key])) throw new Error(`Invalid ${key} in backup`); });
     if (data.exercisePreferences && !Object.values(data.exercisePreferences).every(pref => object(pref) && (pref.increment === undefined || [1, 2.5, 5, 10].includes(pref.increment)))) throw new Error('Invalid exercise preferences');
     if (data.lastWeights && !Object.values(data.lastWeights).every(entry => object(entry) && Array.isArray(entry.sets) && setsValid(entry.sets.filter(Boolean)))) throw new Error('Invalid previous weights');
