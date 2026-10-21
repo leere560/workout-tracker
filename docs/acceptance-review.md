@@ -33,3 +33,22 @@ Replaced the crowded side-by-side day title/progress block with a padded session
 Checked 375, 402, 430 and 1024 pixel widths: no horizontal overflow, a 44px Finish button, aligned panel edges, and a full-width track. At 402 x 874 the complete first set remains above the bottom dock. Completing a set updates the displayed count and progressbar value; Finish still opens the session summary. All 32 regression tests and JavaScript syntax checks pass. Physical iPhone verification remains outstanding.
 
 ![Refined mobile header](header-preview.jpg)
+
+## Workflow and design release v29 (2026-10-20)
+
+Implemented all eight recommendations in design-use-audit-2026-10-20.md. The routine invariant test confirms the prescribed program is unchanged.
+
+- Current set: compact completed rows retain Edit and unanswered effort controls. Next set reveals the actual row above the dock. Final-set effort remains available; a completed workout presents Review & finish.
+- Finish: review and Keep training preserve the active session. Confirm archives once and stops rest. Short elapsed sessions show <1 min. Recoverable snapshots reopen through the summary or Progress; a newer progressed draft is protected.
+- Resume: last progressed day resumes on reload. Stale sessions have dated Resume/Start new choices. Start new preserves the old draft; the overview offers restoration. Backups include retained drafts and the selected day, including incomplete invalid input. Storage-write failures roll back finish/reopen changes.
+- Design: compact combined progress/overview, consistent SVG navigation icons, flatter surfaces, readable secondary text, and Warmup/Swap plus saved setup cues near the heading.
+- Rest: visible minimum-rest countdown replaces reliance on hover explanations; original straight-set and superset timing rules remain.
+- Progress/settings: recent saved workout first, latest/previous lift comparison, expandable detailed trends and muscle volume, concise program overview, named toggles, and clear Backup/Update controls.
+- Validation: completed working sets require valid load and positive whole reps. Blank or invalid pending edits remain available to correct.
+
+Validation: `node --test tests/*.test.cjs` passes all 45 tests; JavaScript syntax and diff checks pass. Browser acceptance at 402 x 874 covers actual next-set reveal, compact Edit/Done, blocked zero-rep edits, Keep training, Finish early, timer stop, Reopen, pending final effort, off-schedule reload, Start new/Restore, alternating supersets, 75-second curl rest, saved setup cues, and a full 15-set workout. Widths 375, 390, 402, 430 and 1024 showed no horizontal overflow or visible controls below 44px, with form text at least 16px. Browser error/warning log was empty.
+
+Screenshots use local test data. Physical iPhone Safari keyboard, VoiceOver and locked-screen alerts remain device checks. No production deployment was performed for this release.
+
+![Workout workflow](workflow-preview.jpg)
+![Recent workouts and lift comparison](progress-preview.jpg)

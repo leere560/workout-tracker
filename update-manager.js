@@ -18,7 +18,7 @@
   }
 
   async function check() {
-    if (!registration) registration = await navigator.serviceWorker.register('./sw.js?v=28');
+    if (!registration) registration = await navigator.serviceWorker.register('./sw.js?v=29');
     await registration.update();
     if (registration.installing) {
       const worker = registration.installing;
@@ -59,7 +59,7 @@
   });
   window.addEventListener('load', async () => {
     try {
-      registration = await navigator.serviceWorker.register('./sw.js?v=28');
+      registration = await navigator.serviceWorker.register('./sw.js?v=29');
       registration.addEventListener('updatefound', () => {
         const worker = registration.installing;
         worker?.addEventListener('statechange', () => {

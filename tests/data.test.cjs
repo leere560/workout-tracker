@@ -80,7 +80,7 @@ test('finishing a swapped session keeps completed identities separate and deload
  app.lastWeights={[ex.name]:{date:'2026-10-01',sets:[{weight:120,reps:8}]}};
  app.getPersonalRecord=()=>({maxWeight:0,bestReps:0});app.escapeHtml=v=>String(v);app.summaryContentEl={innerHTML:''};app.summaryModalEl={classList:{add(){}}};context.document.getElementById=()=>null;
  app.initNewSession=()=>({id:'new',dayId:app.routine[0].id,logs:{},swaps:{},deload:true});
- app.showWorkoutSummary();const result=app.history[0];
+ app.stopTimer=()=>{};app.finishSession();const result=app.history[0];
  assert.equal(result.exercises[ex.name].sets[0].weight,100);assert.equal(result.exercises['Dumbbell Bench Press'].sets[0].weight,35);assert.equal(result.sessionId,'mixed');assert.equal(result.deload,true);assert.equal(app.lastWeights[ex.name].sets[0].weight,120);assert.equal(result.totalVolume,1150);
 });
 test('imported history stays chronological and does not replace newer equipment baseline',()=>{
