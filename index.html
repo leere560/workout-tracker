@@ -27,13 +27,13 @@
 
       <nav class="nav-tabs">
         <button class="nav-btn active" data-view="workout">
-          <span>⚡</span> Workout
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7v10M3 9v6m15-8v10m3-8v6M6 12h12"/></svg> Workout
         </button>
         <button class="nav-btn" data-view="analytics">
-          <span>📈</span> Progress
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16h16M7 15l4-5 4 3 5-7"/></svg> Progress
         </button>
         <button class="nav-btn" data-view="routine">
-          <span>⚙️</span> Routine
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18m12-18v18M3 8h6m6 8h6"/><circle cx="6" cy="8" r="2"/><circle cx="18" cy="16" r="2"/></svg> Routine
         </button>
       </nav>
     </div>
@@ -52,21 +52,12 @@
         </div>
       </div>
 
-      <!-- Active Session Control Bar -->
-      <section class="session-bar" aria-labelledby="sessionHeading">
-        <div class="session-heading">
-          <h2 id="sessionHeading">Session progress</h2>
-          <div class="session-actions-group">
-            <div class="wake-lock-status-badge" id="wakeLockBadge" title="Screen awake status">
-              🛡️ <span class="wake-dot">●</span> Screen Awake
-            </div>
-            <button class="finish-btn" id="finishWorkoutBtn">
-              <span aria-hidden="true">✓</span> Finish workout
-            </button>
-          </div>
-        </div>
-        <div class="session-info" id="sessionInfo">
-          <!-- Progress and duration populated dynamically -->
+      <!-- Combined progress and exercise overview -->
+      <section class="session-bar" aria-label="Session progress and overview">
+        <div class="session-info" id="sessionInfo"></div>
+        <div class="session-actions-group">
+          <div class="wake-lock-status-badge" id="wakeLockBadge" title="Screen awake status"><span class="wake-dot">●</span> Screen awake</div>
+          <button class="finish-btn" id="finishWorkoutBtn">Finish workout</button>
         </div>
       </section>
 
@@ -120,6 +111,7 @@
         <button class="timer-btn skip-btn" id="timerSkipBtn">Skip</button>
       </div>
     </div>
+    <p class="timer-minimum-status" id="timerMinimumStatus" role="status"></p>
   </div>
 
   </aside>

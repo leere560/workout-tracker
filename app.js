@@ -1029,23 +1029,36 @@ class WorkoutApp {
     }, 0);
     const normalSets = core.reduce((sum, ex) => sum + ex.sets, 0);
     const reducedSets = core.reduce((sum, ex) => sum + Math.max(2, Math.floor(ex.sets * .67)), 0);
-    this.sessionInfoEl.innerHTML = `${this.deloadActive ? `<div class="deload-banner">Deload: ${reducedSets} of ${normalSets} planned sets (${Math.round((normalSets - reducedSets) / normalSets * 100)}% fewer), loads eased 10%.</div>` : ''}
-      <div class="session-meta"><span class="session-completion"><strong>${complete}</strong> / ${total} sets</span><span class="session-duration">~${Math.ceil(estimateSeconds / 60)} min planned</span></div>
-      <div class="workout-progress-track" role="progressbar" aria-label="Workout sets" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${complete}"><div class="workout-progress-fill" style="width:${total ? complete / total * 100 : 0}%"></div></div>`;
     const next = this.getNextSet();
     const pending = this.pendingRir && day.exercises.find(ex => ex.id === this.pendingRir.exId);
-    const focus = pending || day.exercises.find(ex => ex.id === this.focusedExerciseId) || (next && next.ex) || core[0];
+    const focus = day.exercises.find(ex => ex.id === this.focusedExerciseId) || (next && next.ex) || pending || core[0];
     const visible = focus ? day.exercises.filter(ex => ex.id === focus.id ||
       (this.isSupersetEnabled(focus) && this.isSupersetEnabled(ex) && ex.superset.id === focus.superset.id)) : [];
-    this.exerciseListEl.innerHTML = `<details class="workout-overview">
-      <summary>Workout overview · ${day.exercises.length} exercises</summary>
+    const overviewOpen = this.sessionInfoEl.querySelector('.workout-overview')?.open || false;
+    this.sessionInfoEl.innerHTML = `<details class="workout-overview" ${overviewOpen ? 'open' : ''}>
+      <summary><span class="session-completion"><strong>${complete} / ${total}</strong> sets</span><span class="session-overview-label">Overview</span></summary>
+      <div class="workout-progress-track" role="progressbar" aria-label="Workout sets" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${complete}"><div class="workout-progress-fill" style="width:${total ? complete / total * 100 : 0}%"></div></div>
+      <div class="session-detail-summary">${day.exercises.length} exercises · ~${Math.ceil(estimateSeconds / 60)} min planned</div>
+      ${this.deloadActive ? `<div class="deload-banner">Deload: ${reducedSets} of ${normalSets} planned sets (${Math.round((normalSets - reducedSets) / normalSets * 100)}% fewer), loads eased 10%.</div>` : ''}
       <div class="overview-list">${day.exercises.map(ex => {
         const sets = this.session.logs[ex.id] || [];
-        return `<button type="button" class="overview-exercise ${visible.includes(ex) ? 'selected' : ''}" data-exid="${ex.id}"><span>${this.escapeHtml(this.getEffectiveExerciseName(ex.id, ex))}${ex.isOptional ? ' · Optional' : ''}</span><span>${sets.filter(set => set.completed).length}/${sets.length}</span></button>`;
+        const pendingEffort = sets.filter(set => set.completed && !set.rirAnswered && set.rir == null).length;
+        return `<button type="button" class="overview-exercise ${visible.includes(ex) ? 'selected' : ''}" data-exid="${ex.id}"><span>${this.escapeHtml(this.getEffectiveExerciseName(ex.id, ex))}${ex.isOptional ? ' · Optional' : ''}${pendingEffort ? `<small>${pendingEffort} effort ${pendingEffort === 1 ? 'entry' : 'entries'} pending</small>` : ''}</span><span>${sets.filter(set => set.completed).length}/${sets.length}</span></button>`;
       }).join('')}</div>
-    </details>${this.focusedExerciseId && next && this.focusedExerciseId !== next.ex.id ? '<button type="button" class="secondary-btn return-next-btn">Return to next set</button>' : ''}
+    </details>`;
+    const pendingSet = pending && this.session.logs[pending.id]?.[this.pendingRir.setIdx];
+    const effortPrompt = pending && !visible.includes(pending) && pendingSet?.completed && !pendingSet.rirAnswered ? `<aside class="pending-effort" aria-label="Last exercise effort">
+      <p><strong>Last set: ${this.escapeHtml(pendingSet.exerciseName || pending.name)}</strong></p>${this.renderEffortPrompt(pending.id, this.pendingRir.setIdx, pendingSet)}
+    </aside>` : '';
+    this.exerciseListEl.innerHTML = `${effortPrompt}${this.focusedExerciseId && next && this.focusedExerciseId !== next.ex.id ? '<button type="button" class="secondary-btn return-next-btn">Return to next set</button>' : ''}
     ${visible.map(ex => this.renderExerciseCard(ex, ex.isOptional)).join('')}`;
     this.bindWorkoutCardEvents();
+  }
+
+  renderEffortPrompt(exId, setIdx, set) {
+    return `<div class="rir-selector-row" data-exid="${exId}" data-setidx="${setIdx}" tabindex="-1" aria-label="Set ${setIdx + 1} effort">
+      <span class="rir-prompt">Reps left in reserve</span>${[3,2,1,0].map(rir => `<button type="button" class="rir-chip ${set.rir === rir ? 'active' : ''}" data-exid="${exId}" data-setidx="${setIdx}" data-rir="${rir}" aria-label="${rir === 3 ? '3 or more' : rir} reps left in reserve" aria-pressed="${set.rir === rir}">${rir === 3 ? '3+' : rir}</button>`).join('')}<button type="button" class="rir-chip" data-exid="${exId}" data-setidx="${setIdx}" data-rir="skip">Skip effort</button>
+    </div>`;
   }
 
   renderExerciseCard(ex, isBonus) {
@@ -1064,24 +1077,38 @@ class WorkoutApp {
     const next = this.getNextSet();
     const allDone = sets.length > 0 && sets.every(set => set.completed);
     const pending = this.pendingRir && this.pendingRir.exId === ex.id;
-    const collapsed = allDone && this.collapsedCards.has(ex.id) && !pending;
+    const collapsed = false; // Completed sets remain individually reviewable; effort is never hidden.
     const enabled = this.isSupersetEnabled(ex);
     const progression = this.getPreviousProgressionFlag(name, targetReps, this.deloadActive ? Math.max(2, Math.floor(ex.sets * .67)) : ex.sets, ex);
+    const position = this.routine[this.activeDayIndex].exercises.findIndex(item => item.id === ex.id) + 1;
+    const exerciseCount = this.routine[this.activeDayIndex].exercises.length;
+    const seat = this.machineSettings[ex.id] || '';
+    const note = this.exerciseNotes[name] || '';
     return `<article class="exercise-card focused-card ${allDone ? 'completed' : ''}" id="card_${ex.id}" data-exid="${ex.id}">
       <div class="card-header">
-        <div class="focus-card-eyebrow">${this.escapeHtml(ex.muscle)}${isBonus ? ' · Optional' : ''}${enabled ? ` · Superset ${this.escapeHtml(ex.superset.tag)}` : ''}</div>
+        <div class="focus-card-eyebrow">Exercise ${position} of ${exerciseCount} · ${this.escapeHtml(ex.muscle)}${isBonus ? ' · Optional' : ''}${enabled ? ` · Superset ${this.escapeHtml(ex.superset.tag)}` : ''}</div>
         <h3 class="exercise-name">${this.escapeHtml(name)}</h3>
         ${swapped ? `<div class="muted-text">Alternative for ${this.escapeHtml(ex.name)}</div>` : ''}
         <div class="focus-prescription">${sets.length} sets × ${this.escapeHtml(targetReps)} reps · Rest ${rest}</div>
         <div class="load-convention">Weight in lbs · ${conventionLabel}</div>
+        <div class="exercise-heading-tools"><button type="button" class="warmup-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(name)}" ${sets.some(set => set.needsBaseline || set.weight === null) ? 'disabled title="Enter a baseline weight first"' : ''}>Warmup</button><button type="button" class="swap-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(ex.name)}">Swap equipment</button></div>
+        <div class="saved-setup-cue" ${!seat && !note ? 'hidden' : ''}><span class="saved-seat-cue">${seat ? `Seat / pin: ${this.escapeHtml(seat)}` : ''}</span><span class="saved-note-cue">${this.escapeHtml(note)}</span></div>
       </div>
       ${collapsed ? `<button type="button" class="card-collapse-toggle-btn" data-exid="${ex.id}">✓ All sets complete · Review sets</button>` : `<div class="set-blocks">
       ${sets.map((set, idx) => {
         const prev = previous && previous.sets && previous.sets[idx];
         const target = this.getSetTarget(ex, idx, name);
         const needsBaseline = set.needsBaseline || set.weight === null;
+        const editing = this.editingCompletedSet?.exId === ex.id && this.editingCompletedSet?.setIdx === idx;
+        if (set.completed && !editing) {
+          const effortText = set.rir != null ? `${set.rir === 3 ? '3+' : set.rir} RIR` : set.rirAnswered ? 'Effort skipped' : '';
+          return `<section class="set-row completed completed-set-row" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Completed set ${idx + 1}">
+            <div class="completed-set-summary"><span><strong>✓ Set ${idx + 1}</strong> · ${set.weight === 0 ? 'BW' : set.weight + ' lb'} × ${set.reps}${effortText ? `<small>${effortText}</small>` : ''}${set.exerciseName && set.exerciseName !== name ? `<small>${this.escapeHtml(set.exerciseName)}</small>` : ''}</span><button type="button" class="edit-set-btn" data-exid="${ex.id}" data-setidx="${idx}">Edit<span class="sr-only"> set ${idx + 1}</span></button></div>
+            ${!set.rirAnswered && set.rir == null ? this.renderEffortPrompt(ex.id, idx, set) : ''}
+          </section>`;
+        }
         return `<section class="set-row set-block ${set.completed ? 'completed' : ''} ${next && next.ex.id === ex.id && next.setIdx === idx ? 'active-next-set' : ''}" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Set ${idx + 1}">
-          <div class="set-heading"><strong>Set ${idx + 1}${next && next.ex.id === ex.id && next.setIdx === idx ? ' · Up next' : ''}</strong><span>Target ${this.escapeHtml(target.targetRepsDisplay)} reps${!needsBaseline && target.targetWeight > 0 ? ` · ${target.targetWeightDisplay} lb` : ''}</span></div>
+          <div class="set-heading" tabindex="-1"><strong>Set ${idx + 1}${next && next.ex.id === ex.id && next.setIdx === idx ? ' · Up next' : ''}</strong><span>Target ${this.escapeHtml(target.targetRepsDisplay)} reps${!needsBaseline && target.targetWeight > 0 ? ` · ${target.targetWeightDisplay} lb` : ''}</span></div>
           <div class="previous-set">Last: ${prev ? `${prev.weight === 0 ? 'BW' : prev.weight + ' lb'} × ${prev.reps}` : 'No previous set'}${set.completed && set.exerciseName && set.exerciseName !== name ? ` · Logged as ${this.escapeHtml(set.exerciseName)}` : ''}</div>
           ${needsBaseline ? '<p class="baseline-prompt">Enter a baseline weight for this equipment (0 for bodyweight).</p>' : ''}
           <div class="set-entry-grid">
@@ -1089,14 +1116,14 @@ class WorkoutApp {
             <label>Reps<span class="stepper-wrap reps-stepper"><button type="button" class="stepper-btn" data-type="reps" data-delta="-1" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Decrease set ${idx + 1} reps">−</button><input type="number" class="set-input set-reps-input" value="${set.reps}" data-exid="${ex.id}" data-setidx="${idx}" min="0" step="1" inputmode="numeric" aria-label="Set ${idx + 1} reps"><button type="button" class="stepper-btn" data-type="reps" data-delta="1" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Increase set ${idx + 1} reps">+</button></span></label>
           </div>
           <button type="button" class="set-check-btn" data-exid="${ex.id}" data-setidx="${idx}" data-rest="${rest}" ${needsBaseline && !set.completed ? 'disabled' : ''} aria-pressed="${set.completed}">${set.completed ? '✓ Completed · Undo' : 'Complete set'}</button>
-          ${set.completed ? `<div class="rir-selector-row"><span class="rir-prompt">Reps left in reserve</span>${[3,2,1,0].map(rir => `<button type="button" class="rir-chip ${set.rir === rir ? 'active' : ''}" data-exid="${ex.id}" data-setidx="${idx}" data-rir="${rir}" aria-pressed="${set.rir === rir}">${rir === 3 ? '3+' : rir}</button>`).join('')}<button type="button" class="rir-chip" data-exid="${ex.id}" data-setidx="${idx}" data-rir="skip">Skip effort</button></div>` : ''}
+          ${set.completed ? `${this.renderEffortPrompt(ex.id, idx, set)}<button type="button" class="done-editing-set-btn secondary-btn" data-exid="${ex.id}" data-setidx="${idx}">Done editing</button>` : ''}
         </section>`;
       }).join('')}</div>`}
       <details class="exercise-details"><summary>Setup, notes & exercise options</summary>
         <div class="exercise-detail-content">
           <p>${this.escapeHtml(notes || '')}</p>
           ${video ? `<a class="video-link-btn" href="${this.escapeHtml(video)}" target="_blank" rel="noopener noreferrer">Watch form guide ↗</a>` : ''}
-          <div class="exercise-option-buttons"><button type="button" class="warmup-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(name)}" ${sets.some(set => set.needsBaseline || set.weight === null) ? 'disabled title="Enter a baseline weight first"' : ''}>Warmup</button><button type="button" class="swap-btn secondary-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(ex.name)}">Swap equipment</button><button type="button" class="prev-weight-pill-btn" data-exname="${this.escapeHtml(name)}">Performance history</button></div>
+          <div class="exercise-option-buttons"><button type="button" class="prev-weight-pill-btn" data-exname="${this.escapeHtml(name)}">Performance history</button></div>
           ${ex.superset ? `<label class="superset-mode"><input type="checkbox" class="superset-enabled-input" data-group="${ex.superset.id}" ${enabled ? 'checked' : ''}> Alternate this superset</label><p class="muted-text">When off, use straight sets with at least 2 minutes of rest.</p>` : ''}
           <label>Weight increment<select class="exercise-increment-input" data-exname="${this.escapeHtml(name)}">${[1,2.5,5,10].map(value => `<option value="${value}" ${increment === value ? 'selected' : ''}>${value} lb</option>`).join('')}</select></label>
           <label>Weight convention<select class="exercise-convention-input" data-exname="${this.escapeHtml(name)}">${[['total','Total load'],['per-hand','Dumbbell weight per hand'],['plates-only','Smith plates only (exclude bar)'],['including-bar','Smith total including bar']].map(([value,label]) => `<option value="${value}" ${convention === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
@@ -1111,16 +1138,19 @@ class WorkoutApp {
   }
 
   bindWorkoutCardEvents() {
-    this.exerciseListEl.querySelectorAll('.overview-exercise').forEach(button => {
+    this.sessionInfoEl.querySelectorAll('.overview-exercise').forEach(button => {
       button.addEventListener('click', () => {
         this.focusedExerciseId = button.dataset.exid;
         this.collapsedCards.delete(button.dataset.exid);
         this.renderWorkout();
+        const overview = this.sessionInfoEl.querySelector('.workout-overview');
+        if (overview) overview.open = false;
+        const first = (this.session.logs[button.dataset.exid] || []).findIndex(set => !set.completed);
+        this.revealWorkoutSet(button.dataset.exid, first >= 0 ? first : 0, true);
       });
     });
     this.exerciseListEl.querySelector('.return-next-btn')?.addEventListener('click', () => {
-      this.focusedExerciseId = null;
-      this.renderWorkout();
+      this.jumpToActiveExercise();
     });
     this.exerciseListEl.querySelectorAll('.superset-enabled-input').forEach(input => {
       input.addEventListener('input', () => {
@@ -1144,6 +1174,25 @@ class WorkoutApp {
         this.renderWorkout();
         const replacement = this.exerciseListEl.querySelector(`#card_${exId} details`);
         if (replacement) replacement.open = true;
+      });
+    });
+    this.exerciseListEl.querySelectorAll('.edit-set-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        const exId = button.dataset.exid;
+        const setIdx = Number(button.dataset.setidx);
+        this.editingCompletedSet = {exId, setIdx};
+        this.focusedExerciseId = exId;
+        this.renderWorkout();
+        this.revealWorkoutSet(exId, setIdx, true);
+      });
+    });
+    this.exerciseListEl.querySelectorAll('.done-editing-set-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        const exId = button.dataset.exid;
+        const setIdx = Number(button.dataset.setidx);
+        this.editingCompletedSet = null;
+        this.renderWorkout();
+        this.revealWorkoutSet(exId, setIdx, true);
       });
     });
     // Optional finisher drawer toggle
@@ -1235,7 +1284,9 @@ class WorkoutApp {
         const setIdx = parseInt(btn.dataset.setidx, 10);
         const rest = btn.dataset.rest;
         this.focusedExerciseId = null;
+        this.editingCompletedSet = null;
         this.toggleSetCompletion(exId, setIdx, rest);
+        if (this.session.logs[exId]?.[setIdx]?.completed) this.jumpToActiveExercise({automatic: true});
       });
     });
 
@@ -1262,8 +1313,7 @@ class WorkoutApp {
       input.addEventListener('input', () => {
         const exId = input.dataset.exid;
         const setIdx = parseInt(input.dataset.setidx, 10);
-        const val = parseInt(input.value, 10) || 0;
-        this.updateSetReps(exId, setIdx, val);
+        this.updateSetReps(exId, setIdx, input.value);
       });
     });
 
@@ -1273,6 +1323,8 @@ class WorkoutApp {
         const exId = input.dataset.exid;
         this.machineSettings[exId] = input.value;
         this.saveMachineSettings();
+        const cue = input.closest('.exercise-card').querySelector('.saved-seat-cue');
+        if (cue) { cue.textContent = input.value ? 'Seat / pin: ' + input.value : ''; cue.parentElement.hidden = !cue.parentElement.textContent.trim(); }
       });
     });
 
@@ -1282,6 +1334,8 @@ class WorkoutApp {
         const key = input.dataset.exname || input.dataset.exid;
         this.exerciseNotes[key] = input.value.trim();
         this.saveExerciseNotes();
+        const cue = input.closest('.exercise-card').querySelector('.saved-note-cue');
+        if (cue) { cue.textContent = input.value.trim(); cue.parentElement.hidden = !cue.parentElement.textContent.trim(); }
       });
     });
 
@@ -1293,6 +1347,7 @@ class WorkoutApp {
         const setIdx = parseInt(chip.dataset.setidx, 10);
         const rir = chip.dataset.rir === 'skip' ? null : parseInt(chip.dataset.rir, 10);
         this.setSetRIR(exId, setIdx, rir);
+        if (!this.editingCompletedSet) this.jumpToActiveExercise({automatic: true});
       });
     });
 
@@ -1418,14 +1473,39 @@ class WorkoutApp {
     dock.style.display = 'flex';
   }
 
-  jumpToActiveExercise() {
+  revealWorkoutSet(exId, setIdx, focus = false, automatic = false) {
+    // Value-entry handlers preserve their input nodes; navigation must not steal their keyboard.
+    if (document.activeElement?.matches('input, textarea, select, [contenteditable="true"]')) return;
+    const row = this.exerciseListEl.querySelector(`.set-row[data-exid="${exId}"][data-setidx="${setIdx}"]`);
+    if (!row) return;
+    const dock = document.querySelector('.workout-dock');
+    const dockRect = dock?.getBoundingClientRect();
+    const viewportHeight = window.visualViewport?.height || window.innerHeight;
+    const bottom = dockRect && dockRect.height > 0 ? Math.min(viewportHeight, dockRect.top) - 12 : viewportHeight - 12;
+    const header = document.querySelector('.app-header');
+    const sticky = header && ['sticky', 'fixed'].includes(window.getComputedStyle(header).position);
+    const top = sticky ? Math.max(12, header.getBoundingClientRect().bottom + 12) : 12;
+    const rect = row.getBoundingClientRect();
+    if (rect.top < top || rect.bottom > bottom) {
+      const targetTop = Math.max(0, window.scrollY + rect.top - top);
+      window.scrollTo({top: targetTop, behavior: automatic || window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
+    }
+    if (focus) (row.querySelector('.set-heading, .edit-set-btn, .rir-selector-row') || row).focus({preventScroll: true});
+  }
+
+  jumpToActiveExercise({automatic = false} = {}) {
+    if (document.activeElement?.matches('input, textarea, select, [contenteditable="true"]')) return;
     const next = this.getNextSet();
-    if (!next) return;
+    if (!next) {
+      const effort = this.exerciseListEl.querySelector('.rir-selector-row');
+      if (effort) { effort.scrollIntoView({block: 'center', behavior: 'instant'}); effort.focus({preventScroll: true}); }
+      return;
+    }
+    const selector = `.set-row[data-exid="${next.ex.id}"][data-setidx="${next.setIdx}"]`;
     this.focusedExerciseId = null;
     this.collapsedCards.delete(next.ex.id);
-    this.renderWorkout();
-    const card = document.getElementById('card_' + next.ex.id);
-    if (card) card.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start'});
+    if (!this.exerciseListEl.querySelector(selector)) this.renderWorkout();
+    this.revealWorkoutSet(next.ex.id, next.setIdx, true, automatic);
   }
 
   // Rest Timer Controller
