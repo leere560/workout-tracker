@@ -2714,225 +2714,75 @@ class WorkoutApp {
   }
 
   // Analytics & History View
+  renderHistoryCard(workout) {
+    const title = this.escapeHtml(workout.dayTitle || 'Workout');
+    const date = new Date(workout.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const id = this.escapeHtml(workout.id);
+    const duration = workout.durationLabel || (Number.isFinite(workout.durationMins) ? `${workout.durationMins} min` : 'Duration unavailable');
+    return `<article class="history-item insight-history">
+      <div class="insight-history-heading"><h3>${title}</h3><time datetime="${this.escapeHtml(workout.date)}">${date}</time></div>
+      <p class="insight-meta">${workout.totalCompletedSets || 0} sets · ${this.escapeHtml(duration)}${workout.deload ? ' · Deload' : ''}</p>
+      <details class="insight-details"><summary>Exercise sets</summary>
+        ${Object.entries(workout.exercises || {}).map(([name, entry]) => `<div class="insight-set-list"><h4>${this.escapeHtml(name)}</h4><ul>${(entry.sets || []).filter(Boolean).map(set => `<li>Set ${set.setNum}: ${set.weight === 0 ? 'Bodyweight' : `${set.weight} lb`} × ${set.reps}${typeof set.rir === 'number' ? ` · ${set.rir} RIR` : ''}</li>`).join('')}</ul></div>`).join('')}
+        <p class="insight-meta">Recorded volume: ${(workout.totalVolume || 0).toLocaleString()} lb</p>
+      </details>
+      <div class="insight-actions">${workout.sessionSnapshot ? `<button type="button" class="secondary-btn history-reopen-btn" data-wid="${id}" aria-label="Reopen ${title}, ${date}">Reopen workout</button>` : ''}<button type="button" class="history-delete-btn" data-wid="${id}" aria-label="Delete ${title}, ${date}">Delete</button></div>
+    </article>`;
+  }
+
+  getLiftComparisonHTML(exHistory) {
+    if (!exHistory.length) return '<p class="insight-empty">No saved sets for this lift yet. Finish a workout to start comparing sessions.</p>';
+    const best = session => session.sets.filter(s => s && s.completed !== false).slice().sort((a, b) => (b.weight || 0) - (a.weight || 0) || (b.reps || 0) - (a.reps || 0))[0];
+    const latest = exHistory[exHistory.length - 1];
+    const previous = exHistory.length > 1 ? exHistory[exHistory.length - 2] : null;
+    const formatDate = date => new Date(date).toLocaleDateString('en-US', {month:'short', day:'numeric'});
+    const format = set => set ? `${set.weight === 0 ? 'Bodyweight' : `${set.weight} lb`} × ${set.reps}` : 'No completed sets';
+    const lastBest = best(latest);
+    const priorBest = previous ? best(previous) : null;
+    const signed = value => value > 0 ? `+${value}` : String(value);
+    const delta = priorBest && lastBest ? `${signed(Math.round(((lastBest.weight || 0) - (priorBest.weight || 0)) * 100) / 100)} lb and ${signed((lastBest.reps || 0) - (priorBest.reps || 0))} reps at the heaviest set` : '';
+    return `<div class="lift-comparison"><div><span class="insight-meta">Latest · ${formatDate(latest.date)}</span><strong>${format(lastBest)}</strong><span class="insight-meta">${latest.sets.filter(Boolean).length} sets recorded</span></div><div><span class="insight-meta">${previous ? `Previous · ${formatDate(previous.date)}` : 'Previous session'}</span><strong>${previous ? format(priorBest) : 'First session'}</strong><span class="insight-meta">${previous ? `${previous.sets.filter(Boolean).length} sets recorded` : 'Your starting point'}</span></div></div>${delta ? `<p class="lift-comparison-note">${delta}. Compare reps and load together.</p>` : ''}`;
+  }
+
   renderAnalytics() {
-    const totalWorkouts = this.history.length;
-    const totalVolumeAllTime = this.history.reduce((sum, h) => sum + (h.totalVolume || 0), 0);
-
-    const allExercises = this.getAllUniqueExercises();
-    if (!this.selectedProgressExercise && allExercises.length > 0) {
-      this.selectedProgressExercise = allExercises[0].name;
-    }
-
+    const sortedHistory = [...this.history].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const names = [...new Set([...this.getAllUniqueExercises().map(ex => ex.name), ...sortedHistory.flatMap(h => Object.keys(h.exercises || {}))])];
+    if (!this.selectedProgressExercise || !names.includes(this.selectedProgressExercise)) this.selectedProgressExercise = Object.keys(sortedHistory[0]?.exercises || {})[0] || names[0] || null;
     const exHistory = this.selectedProgressExercise ? this.getExerciseHistoryOverTime(this.selectedProgressExercise) : [];
-    const prData = this.selectedProgressExercise ? this.getPersonalRecord(this.selectedProgressExercise) : { maxWeight: 0, max1RM: 0 };
-    const latestSession = exHistory.length > 0 ? exHistory[exHistory.length - 1] : null;
-
-    // Group workouts for volume chart (last 7 workouts)
-    const recentWorkouts = this.history.slice(-7);
-    const maxVol = Math.max(...recentWorkouts.map(w => w.totalVolume || 0), 1000);
-
-    const historyHTML = this.history.slice().reverse().map(h => {
-      const d = new Date(h.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      const exEntries = Object.entries(h.exercises || {});
-
-      return `
-        <div class="history-item">
-          <div class="history-item-header">
-            <span class="history-item-title">${this.escapeHtml(h.dayTitle)}</span>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span class="history-item-date">${d}</span>
-              <button type="button" class="history-delete-btn" data-wid="${h.id}" title="Delete this workout from history" aria-label="Delete workout">🗑️</button>
-            </div>
-          </div>
-          <div class="history-pills">
-            <span class="history-pill">🏋️ ${(h.totalVolume || 0).toLocaleString()} lbs</span>
-            <span class="history-pill">⚡ ${h.totalCompletedSets || 0} sets</span>
-            <span class="history-pill">⏱️ ${h.durationMins || 45} mins</span>
-          </div>
-          
-          <button class="history-expand-toggle" data-wid="${h.id}">
-            <span>View Exercise Sets ▾</span>
-          </button>
-
-          <div class="history-details-drawer" id="drawer_${h.id}">
-            ${exEntries.map(([exName, exData]) => `
-              <div style="margin-bottom: 8px;">
-                <div style="font-size: 0.82rem; font-weight: 700; color: var(--text-primary);">${this.escapeHtml(exName)}</div>
-                <div class="progress-set-chips" style="margin-top: 4px;">
-                  ${(exData.sets || []).map(s => `
-                    <span class="progress-set-chip">Set ${s.setNum}: ${s.weight} lbs × ${s.reps}${s.completed ? ' ✓' : ''}</span>
-                  `).join('')}
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    this.analyticsContentEl.innerHTML = `
-      <div class="stats-grid">
-        <div class="stat-box">
-          <div class="stat-val">${totalWorkouts}</div>
-          <div class="stat-label">Workouts Logged</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-val">${(totalVolumeAllTime / 1000).toFixed(1)}k</div>
-          <div class="stat-label">Total Volume (lbs)</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-val">5-Day</div>
-          <div class="stat-label">Split (Wed–Mon)</div>
-        </div>
-      </div>
-
-      <!-- Exercise Progress Tracker -->
-      <div class="exercise-progress-box">
-        <div class="exercise-progress-header">
-          <div style="display: flex; align-items: center; justify-content: space-between;">
-            <h3 style="font-size: 1.05rem; font-weight: 800; color: var(--text-primary);">📈 Progress Over Time</h3>
-            ${exHistory.length > 0 ? `<span style="font-size: 0.75rem; color: var(--accent-emerald); font-weight: 700;">🟢 ${exHistory.length} Session${exHistory.length > 1 ? 's' : ''} Tracked</span>` : ''}
-          </div>
-          <select class="exercise-select" id="progressExerciseSelect">
-            ${this.routine.map(day => `
-              <optgroup label="${this.escapeHtml(day.title)}">
-                ${day.exercises.map(ex => `
-                  <option value="${this.escapeHtml(ex.name)}" ${ex.name === this.selectedProgressExercise ? 'selected' : ''}>
-                    ${this.escapeHtml(ex.name)}
-                  </option>
-                `).join('')}
-              </optgroup>
-            `).join('')}
-          </select>
-        </div>
-
-        <div class="progress-kpi-grid">
-          <div class="progress-kpi-card">
-            <div class="progress-kpi-val">${prData.maxWeight > 0 ? `${prData.maxWeight} lbs` : '—'}</div>
-            <div class="progress-kpi-label">🏆 Best Weight</div>
-          </div>
-          <div class="progress-kpi-card">
-            <div class="progress-kpi-val">${prData.max1RM > 0 ? `${prData.max1RM} lbs` : '—'}</div>
-            <div class="progress-kpi-label">⚡ Est. 1-Rep Max</div>
-          </div>
-          <div class="progress-kpi-card">
-            <div class="progress-kpi-val">${latestSession ? `${latestSession.maxWeight} lbs` : '—'}</div>
-            <div class="progress-kpi-label">⏱️ Last Session</div>
-          </div>
-        </div>
-
-        ${this.generateSVGProgressionChart(exHistory, this.selectedProgressExercise)}
-
-        ${exHistory.length > 0 ? `
-          <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); margin: 14px 0 8px;">
-            Recorded Session Log:
-          </div>
-          <div class="progress-session-list">
-            ${exHistory.slice().reverse().map(s => {
-              const d = new Date(s.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-              return `
-                <div class="progress-session-row">
-                  <div class="progress-session-top">
-                    <span class="progress-session-date">${d} (${this.escapeHtml(s.dayTitle || '')})</span>
-                    <span class="progress-session-topweight">Top: ${s.maxWeight} lbs</span>
-                  </div>
-                  <div class="progress-set-chips">
-                    ${s.sets.filter(Boolean).map(set => `
-                      <span class="progress-set-chip">Set ${set.setNum}: ${set.weight} lbs × ${set.reps}</span>
-                    `).join('')}
-                  </div>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        ` : ''}
-      </div>
-
-      ${recentWorkouts.length > 0 ? `
-        <div class="volume-chart-container">
-          <div class="chart-header">
-            <div class="chart-title">Overall Volume Progression (lbs per session)</div>
-          </div>
-          <div class="chart-bars">
-            ${recentWorkouts.map((w, idx) => {
-              const heightPct = Math.round(((w.totalVolume || 0) / maxVol) * 100);
-              const isLast = idx === recentWorkouts.length - 1;
-              const d = new Date(w.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
-              return `
-                <div class="chart-bar-wrap">
-                  <div class="chart-bar ${isLast ? 'current' : ''}" style="height: ${Math.max(12, heightPct)}%;">
-                    <span class="chart-bar-val">${Math.round(w.totalVolume / 1000)}k</span>
-                  </div>
-                  <span class="chart-bar-label">${d}</span>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      ` : ''}
-
-      ${this.generateWeeklyVolumeLandmarksHTML()}
-
-      <div style="margin-top: 24px;">
-        <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 12px;">Full Workout History</h3>
-        ${this.history.length > 0 ? historyHTML : `
-          <div class="empty-state">
-            <div class="empty-icon">📊</div>
-            <p>No workouts recorded yet. Finish a workout to see your strength progress!</p>
-          </div>
-        `}
-      </div>
-    `;
-
-    // Bind exercise dropdown change
-    const exSelect = document.getElementById('progressExerciseSelect');
-    if (exSelect) {
-      exSelect.addEventListener('change', (e) => {
-        this.selectedProgressExercise = e.target.value;
-        this.renderAnalytics();
-      });
-    }
-
-    // Bind chart data dot tooltips
+    const pr = this.selectedProgressExercise ? this.getPersonalRecord(this.selectedProgressExercise) : {maxWeight:0, max1RM:0};
+    const recent = sortedHistory.slice(0, 7).reverse();
+    const maxVolume = Math.max(1, ...recent.map(w => w.totalVolume || 0));
+    this.analyticsContentEl.innerHTML = `<div class="insights-page">
+      <section aria-labelledby="recentWorkoutsHeading"><div class="insight-section-heading"><h2 id="recentWorkoutsHeading">Recent workouts</h2><span class="insight-meta">${this.history.length} saved</span></div>
+        ${sortedHistory.length ? this.renderHistoryCard(sortedHistory[0]) : '<p class="insight-empty">No saved workouts yet. Your completed workouts will appear here.</p>'}
+      </section>
+      <section class="insight-panel" aria-labelledby="liftProgressHeading"><h2 id="liftProgressHeading">Lift progress</h2>
+        <label class="insight-field-label" for="progressExerciseSelect">Compare a lift</label><select class="exercise-select" id="progressExerciseSelect">${names.map(name => `<option value="${this.escapeHtml(name)}" ${name === this.selectedProgressExercise ? 'selected' : ''}>${this.escapeHtml(name)}</option>`).join('')}</select>
+        ${this.getLiftComparisonHTML(exHistory)}
+        <details class="insight-details"><summary>Lift trend & recorded sets</summary><p class="insight-meta">Best recorded weight: ${pr.maxWeight || 0} lb · Estimated 1-rep max: ${pr.max1RM || 0} lb</p>${this.generateSVGProgressionChart(exHistory, this.selectedProgressExercise)}
+          <div class="progress-session-list">${[...exHistory].reverse().map(session => `<article class="insight-set-list"><h3>${new Date(session.date).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})} · ${this.escapeHtml(session.dayTitle || 'Saved session')}</h3><ul>${session.sets.filter(Boolean).map(set => `<li>Set ${set.setNum}: ${set.weight === 0 ? 'Bodyweight' : `${set.weight} lb`} × ${set.reps}</li>`).join('')}</ul></article>`).join('')}</div>
+        </details>
+      </section>
+      ${sortedHistory.length > 1 ? `<details class="insight-panel insight-details"><summary>Earlier workouts (${sortedHistory.length - 1})</summary>${sortedHistory.slice(1).map(workout => this.renderHistoryCard(workout)).join('')}</details>` : ''}
+      <details class="insight-panel insight-details"><summary>Weekly muscle volume</summary>${this.generateWeeklyVolumeLandmarksHTML()}</details>
+      <details class="insight-panel insight-details"><summary>Workout totals & volume trend</summary><p>${this.history.length} saved workouts · ${this.history.reduce((sum, h) => sum + (h.totalVolume || 0), 0).toLocaleString()} lb recorded total volume</p>
+        <p class="insight-meta">Volume varies with exercise selection and set count. Compare the same lift for a clearer view of progress.</p>
+        ${recent.length ? `<div class="volume-chart-container"><h3>Last ${recent.length} workouts</h3><div class="chart-bars">${recent.map(workout => `<div class="chart-bar-wrap"><div class="chart-bar" style="height:${Math.max(2, Math.round((workout.totalVolume || 0) / maxVolume * 100))}%"><span class="chart-bar-val">${Math.round(workout.totalVolume || 0).toLocaleString()}</span></div><span class="chart-bar-label">${new Date(workout.date).toLocaleDateString('en-US', {month:'numeric',day:'numeric'})}</span></div>`).join('')}</div></div>` : '<p class="insight-empty">Finish a workout to see volume history.</p>'}
+      </details>
+    </div>`;
+    document.getElementById('progressExerciseSelect')?.addEventListener('change', event => {
+      this.selectedProgressExercise = event.target.value;
+      this.renderAnalytics();
+      document.getElementById('progressExerciseSelect')?.focus({ preventScroll: true });
+    });
+    this.analyticsContentEl.querySelectorAll('.history-delete-btn').forEach(button => button.addEventListener('click', () => this.deleteWorkoutFromHistory(button.dataset.wid)));
+    this.analyticsContentEl.querySelectorAll('.history-reopen-btn').forEach(button => button.addEventListener('click', () => this.reopenWorkout(button.dataset.wid)));
     this.analyticsContentEl.querySelectorAll('.chart-data-dot').forEach(dot => {
-      const showTip = () => {
-        const tip = document.getElementById('chartTooltipBox');
-        if (!tip) return;
-        const date = dot.dataset.date;
-        const day = dot.dataset.day;
-        const e1rm = dot.dataset.e1rm;
-        const w = dot.dataset.weight;
-        const r = dot.dataset.reps;
-        const isBw = dot.dataset.isbw === 'true';
-        if (isBw) {
-          tip.innerHTML = `<strong>📅 ${date} (${day})</strong>: Best set <strong>Bodyweight × ${r} reps</strong>`;
-        } else {
-          tip.innerHTML = `<strong>📅 ${date} (${day})</strong>: Best set <strong>${w} lbs × ${r} reps</strong> → Est. 1-Rep Max: <strong style="color: #60a5fa;">${e1rm} lbs</strong>`;
-        }
-      };
+      const description = `${dot.dataset.date}, ${dot.dataset.day}: ${dot.dataset.isbw === 'true' ? 'Bodyweight' : `${dot.dataset.weight} lb`} × ${dot.dataset.reps}; estimated maximum ${dot.dataset.e1rm}`;
+      dot.setAttribute('aria-label', description);
+      const showTip = () => { const tip = document.getElementById('chartTooltipBox'); if (tip) tip.textContent = description; };
       dot.addEventListener('click', showTip);
       dot.addEventListener('mouseenter', showTip);
-    });
-
-    // Bind workout history expansion toggles
-    this.analyticsContentEl.querySelectorAll('.history-expand-toggle').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const wid = btn.dataset.wid;
-        const drawer = document.getElementById(`drawer_${wid}`);
-        if (drawer) {
-          const isOpen = drawer.classList.toggle('open');
-          btn.querySelector('span').textContent = isOpen ? 'Hide Exercise Sets ▴' : 'View Exercise Sets ▾';
-        }
-      });
-    });
-
-    // Bind workout history deletion
-    this.analyticsContentEl.querySelectorAll('.history-delete-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const wid = btn.dataset.wid;
-        this.deleteWorkoutFromHistory(wid);
-      });
     });
   }
 
@@ -2962,108 +2812,19 @@ class WorkoutApp {
     const exercises = this.routine.flatMap(day => day.exercises).filter(ex => !ex.isOptional);
     const normalSets = exercises.reduce((sum, ex) => sum + ex.sets, 0);
     const deloadSets = exercises.reduce((sum, ex) => sum + Math.max(2, Math.floor(ex.sets * .67)), 0);
-    this.routineEditorEl.innerHTML = `
-      <div style="margin-bottom: 20px;">
-        <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 8px;">Routine Customization & Preferences</h3>
-        <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
-          Tailor your 5-Day Machine & Dumbbell Split, enable systemic deload recovery, and protect your workout history with full JSON backups.
-        </p>
-      </div>
-
-      <!-- Deload Week Toggle -->
-      <div class="setting-row" style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 16px;">
-        <div>
-          <div style="font-weight: 700; font-size: 0.95rem; color: #34d399; display: flex; align-items: center; gap: 6px;">
-            <span>🌿 7-Day Deload Week</span>
-            ${this.deloadActive ? `<span style="font-size: 0.68rem; background: rgba(16, 185, 129, 0.25); color: #a7f3d0; padding: 1px 6px; border-radius: var(--radius-full);">Active</span>` : ''}
-          </div>
-          <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
-            Reduces planned sets from ${normalSets} to ${deloadSets} (${Math.round((normalSets - deloadSets) / normalSets * 100)}% fewer) and eases loads by 10%. Auto-expires after 7 days.
-            ${this.deloadActive ? `<span style="display:block; color: #a7f3d0; font-weight: 700; margin-top: 4px;">⏳ ${this.getDeloadDaysLeft()} day${this.getDeloadDaysLeft() === 1 ? '' : 's'} remaining</span>` : ''}
-          </p>
-        </div>
-        <label class="switch">
-          <input type="checkbox" id="deloadSettingToggle" ${this.deloadActive ? 'checked' : ''}>
-          <span class="slider"></span>
-        </label>
-      </div>
-
-      <!-- Screen Wake Lock Toggle -->
-      <div class="setting-row" style="margin-bottom: 16px;">
-        <div>
-          <div style="font-weight: 700; font-size: 0.95rem; color: #fff;">🛡️ Keep Screen Awake</div>
-          <p>Prevent your phone screen from dimming or sleeping during active workouts.</p>
-        </div>
-        <label class="switch">
-          <input type="checkbox" id="wakeLockSettingToggle" ${this.wakeLockEnabled ? 'checked' : ''}>
-          <span class="slider"></span>
-        </label>
-      </div>
-
-      <!-- Data Shield & Backup Center -->
-      <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
-          <div style="font-weight: 700; font-size: 0.95rem; color: var(--accent-blue); display: flex; align-items: center; gap: 6px;">
-            <span>🛡️ Data Shield & Backup</span>
-          </div>
-          <span style="font-size: 0.7rem; background: rgba(59, 130, 246, 0.2); color: #93c5fd; padding: 2px 8px; border-radius: var(--radius-full); font-weight: 700;">
-            ${this.getBackupStatusText()}
-          </span>
-        </div>
-        <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 12px;">
-          Download a JSON backup to keep a separate copy of your history, active workouts, routine and preferences. Keep the backup file somewhere you can retrieve after changing phones.
-        </p>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-          <button class="secondary-btn" id="exportDataBtn" style="flex: 1; min-width: 140px; font-size: 0.82rem; padding: 8px 12px;">
-            📥 Export Backup (JSON)
-          </button>
-          <button class="secondary-btn" id="importBackupBtn" style="flex: 1; min-width: 140px; font-size: 0.82rem; padding: 8px 12px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.35);">
-            📤 Restore Backup (JSON)
-          </button>
-        </div>
-      </div>
-
-      <!-- Active Workout Days Routine Preview -->
-      <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 20px;">
-        <h4 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 12px;">Active Workout Days</h4>
-        ${this.routine.map(day => `
-          <div style="padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-            <div style="font-weight: 700; font-size: 0.95rem; color: var(--accent-blue);">${this.escapeHtml(day.title)} (${day.exercises.length} lifts)</div>
-            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
-              ${day.exercises.map(e => `${this.escapeHtml(e.name)} (${e.sets}×${this.escapeHtml(e.targetReps)}${e.isOptional ? ' - optional' : ''})`).join(' • ')}
-            </div>
-          </div>
-        `).join('')}
-      </div>
-
-      <!-- Audio & Haptics Check -->
-      <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
-        <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: var(--accent-emerald);">🔔 Rest Timer Chime & Haptic Check</div>
-          <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">Test sound and vibration while this page is open. Locked-screen and background alerts may not fire on iPhone; reopening restores the countdown.</div>
-        </div>
-        <button class="secondary-btn" id="testChimeBtn" style="padding: 6px 14px; font-size: 0.8rem; border-color: rgba(16, 185, 129, 0.4); color: #6ee7b7;">
-          🔊 Test Chime & Vibrate
-        </button>
-      </div>
-
-      <!-- Version & Cache Reset -->
-      <div style="background: rgba(148, 163, 184, 0.08); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
-        <div>
-          <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0;">⚡ MachineMaster <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;">(Build v28 • Rev ${localStorage.getItem(this.storageKeys.routineRev) || '14'})</span></div>
-          <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Saved workouts, configurable progression & focused logging</div>
-        </div>
-        <button class="secondary-btn" id="forceUpdateBtn" style="padding: 6px 14px; font-size: 0.8rem;">
-          🔄 Check for App Update
-        </button>
-      </div>
-
-      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-        <button class="secondary-btn" id="resetRoutineBtn" style="flex: 1; min-width: 160px; color: #f87171; border-color: rgba(239,68,68,0.3);">
-          🔄 Reset Routine to Original Spreadsheet
-        </button>
-      </div>
-    `;
+    this.routineEditorEl.innerHTML = `<div class="insights-page">
+      <section class="program-overview" aria-labelledby="programOverviewHeading"><div class="insight-section-heading"><h2 id="programOverviewHeading">Your program</h2><a class="insight-jump" href="#settingsBackupHeading">Settings & backup</a></div><p class="insight-meta">${this.routine.length} training days · ${normalSets} planned sets per week</p>
+        ${this.routine.map(day => `<details class="program-day insight-details"><summary><span>${this.escapeHtml(day.title)}</span><small>${day.exercises.length} lifts · ${day.exercises.reduce((sum, ex) => sum + ex.sets, 0)} sets</small></summary><ul>${day.exercises.map(ex => `<li><span>${this.escapeHtml(ex.name)}</span><strong>${ex.sets} × ${this.escapeHtml(ex.targetReps)}</strong></li>`).join('')}</ul></details>`).join('')}
+      </section>
+      <section aria-labelledby="settingsBackupHeading"><h2 id="settingsBackupHeading">Settings & backup</h2>
+        <div class="insight-panel"><div class="insight-section-heading"><h3>Backup</h3><span class="insight-meta">${this.escapeHtml(this.getBackupStatusText())}</span></div><p>Save a copy of your history, active workouts, program and preferences before changing phones.</p><div class="insight-actions"><button type="button" class="secondary-btn" id="exportDataBtn">Download backup</button><button type="button" class="secondary-btn" id="importBackupBtn">Restore backup</button></div></div>
+        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v29</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
+        <div class="setting-row insight-panel"><div><label id="deloadSettingLabel" for="deloadSettingToggle">7-day deload</label><p id="deloadSettingDescription">${normalSets} → ${deloadSets} planned sets (${normalSets ? Math.round((normalSets-deloadSets)/normalSets*100) : 0}% fewer) and 10% lighter loads. Ends automatically after 7 days.${this.deloadActive ? ` ${this.getDeloadDaysLeft()} days remaining.` : ''}</p></div><label class="switch"><input type="checkbox" id="deloadSettingToggle" aria-labelledby="deloadSettingLabel" aria-describedby="deloadSettingDescription" ${this.deloadActive ? 'checked' : ''}><span class="slider"></span></label></div>
+        <div class="setting-row insight-panel"><div><label id="wakeLockSettingLabel" for="wakeLockSettingToggle">Keep screen awake</label><p id="wakeLockSettingDescription">Keep the display on while logging a workout, when supported by your browser.</p></div><label class="switch"><input type="checkbox" id="wakeLockSettingToggle" aria-labelledby="wakeLockSettingLabel" aria-describedby="wakeLockSettingDescription" ${this.wakeLockEnabled ? 'checked' : ''}><span class="slider"></span></label></div>
+        <details class="insight-panel insight-details"><summary>Rest sound & vibration</summary><p>Test alerts with the page open. Background and locked-screen alerts may not fire on iPhone; reopening restores the countdown.</p><button type="button" class="secondary-btn" id="testChimeBtn">Test sound & vibration</button></details>
+        <details class="insight-panel insight-details"><summary>Reset program</summary><p>Restore the original exercises, sets and rep ranges. The selected day’s unfinished workout is reset; saved history is retained.</p><button type="button" class="secondary-btn insight-danger" id="resetRoutineBtn">Reset to original program</button></details>
+      </section>
+    </div>`;
 
     document.getElementById('deloadSettingToggle')?.addEventListener('change', (e) => {
       this.deloadActive = e.target.checked;
