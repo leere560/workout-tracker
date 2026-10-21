@@ -739,6 +739,7 @@ class WorkoutApp {
     this.session.exerciseOrder = [...groups.slice(0, firstUnfinished), target, current, ...remaining].flat().map(ex => ex.id);
     this.pendingRir = null;
     this.editingCompletedSet = null;
+    this.editingWarmup = null;
     this.focusedExerciseId = target[0].id;
     this.saveCurrentSession();
     this.renderWorkout();
@@ -750,6 +751,10 @@ class WorkoutApp {
 
   getNextSet() {
     for (const group of this.getExerciseGroups()) {
+      for (const candidate of group) {
+        const warmup = this.getNextWarmup(candidate.id);
+        if (warmup) return warmup;
+      }
       const maxSets = Math.max(0, ...group.map(candidate => this.session?.logs?.[candidate.id]?.length || 0));
       for (let setIdx = 0; setIdx < maxSets; setIdx++) {
         for (const candidate of group) {
@@ -1149,7 +1154,10 @@ class WorkoutApp {
     const reducedSets = core.reduce((sum, ex) => sum + Math.max(2, Math.floor(ex.sets * .67)), 0);
     const next = this.getNextSet();
     if (!this.pendingRir) {
-      const pendingExercise = orderedExercises.find(ex => {
+      const groups = this.getExerciseGroups();
+      const nextGroupIndex = groups.findIndex(group => group.some(ex => ex.id === next?.ex.id));
+      const eligible = nextGroupIndex < 0 ? orderedExercises : groups.slice(0, nextGroupIndex + 1).flat();
+      const pendingExercise = eligible.find(ex => {
         const sets = this.session.logs[ex.id] || [];
         return sets.length && sets.every(set => set.completed) && !sets.at(-1).rirAnswered && sets.at(-1).rir == null;
       });
@@ -1238,8 +1246,8 @@ class WorkoutApp {
             ${!set.rirAnswered && set.rir == null ? this.renderEffortPrompt(ex.id, idx, set) : ''}
           </section>`;
         }
-        return `<section class="set-row set-block ${set.completed ? 'completed' : ''} ${next && next.ex.id === ex.id && next.setIdx === idx ? 'active-next-set' : ''}" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Set ${idx + 1}">
-          <div class="set-heading" tabindex="-1"><strong>Set ${idx + 1}${next && next.ex.id === ex.id && next.setIdx === idx ? ' · Up next' : ''}</strong><span>Target ${this.escapeHtml(target.targetRepsDisplay)} reps${!needsBaseline && target.targetWeight > 0 ? ` · ${target.targetWeightDisplay} lb` : ''}</span></div>
+        return `<section class="set-row set-block ${set.completed ? 'completed' : ''} ${next && next.type !== 'warmup' && next.ex.id === ex.id && next.setIdx === idx ? 'active-next-set' : ''}" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Set ${idx + 1}">
+          <div class="set-heading" tabindex="-1"><strong>Set ${idx + 1}${next && next.type !== 'warmup' && next.ex.id === ex.id && next.setIdx === idx ? ' · Up next' : ''}</strong><span>Target ${this.escapeHtml(target.targetRepsDisplay)} reps${!needsBaseline && target.targetWeight > 0 ? ` · ${target.targetWeightDisplay} lb` : ''}</span></div>
           <div class="previous-set">Last: ${prev ? `${prev.weight === 0 ? 'BW' : prev.weight + ' lb'} × ${prev.reps}` : 'No previous set'}${set.completed && set.exerciseName && set.exerciseName !== name ? ` · Logged as ${this.escapeHtml(set.exerciseName)}` : ''}</div>
           ${needsBaseline ? '<p class="baseline-prompt">Enter a baseline weight for this equipment (0 for bodyweight).</p>' : ''}
           <div class="set-entry-grid">
@@ -1283,7 +1291,8 @@ class WorkoutApp {
         const overview = this.sessionInfoEl.querySelector('.workout-overview');
         if (overview) overview.open = false;
         const first = (this.session.logs[button.dataset.exid] || []).findIndex(set => !set.completed);
-        this.revealWorkoutSet(button.dataset.exid, first >= 0 ? first : 0, true);
+        const warmup = this.getNextWarmup(button.dataset.exid);
+        this.revealWorkoutSet(button.dataset.exid, warmup ? warmup.setIdx : first >= 0 ? first : 0, true, false, warmup ? 'warmup' : 'working');
       });
     });
     this.exerciseListEl.querySelector('.return-next-btn')?.addEventListener('click', () => {
@@ -1601,20 +1610,22 @@ class WorkoutApp {
     if (!dock) return;
     const next = this.activeView === 'workout' && this.session ? this.getNextSet() : null;
     if (!next) { dock.style.display = 'none'; return; }
-    const set = this.session.logs[next.ex.id][next.setIdx];
+    const set = (next.type === 'warmup' ? this.session.warmups : this.session.logs)[next.ex.id][next.setIdx];
     const name = this.getEffectiveExerciseName(next.ex.id, next.ex);
     const swap = this.session.swaps && this.session.swaps[next.ex.id];
     const targetReps = (swap && swap.targetReps) || next.ex.targetReps;
     document.getElementById('nowLiftingTitle').textContent = name;
-    document.getElementById('nowLiftingMeta').textContent = `Next: set ${next.setIdx + 1} · ${targetReps} reps · ${set.weight === null ? 'Enter baseline' : set.weight + ' lb'}`;
+    document.getElementById('nowLiftingMeta').textContent = `Next: ${next.type === 'warmup' ? 'warm-up' : 'set'} ${next.setIdx + 1} · ${next.type === 'warmup' ? set.reps : targetReps} reps · ${set.weight === null || set.weight === '' ? 'Enter load' : set.weight + ' lb'}`;
     dock.dataset.activeExid = next.ex.id;
     dock.style.display = 'flex';
   }
 
-  revealWorkoutSet(exId, setIdx, focus = false, automatic = false) {
+  revealWorkoutSet(exId, setIdx, focus = false, automatic = false, type = 'working') {
     // Value-entry handlers preserve their input nodes; navigation must not steal their keyboard.
     if (document.activeElement?.matches('input, textarea, select, [contenteditable="true"]')) return;
-    const row = this.exerciseListEl.querySelector(`.set-row[data-exid="${exId}"][data-setidx="${setIdx}"]`);
+    const row = this.exerciseListEl.querySelector(type === 'warmup'
+      ? `.warmup-row[data-exid="${exId}"][data-warmupidx="${setIdx}"]`
+      : `.set-row[data-exid="${exId}"][data-setidx="${setIdx}"]`);
     if (!row) return;
     const dock = document.querySelector('.workout-dock');
     const dockRect = dock?.getBoundingClientRect();
@@ -1653,11 +1664,13 @@ class WorkoutApp {
       }
       return;
     }
-    const selector = `.set-row[data-exid="${next.ex.id}"][data-setidx="${next.setIdx}"]`;
+    const selector = next.type === 'warmup'
+      ? `.warmup-row[data-exid="${next.ex.id}"][data-warmupidx="${next.setIdx}"]`
+      : `.set-row[data-exid="${next.ex.id}"][data-setidx="${next.setIdx}"]`;
     this.focusedExerciseId = next.ex.id;
     this.collapsedCards.delete(next.ex.id);
     if (!this.exerciseListEl.querySelector(selector)) this.renderWorkout();
-    this.revealWorkoutSet(next.ex.id, next.setIdx, true, automatic);
+    this.revealWorkoutSet(next.ex.id, next.setIdx, true, automatic, next.type);
   }
 
   // Rest Timer Controller
