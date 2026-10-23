@@ -188,19 +188,57 @@ class WorkoutApp {
           });
           draft.initialLogs[ex.id] = JSON.parse(JSON.stringify(draft.logs[ex.id]));
         } else {
-          draft.swaps ||= {};
-          draft.swaps[ex.id] ||= old;
-          const equipment = draft.swaps[ex.id];
-          [...rows, ...warmups].forEach(set => {
-            set.exerciseName ||= equipment.name;
-            set.muscle ||= equipment.muscle || old.muscle;
-            set.targetReps ||= equipment.targetReps || old.targetReps;
-          });
+          this.reconcileSessionEquipmentIdentity(draft, ex, old);
         }
       });
       if (JSON.stringify(draft) !== before) writes.set(key, JSON.stringify(draft));
     });
     return {routine: repaired, writes};
+  }
+
+  reconcileSessionEquipmentIdentity(session, exercise, fallback = exercise, recordedExercises = {}) {
+    const rows = session.logs?.[exercise.id];
+    if (!Array.isArray(rows)) return;
+    const warmups = Array.isArray(session.warmups?.[exercise.id]) ? session.warmups[exercise.id] : [];
+    const named = set => typeof set?.exerciseName === 'string' && set.exerciseName.trim();
+    const swap = session.swaps?.[exercise.id];
+    const alternatives = this.getSubstitutionsForExercise(exercise.name, exercise);
+    const descriptors = [swap, exercise, fallback, this.getOriginalExercise(exercise),
+      ...(Array.isArray(exercise.equipmentAlternatives) ? exercise.equipmentAlternatives : []), ...alternatives];
+    const familyNames = new Set(descriptors.filter(item => typeof item?.name === 'string').map(item => item.name));
+    const recordedNames = Object.keys(recordedExercises || {}).filter(name => familyNames.has(name));
+    const recordedName = recordedNames.length === 1 ? recordedNames[0] : null;
+    const completed = [...rows, ...warmups].filter(set => set.completed && named(set));
+    const completedNames = [...new Set(completed.map(set => set.exerciseName))];
+    const completedName = completedNames.length === 1 ? completedNames[0] : null;
+    const pending = rows.find(set => !set.completed && named(set)) || warmups.find(set => !set.completed && named(set));
+    const activeName = (typeof swap?.name === 'string' && swap.name.trim() && swap.name) ||
+      pending?.exerciseName || completedName || recordedName || fallback.name;
+    const descriptor = name => {
+      const known = descriptors.find(item => item?.name === name);
+      const evidence = [...rows, ...warmups].find(set => set.exerciseName === name);
+      return known ? this.getExerciseSnapshot(known) : {
+        name, muscle: evidence?.muscle || fallback.muscle || exercise.muscle,
+        targetReps: evidence?.targetReps || fallback.targetReps || exercise.targetReps
+      };
+    };
+    const equipment = descriptor(activeName);
+    if (!swap && activeName !== exercise.name) {
+      session.swaps ||= {};
+      session.swaps[exercise.id] = equipment;
+    }
+    // Completed rows retain their own equipment, including when pending sets use a newer swap.
+    const completedEquipment = descriptor(completedName || recordedName || fallback.name);
+    rows.forEach(set => {
+      if (named(set)) return;
+      const identity = set.completed ? completedEquipment : equipment;
+      set.exerciseName ||= identity.name;
+      set.muscle ||= identity.muscle || fallback.muscle;
+      set.targetReps ||= identity.targetReps || fallback.targetReps;
+    });
+    warmups.forEach(set => {
+      set.exerciseName ||= (set.completed ? completedEquipment : equipment).name;
+    });
   }
 
   loadExercisePreferences() {
@@ -1967,13 +2005,14 @@ class WorkoutApp {
     const snapshot = {};
     for (const key of ['name', 'muscle', 'targetReps', 'notes', 'videoUrl', 'increment', 'startingWeight', 'needsBaseline']) {
       const value = exercise?.[key];
-      if (['string', 'boolean'].includes(typeof value) || (typeof value === 'number' && Number.isFinite(value))) snapshot[key] = value;
+      if (key === 'needsBaseline' ? typeof value === 'boolean' : key === 'increment' ? typeof value === 'number' && Number.isFinite(value) && value > 0 :
+          typeof value === 'string' || (key === 'startingWeight' && typeof value === 'number' && Number.isFinite(value))) snapshot[key] = value;
     }
     return snapshot;
   }
 
   getOriginalExercise(exercise) {
-    if (exercise?.originalExercise?.name) return this.getExerciseSnapshot(exercise.originalExercise);
+    if (typeof exercise?.originalExercise?.name === 'string' && exercise.originalExercise.name.trim()) return this.getExerciseSnapshot(exercise.originalExercise);
     const canonical = typeof DEFAULT_ROUTINE !== 'undefined'
       ? DEFAULT_ROUTINE.flatMap(day => day.exercises).find(candidate => candidate.id === exercise?.id) : null;
     return this.getExerciseSnapshot(canonical || exercise);
@@ -2010,10 +2049,10 @@ class WorkoutApp {
     const seen = new Set([String(currentName).trim().toLowerCase()]);
     return [original, exercise && this.getExerciseSnapshot(exercise), ...(Array.isArray(exercise?.equipmentAlternatives) ? exercise.equipmentAlternatives : []), ...alternatives].filter(Boolean).filter(sub => {
       const key = String(sub.name || '').trim().toLowerCase();
-      if (!key || seen.has(key)) return false;
+      if (typeof sub.name !== 'string' || !key || seen.has(key)) return false;
       seen.add(key);
       return true;
-    }).map(sub => ({...sub, type: sub.type || this.getSwapEquipmentType(sub.name)}));
+    }).map(sub => ({...this.getExerciseSnapshot(sub), type: typeof sub.type === 'string' ? sub.type : this.getSwapEquipmentType(sub.name)}));
   }
 
   openSwapModal(exId, exName) {
@@ -2054,11 +2093,11 @@ class WorkoutApp {
             <div class="swap-option-card">
               <div class="swap-option-header">
                 <div>
-                  <span class="swap-type-badge ${sub.type.toLowerCase().replace(/\s+/g, '-')}">${sub.type}</span>
+                  <span class="swap-type-badge ${this.escapeHtml(sub.type.toLowerCase().replace(/\s+/g, '-'))}">${this.escapeHtml(sub.type)}</span>
                   <div class="swap-option-name">${this.escapeHtml(sub.name)}</div>
                 </div>
-                ${sub.videoUrl ? `
-                  <a href="${sub.videoUrl}" target="_blank" rel="noopener noreferrer" class="video-link-btn" style="font-size: 0.7rem; padding: 3px 8px;">
+                ${/^https?:\/\//i.test(sub.videoUrl || '') ? `
+                  <a href="${this.escapeHtml(sub.videoUrl)}" target="_blank" rel="noopener noreferrer" class="video-link-btn" style="font-size: 0.7rem; padding: 3px 8px;">
                     ▶ Form
                   </a>
                 ` : ''}
@@ -2210,8 +2249,8 @@ class WorkoutApp {
     }, false, mode === 'permanent')) return;
     this.editingCompletedWarmup = null;
     this.showToast(mode === 'permanent'
-      ? `✅ Replaced "${oldName}" with "${sub.name}" permanently in your routine!`
-      : `⚡ Swapped to "${sub.name}" for today's workout!`);
+      ? `✅ Replaced "${this.escapeHtml(oldName)}" with "${this.escapeHtml(sub.name)}" permanently in your routine!`
+      : `⚡ Swapped to "${this.escapeHtml(sub.name)}" for today's workout!`);
 
     if (this.swapModalEl) this.swapModalEl.classList.remove('open');
     this.renderWorkout();
@@ -2931,6 +2970,8 @@ class WorkoutApp {
       return false;
     }
     const snapshot = JSON.parse(JSON.stringify(record.sessionSnapshot));
+    this.routine[dayIndex].exercises.forEach(exercise =>
+      this.reconcileSessionEquipmentIdentity(snapshot, exercise, exercise, record.exercises));
     snapshot.lastInteractionAt = new Date().toISOString();
     const history = this.history.filter(workout => workout.id !== recordId);
     const weights = this.buildLastWeightsFromHistory(history);
@@ -3381,7 +3422,7 @@ class WorkoutApp {
       </section>
       <section aria-labelledby="settingsBackupHeading"><h2 id="settingsBackupHeading">Settings & backup</h2>
         <div class="insight-panel"><div class="insight-section-heading"><h3>Backup</h3><span class="insight-meta">${this.escapeHtml(this.getBackupStatusText())}</span></div><p>Save a copy of your history, active workouts, program and preferences before changing phones.</p><div class="insight-actions"><button type="button" class="secondary-btn" id="exportDataBtn">Download backup</button><button type="button" class="secondary-btn" id="importBackupBtn">Restore backup</button></div></div>
-        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v31</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
+        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v32</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
         <div class="setting-row insight-panel"><div><label id="deloadSettingLabel" for="deloadSettingToggle">7-day deload</label><p id="deloadSettingDescription">${normalSets} → ${deloadSets} planned sets (${normalSets ? Math.round((normalSets-deloadSets)/normalSets*100) : 0}% fewer) and 10% lighter loads. Ends automatically after 7 days.${this.deloadActive ? ` ${this.getDeloadDaysLeft()} days remaining.` : ''}</p></div><label class="switch"><input type="checkbox" id="deloadSettingToggle" aria-labelledby="deloadSettingLabel" aria-describedby="deloadSettingDescription" ${this.deloadActive ? 'checked' : ''}><span class="slider"></span></label></div>
         <div class="setting-row insight-panel"><div><label id="wakeLockSettingLabel" for="wakeLockSettingToggle">Keep screen awake</label><p id="wakeLockSettingDescription">Keep the display on while logging a workout, when supported by your browser.</p></div><label class="switch"><input type="checkbox" id="wakeLockSettingToggle" aria-labelledby="wakeLockSettingLabel" aria-describedby="wakeLockSettingDescription" ${this.wakeLockEnabled ? 'checked' : ''}><span class="slider"></span></label></div>
         <details class="insight-panel insight-details"><summary>Rest sound & vibration</summary><p>Test alerts with the page open. Background and locked-screen alerts may not fire on iPhone; reopening restores the countdown.</p><button type="button" class="secondary-btn" id="testChimeBtn">Test sound & vibration</button></details>

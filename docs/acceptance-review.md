@@ -81,3 +81,19 @@ Validation: 94 Node tests pass, along with JavaScript syntax and git diff checks
 Responsive browser acceptance at 402 x 874 confirmed a fresh Wednesday selection; today's Wednesday draft survives reload; finishing Wednesday selects Friday and Friday survives another reload; reopening returns to Wednesday with logged values intact; actual off-schedule Monday edits resume after reload; Start new clears that activity and the next reload follows Friday. Browser warning/error logs were empty. The screenshot uses isolated test data. Physical iPhone Safari and device alerts remain device checks.
 
 ![Friday selected after finishing Wednesday](schedule-preview.png)
+
+## Equipment defaults and recoverable swaps v32 (2026-10-23)
+
+Restores legacy dumbbell replacements of Saturday's Smith incline press and machine overhead shoulder press to their original programmed defaults. The repair preserves prescribed sets, rep ranges, rest, order, and other exercises. Unknown custom lifts and future intentional default changes remain in place. Original routine fixtures are unchanged.
+
+Equipment swaps use “Use for this workout” as the primary action. Future default changes sit inside a collapsed “Change routine default” section and require a separate review showing the old and new lift. Original lifts and prior defaults remain available as alternatives, including after repeated replacements. “Use routine default for this workout” and “Restore routine default” distinguish temporary restoration from changing future workouts.
+
+The device-local repair is transactional with routine, revision, and affected draft writes. Untouched drafts receive targets from the restored lift's own history, requiring a baseline when none exists. Progressed and retained drafts keep equipment identity, weights, reps, warm-ups and timestamps; archived history is preserved. Reopened snapshots are reconciled on a clone so a Smith card cannot inherit dumbbell working loads. Backup imports retain original/alternative metadata and the repair marker; legacy backups can be repaired again. Promoting the currently selected temporary lift to a routine default retains its pending entries and warm-ups.
+
+Browser acceptance on an isolated local origin verified Saturday's Smith incline and machine overhead prescriptions, temporary dumbbell use and reload recovery, the original Smith alternative and routine-default restore button, canceling the default review, deliberate replacement, restoring the original default through its separate review, and resetting temporary equipment in a new workout. Widths 375, 402 and 430 pixels showed no horizontal overflow, swap buttons at least 44px high, and numeric input text at 18px. Browser warning/error logs were empty. Tests use synthetic data; no phone workout data was read or changed.
+
+Validation: all 119 Node tests pass, including 25 equipment-repair/swap regressions. JavaScript syntax checks and git diff checks pass. A pre-existing backup test now checks the restored day explicitly instead of assuming the scheduled picker selects Wednesday on every date.
+
+Release assets and displayed build version are v32. This feature branch has not been deployed. Physical iPhone Safari, installed-PWA updates/offline, keyboard, VoiceOver and locked-screen alerts remain device checks.
+
+![Temporary swap with Smith default retained](equipment-swap-preview.png)

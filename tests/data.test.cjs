@@ -59,7 +59,7 @@ test('invalid backup is rejected before any writes, valid backup restores pendin
  app.exercisePreferences={'Cable Lateral Raise':{increment:2.5,loadConvention:'per-hand'}};
  localStorage.setItem(app.storageKeys.timerTargetEnd,String(Date.now()+120000));localStorage.setItem('gym_timer_minimum_v1','120');
  const backup=clone(app.createBackupData());app.session=null;app.exercisePreferences={};app.importData(JSON.stringify(backup));
- assert.equal(app.session.logs[day.exercises[0].id][0].weight,101);assert.equal(app.exercisePreferences['Cable Lateral Raise'].increment,2.5);assert.equal(localStorage.getItem('gym_timer_minimum_v1'),'120');
+ assert.equal(app.loadSession(0).logs[day.exercises[0].id][0].weight,101);assert.equal(app.exercisePreferences['Cable Lateral Raise'].increment,2.5);assert.equal(localStorage.getItem('gym_timer_minimum_v1'),'120');
 });
 test('legacy backup without sessions remains importable and duplicate workouts merge once',()=>{
  const {app}=setup();const workout={id:'old',date:new Date().toISOString(),exercises:{'Cable Lateral Raise':{sets:[{weight:10,reps:12}]}}};
