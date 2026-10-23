@@ -91,6 +91,7 @@ class WorkoutApp {
 
     this.render();
     this.showSessionResumePrompt();
+    if (this.equipmentRepairFailed) this.showToast('Could not restore equipment defaults. Your saved workouts are unchanged; free some device storage and check for an update again.');
     this.requestWakeLock();
   }
 
@@ -116,9 +117,90 @@ class WorkoutApp {
       }
       if (!Number.isFinite(ex.increment)) ex.increment = defaults?.increment || this.getExerciseIncrement(ex, ex.name);
     }));
-    localStorage.setItem(this.storageKeys.routineRev, '15');
-    localStorage.setItem(this.storageKeys.routine, JSON.stringify(routine));
-    return routine;
+    const repair = this.prepareSaturdayEquipmentRepair(routine);
+    repair.writes.set(this.storageKeys.routineRev, '16');
+    repair.writes.set(this.storageKeys.routine, JSON.stringify(repair.routine));
+    try {
+      this.writeStorageTransaction(repair.writes);
+      this.equipmentRepairFailed = false;
+      return repair.routine;
+    } catch (error) {
+      this.equipmentRepairFailed = true;
+      console.error('Equipment defaults could not be saved:', error);
+      return routine;
+    }
+  }
+
+  prepareSaturdayEquipmentRepair(routine) {
+    const repaired = JSON.parse(JSON.stringify(routine));
+    const writes = new Map(), changes = [];
+    const day = repaired.find(day => day.id === 'sat___upper_b');
+    const originals = DEFAULT_ROUTINE.find(day => day.id === 'sat___upper_b')?.exercises || [];
+    const recognized = {
+      sat___upper_b_ex1: ['Incline Dumbbell Bench Press', 'Flat Dumbbell Bench Press'],
+      sat___upper_b_ex3: ['Seated Dumbbell Shoulder Press', 'Standing Overhead DB Press', 'Standing Dumbbell Overhead Press']
+    };
+    (day?.exercises || []).forEach(ex => {
+      if (!recognized[ex.id] || ex.equipmentRepairVersion === 1) return;
+      ex.equipmentRepairVersion = 1;
+      if (!recognized[ex.id].includes(ex.name)) return;
+      const canonical = originals.find(original => original.id === ex.id);
+      if (!canonical) return;
+      const old = this.getExerciseSnapshot(ex);
+      const original = this.getExerciseSnapshot(canonical);
+      // The equipment repair does not rewrite the user's prescribed rep ranges.
+      original.targetReps = ex.targetReps;
+      ex.equipmentAlternatives = [...(Array.isArray(ex.equipmentAlternatives) ? ex.equipmentAlternatives : []).filter(item => item?.name !== old.name), old];
+      ex.originalExercise = original;
+      ['name', 'muscle', 'notes', 'videoUrl', 'increment', 'startingWeight'].forEach(key => { ex[key] = canonical[key]; });
+      ex.needsBaseline = true;
+      changes.push({ex, old});
+    });
+    if (!changes.length) return {routine: repaired, writes};
+    const keys = [];
+    for (let index = 0; index < localStorage.length; index++) {
+      const key = localStorage.key(index);
+      if (key === this.storageKeys.legacyCurrentSession || key.startsWith(this.storageKeys.currentSessionPrefix) ||
+          (key.startsWith('gym_saved_draft_') && !key.startsWith('gym_saved_draft_for_'))) keys.push(key);
+    }
+    keys.forEach(key => {
+      let draft;
+      try { draft = JSON.parse(localStorage.getItem(key)); } catch (_) { return; }
+      if (draft?.dayId !== day.id || !draft.logs || typeof draft.logs !== 'object') return;
+      const before = JSON.stringify(draft);
+      changes.forEach(({ex, old}) => {
+        const rows = draft.logs[ex.id], warmups = draft.warmups?.[ex.id] || [];
+        if (!Array.isArray(rows)) return;
+        const swap = draft.swaps?.[ex.id];
+        const untouched = !swap && !warmups.length && Array.isArray(draft.initialLogs?.[ex.id]) &&
+          !rows.some(set => set.completed) && JSON.stringify(rows) === JSON.stringify(draft.initialLogs[ex.id]);
+        if (untouched) {
+          const targets = Object.create(this);
+          targets.session = draft;
+          targets.deloadActive = Boolean(draft.deload);
+          draft.logs[ex.id] = rows.map((set, index) => {
+            const target = targets.getSetTarget(ex, index, ex.name);
+            const restored = {...set, weight: target.targetWeight, reps: target.targetReps, needsBaseline: Boolean(target.needsBaseline),
+              exerciseName: ex.name, muscle: ex.muscle, targetReps: ex.targetReps, completed: false, rir: null};
+            delete restored.completedAt;
+            delete restored.rirAnswered;
+            return restored;
+          });
+          draft.initialLogs[ex.id] = JSON.parse(JSON.stringify(draft.logs[ex.id]));
+        } else {
+          draft.swaps ||= {};
+          draft.swaps[ex.id] ||= old;
+          const equipment = draft.swaps[ex.id];
+          [...rows, ...warmups].forEach(set => {
+            set.exerciseName ||= equipment.name;
+            set.muscle ||= equipment.muscle || old.muscle;
+            set.targetReps ||= equipment.targetReps || old.targetReps;
+          });
+        }
+      });
+      if (JSON.stringify(draft) !== before) writes.set(key, JSON.stringify(draft));
+    });
+    return {routine: repaired, writes};
   }
 
   loadExercisePreferences() {
