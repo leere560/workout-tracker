@@ -1963,53 +1963,84 @@ class WorkoutApp {
   }
 
   // Equipment Swapper Controller
+  getExerciseSnapshot(exercise) {
+    const snapshot = {};
+    for (const key of ['name', 'muscle', 'targetReps', 'notes', 'videoUrl', 'increment', 'startingWeight', 'needsBaseline']) {
+      const value = exercise?.[key];
+      if (['string', 'boolean'].includes(typeof value) || (typeof value === 'number' && Number.isFinite(value))) snapshot[key] = value;
+    }
+    return snapshot;
+  }
+
+  getOriginalExercise(exercise) {
+    if (exercise?.originalExercise?.name) return this.getExerciseSnapshot(exercise.originalExercise);
+    const canonical = typeof DEFAULT_ROUTINE !== 'undefined'
+      ? DEFAULT_ROUTINE.flatMap(day => day.exercises).find(candidate => candidate.id === exercise?.id) : null;
+    return this.getExerciseSnapshot(canonical || exercise);
+  }
+
+  getSwapEquipmentType(name) {
+    if (/dumbbell|\bdb\b/i.test(name)) return 'Dumbbell';
+    if (/cable/i.test(name)) return 'Cable';
+    if (/barbell/i.test(name)) return 'Barbell';
+    if (/machine|smith|hack|leg press/i.test(name)) return 'Machine';
+    return 'Equipment';
+  }
+
   getSubstitutionsForExercise(exerciseName, exercise) {
+    const original = this.getOriginalExercise(exercise);
+    const canonical = typeof DEFAULT_ROUTINE !== 'undefined'
+      ? DEFAULT_ROUTINE.flatMap(day => day.exercises).find(candidate => candidate.id === exercise?.id) : null;
+    const cleanName = (original.name || exerciseName).replace(/\s*\(alt for.*?\)/i, '').trim();
+    let alternatives;
     if (typeof EXERCISE_SUBSTITUTIONS !== 'undefined') {
-      // 1. Direct match
-      if (EXERCISE_SUBSTITUTIONS[exerciseName]) {
-        return EXERCISE_SUBSTITUTIONS[exerciseName];
-      }
-      // 2. Partial / cleaned match
-      const cleanName = exerciseName.replace(/\s*\(alt for.*?\)/i, '').trim();
-      if (EXERCISE_SUBSTITUTIONS[cleanName]) {
-        return EXERCISE_SUBSTITUTIONS[cleanName];
-      }
-      // 3. Substring match in keys
-      for (const key of Object.keys(EXERCISE_SUBSTITUTIONS)) {
-        if (cleanName.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(cleanName.toLowerCase())) {
-          return EXERCISE_SUBSTITUTIONS[key];
-        }
+      const familyName = cleanName === 'Smith Machine Overhead Press' ? 'Machine Overhead Shoulder Press' : cleanName;
+      alternatives = EXERCISE_SUBSTITUTIONS[familyName] || EXERCISE_SUBSTITUTIONS[canonical?.name];
+      if (!alternatives) {
+        const key = Object.keys(EXERCISE_SUBSTITUTIONS).find(candidate =>
+          cleanName.toLowerCase().includes(candidate.toLowerCase()) || candidate.toLowerCase().includes(cleanName.toLowerCase()));
+        if (key) alternatives = EXERCISE_SUBSTITUTIONS[key];
       }
     }
-    // 4. Fallback based on muscle group
-    return [
+    alternatives ||= [
       { name: `Dumbbell Alternative (${exercise ? exercise.muscle : 'Lift'})`, type: 'Dumbbell', muscle: exercise ? exercise.muscle : '', targetReps: '8–12', notes: 'Perform with controlled tempo and full range of motion.', videoUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(exerciseName + ' dumbbell alternative')}` },
       { name: `Cable Alternative (${exercise ? exercise.muscle : 'Lift'})`, type: 'Cable', muscle: exercise ? exercise.muscle : '', targetReps: '10–12', notes: 'Maintain steady cable tension throughout the movement.', videoUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(exerciseName + ' cable alternative')}` }
     ];
+    const currentName = exercise ? this.getEffectiveExerciseName(exercise.id, exercise) : exerciseName;
+    const seen = new Set([String(currentName).trim().toLowerCase()]);
+    return [original, exercise && this.getExerciseSnapshot(exercise), ...(Array.isArray(exercise?.equipmentAlternatives) ? exercise.equipmentAlternatives : []), ...alternatives].filter(Boolean).filter(sub => {
+      const key = String(sub.name || '').trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).map(sub => ({...sub, type: sub.type || this.getSwapEquipmentType(sub.name)}));
   }
 
   openSwapModal(exId, exName) {
     const ex = this.findExerciseById(exId);
     const subs = this.getSubstitutionsForExercise(exName, ex);
-    const currentName = ex ? ex.name : exName;
+    const currentName = ex ? this.getEffectiveExerciseName(exId, ex) : exName;
+    const original = this.getOriginalExercise(ex);
+    const canRestoreDefault = Boolean(ex && original.name && original.name !== ex.name);
 
     if (this.swapModalTitleEl) {
-      this.swapModalTitleEl.textContent = `🔄 Equipment Swap: ${currentName}`;
+      this.swapModalTitleEl.textContent = 'Equipment swap';
     }
 
     if (this.swapContentEl) {
       const isCurrentlySwapped = Boolean(this.session && this.session.swaps && this.session.swaps[exId]);
       this.swapContentEl.innerHTML = `
         <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-md); padding: 12px; margin-bottom: 14px;">
-          <div style="font-size: 0.74rem; color: var(--text-muted); text-transform: uppercase; font-weight: 800; letter-spacing: 0.05em;">Current Exercise</div>
+          <div style="font-size: 0.875rem; color: var(--text-muted); font-weight: 700;">This workout</div>
           <div style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-top: 2px;">${this.escapeHtml(currentName)}</div>
-          <div style="font-size: 0.78rem; color: var(--accent-blue); margin-top: 2px;">Target: ${ex ? ex.targetReps : '8–12'} reps • ${ex ? ex.muscle : ''}</div>
+          <div class="swap-default-label">Routine default: ${this.escapeHtml(ex ? ex.name : exName)}</div>
+          <div class="swap-scope-note">Equipment swaps apply to this workout. Your next workout uses the routine default.</div>
         </div>
 
         ${isCurrentlySwapped ? `
           <div style="margin-bottom: 14px;">
             <button type="button" id="restoreSwapBtn" style="width: 100%; padding: 10px; background: rgba(59, 130, 246, 0.15); border: 1px solid var(--accent-blue); color: var(--accent-blue); border-radius: var(--radius-md); font-weight: 700; cursor: pointer;">
-              ↩️ Restore Original (${this.escapeHtml(ex ? ex.name : exName)})
+              Use routine default for this workout (${this.escapeHtml(ex ? ex.name : exName)})
             </button>
           </div>
         ` : ''}
@@ -2035,15 +2066,19 @@ class WorkoutApp {
               <div class="swap-option-notes">${this.escapeHtml(sub.notes || 'Target: ' + sub.targetReps + ' reps.')}</div>
               <div class="swap-actions">
                 <button type="button" class="swap-btn-today" data-exid="${exId}" data-subidx="${sIdx}">
-                  ⚡ Today Only
-                </button>
-                <button type="button" class="swap-btn-perm" data-exid="${exId}" data-subidx="${sIdx}">
-                  💾 Replace in Routine
+                  Use for this workout
                 </button>
               </div>
             </div>
           `).join('')}
         </div>
+        <details class="swap-default-controls">
+          <summary>Change routine default</summary>
+          <p>This changes the equipment used by future workouts. Review the change before saving.</p>
+          ${canRestoreDefault ? `<button type="button" class="swap-restore-default" id="restoreRoutineDefaultBtn">Restore routine default: ${this.escapeHtml(original.name)}</button>` : ''}
+          ${subs.filter(sub => sub.name !== ex?.name && !(canRestoreDefault && sub.name === original.name)).map(sub => `<button type="button" class="swap-btn-perm" data-subidx="${subs.indexOf(sub)}">Set default: ${this.escapeHtml(sub.name)}</button>`).join('')}
+          ${ex && currentName !== ex.name ? `<button type="button" class="swap-btn-perm" data-current="true">Set default: ${this.escapeHtml(currentName)}</button>` : ''}
+        </details>
       `;
 
       // Bind restore button
@@ -2070,7 +2105,7 @@ class WorkoutApp {
         }, false)) return;
         this.editingCompletedWarmup = null;
         if (this.swapModalEl) this.swapModalEl.classList.remove('open');
-        this.showToast(`↩️ Restored original exercise "${ex ? ex.name : exName}"!`);
+        this.showToast(`Using routine default "${this.escapeHtml(ex ? ex.name : exName)}" for this workout.`);
         this.renderWorkout();
       });
 
@@ -2084,13 +2119,35 @@ class WorkoutApp {
 
       this.swapContentEl.querySelectorAll('.swap-btn-perm').forEach(btn => {
         btn.addEventListener('click', () => {
-          const sIdx = parseInt(btn.dataset.subidx, 10);
-          this.applyExerciseSwap(exId, subs[sIdx], 'permanent');
+          const sub = btn.dataset.current ? this.session.swaps?.[exId] : subs[parseInt(btn.dataset.subidx, 10)];
+          this.reviewRoutineDefaultChange(exId, sub);
         });
+      });
+      document.getElementById('restoreRoutineDefaultBtn')?.addEventListener('click', () => {
+        if (canRestoreDefault) this.reviewRoutineDefaultChange(exId, original, true);
       });
     }
 
     if (this.swapModalEl) this.swapModalEl.classList.add('open');
+  }
+
+  reviewRoutineDefaultChange(exId, sub, restoring = false) {
+    const ex = this.findExerciseById(exId);
+    if (!ex || !sub || !this.swapContentEl) return;
+    if (this.swapModalTitleEl) this.swapModalTitleEl.textContent = restoring ? 'Restore routine default?' : 'Change routine default?';
+    this.swapContentEl.innerHTML = `
+      <div class="swap-default-review">
+        <p>Routine default</p>
+        <div class="swap-review-name">${this.escapeHtml(ex.name)}</div>
+        <div aria-hidden="true">↓</div>
+        <div class="swap-review-name">${this.escapeHtml(sub.name)}</div>
+        <p>This equipment will be used for this workout and future workouts. Completed sets keep their original equipment and recorded weights.</p>
+        <p>Weights come from this equipment's own history. Enter a starting weight if you have not used it before.</p>
+        <button type="button" id="cancelRoutineDefaultBtn" class="swap-btn-perm">Back to alternatives</button>
+        <button type="button" id="confirmRoutineDefaultBtn" class="swap-btn-today">${restoring ? 'Restore routine default' : 'Save routine default'}</button>
+      </div>`;
+    document.getElementById('cancelRoutineDefaultBtn')?.addEventListener('click', () => this.openSwapModal(exId, ex.name));
+    document.getElementById('confirmRoutineDefaultBtn')?.addEventListener('click', () => this.applyExerciseSwap(exId, sub, 'permanent'));
   }
 
   applyExerciseSwap(exId, sub, mode) {
@@ -2113,6 +2170,11 @@ class WorkoutApp {
       const hasHistory = Boolean(this.getPreviousExercisePerformance(sub.name));
 
       if (mode === 'permanent') {
+        if (!ex.originalExercise?.name) ex.originalExercise = this.getOriginalExercise(ex);
+        const savedAlternatives = Array.isArray(ex.equipmentAlternatives) ? ex.equipmentAlternatives : [];
+        if (!savedAlternatives.some(alternative => alternative.name === ex.name)) {
+          ex.equipmentAlternatives = [...savedAlternatives, this.getExerciseSnapshot(ex)];
+        }
         ex.name = sub.name;
         if (sub.muscle) ex.muscle = sub.muscle;
         if (sub.targetReps) ex.targetReps = sub.targetReps;

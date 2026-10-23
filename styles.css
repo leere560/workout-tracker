@@ -2195,7 +2195,7 @@ input[type="number"] {
 
 .swap-option-notes,
 .swap-item-notes {
-  font-size: 0.78rem;
+  font-size: 0.875rem;
   color: var(--text-secondary);
   line-height: 1.4;
   margin-bottom: 10px;
@@ -2213,7 +2213,8 @@ input[type="number"] {
   color: #ffffff;
   border: none;
   padding: 8px 12px;
-  font-size: 0.8rem;
+  font-size: 0.875rem;
+  min-height: 44px;
   font-weight: 700;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -2226,11 +2227,69 @@ input[type="number"] {
   border: 1px solid rgba(59, 130, 246, 0.35);
   color: #93c5fd;
   padding: 8px 12px;
-  font-size: 0.8rem;
+  font-size: 0.875rem;
+  min-height: 44px;
   font-weight: 700;
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: background 0.15s;
+}
+
+.swap-default-label,
+.swap-scope-note,
+.swap-default-controls p,
+.swap-default-review p {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+
+.swap-default-controls {
+  border-top: 1px solid var(--border-color);
+  margin-top: 18px;
+  padding-top: 10px;
+}
+
+.swap-default-controls summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.swap-default-controls summary::before { content: '▸'; margin-right: 8px; }
+.swap-default-controls[open] summary::before { content: '▾'; }
+
+.swap-default-controls button,
+.swap-default-review button {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.swap-restore-default {
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent-blue);
+  border-radius: var(--radius-md);
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.swap-review-name {
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1.4;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
 }
 
 .swap-btn-today:active,
