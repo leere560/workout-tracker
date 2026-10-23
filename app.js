@@ -2160,7 +2160,8 @@ class WorkoutApp {
     if (!this.saveSessionFlowChange(() => {
       const previousName = this.getEffectiveExerciseName(exId, ex);
       const previousSwap = this.session?.swaps?.[exId];
-      if (this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed);
+      const changingEquipment = previousName !== sub.name;
+      if (changingEquipment && this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed);
       const sets = this.session?.logs?.[exId] || [];
       sets.filter(s => s.completed).forEach(s => {
         s.exerciseName = s.exerciseName || previousName;
@@ -2195,7 +2196,7 @@ class WorkoutApp {
       // Recalculate uncompleted sets in this.session.logs[exId]
       const effectiveName = sub.name;
       sets.forEach((s, sIdx) => {
-        if (!s.completed) {
+        if (!s.completed && changingEquipment) {
           const target = this.getSetTarget(ex, sIdx, effectiveName);
           s.weight = hasHistory ? target.targetWeight : null;
           s.reps = target.targetReps;

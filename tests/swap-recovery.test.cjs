@@ -186,3 +186,32 @@ test('failed permanent change rolls back original snapshot, alternatives, routin
   assert.deepEqual([...values], beforeStorage);
   assert.match(app.toast, /Could not save/);
 });
+
+test('promoting the current temporary equipment preserves pending values, baseline flags and every warmup', () => {
+  const {app, ex, values} = setup();
+  const originalName = ex.name;
+  const sub = {name: 'Incline Dumbbell Bench Press', muscle: 'Chest', targetReps: '6–8'};
+  app.applyExerciseSwap(ex.id, sub, 'today');
+  Object.assign(app.session.logs[ex.id][0], {weight: 40, reps: 7, needsBaseline: false});
+  // Preserve even incomplete edited values so changing the default cannot erase the user's draft.
+  Object.assign(app.session.logs[ex.id][1], {weight: '', reps: '9', needsBaseline: true});
+  app.session.warmups[ex.id] = [
+    {setNum: 1, weight: 20, reps: 10, completed: true, exerciseName: sub.name},
+    {setNum: 2, weight: 30, reps: 5, completed: false, exerciseName: sub.name}
+  ];
+  const beforeLogs = clone(app.session.logs[ex.id]);
+  const beforeWarmups = clone(app.session.warmups[ex.id]);
+  app.applyExerciseSwap(ex.id, sub, 'permanent');
+  assert.deepEqual(clone(app.session.logs[ex.id]), beforeLogs);
+  assert.deepEqual(clone(app.session.warmups[ex.id]), beforeWarmups);
+  assert.equal(ex.name, sub.name);
+  assert.equal(ex.originalExercise.name, originalName);
+  assert.equal(app.session.swaps[ex.id], undefined);
+  const persisted = JSON.parse(values.get(app.getSessionKey(app.session.dayId)));
+  assert.deepEqual(persisted.logs[ex.id], beforeLogs);
+  assert.deepEqual(persisted.warmups[ex.id], beforeWarmups);
+  const future = app.initNewSession(2);
+  assert.equal(future.logs[ex.id][0].exerciseName, sub.name);
+  assert.equal(future.logs[ex.id][0].needsBaseline, true);
+  assert.deepEqual(clone(future.warmups), {});
+});
