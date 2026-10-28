@@ -276,8 +276,8 @@ class WorkoutApp {
     localStorage.setItem(this.storageKeys.history, JSON.stringify(this.history));
   }
 
-  loadLastWeights() {
-    const saved = localStorage.getItem(this.storageKeys.lastWeights);
+  loadLastWeights(storage = localStorage) {
+    const saved = storage.getItem(this.storageKeys.lastWeights);
     let data = {};
     if (saved) {
       try { data = JSON.parse(saved); } catch (e) { console.error(e); }
@@ -3729,23 +3729,66 @@ class WorkoutApp {
       (Date.parse(a.session.lastInteractionAt || a.session.startTime || a.session.createdAt) || 0));
   }
 
+  stableDraftContent(value) {
+    return Array.isArray(value) ? value.map(item => this.stableDraftContent(item)) : value && typeof value === 'object'
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, this.stableDraftContent(value[key])])) : value;
+  }
+
+  importedSessionId(session) {
+    if (session.id) return session.id;
+    const {updatedAt, recoveryId, id, ...content} = session;
+    const seed = session.startTime || session.createdAt;
+    const text = JSON.stringify(this.stableDraftContent(seed ? {dayId: session.dayId, date: seed} : content));
+    // Two independent hashes keep anonymous legacy versions stable without conflating separate workouts.
+    let first = 2166136261, second = 5381;
+    for (let i = 0; i < text.length; i++) {
+      first = Math.imul(first ^ text.charCodeAt(i), 16777619);
+      second = Math.imul(second, 33) ^ text.charCodeAt(i);
+    }
+    return `s_import_${session.dayId}_${(first >>> 0).toString(36)}_${(second >>> 0).toString(36)}`;
+  }
+
   draftFingerprint(session) {
     const {updatedAt, recoveryId, ...content} = session;
-    content.id ||= `s_import_${content.dayId}`;
-    const stable = value => Array.isArray(value) ? value.map(stable) : value && typeof value === 'object'
-      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value;
-    return JSON.stringify(stable(content));
+    content.id = this.importedSessionId(session);
+    return JSON.stringify(this.stableDraftContent(content));
+  }
+
+  normalizeImportedDraft(input, routine, sourceRoutine, state) {
+    const session = JSON.parse(JSON.stringify(input));
+    session.id = this.importedSessionId(session);
+    const day = routine.find(day => day.id === session.dayId);
+    if (!day) return session;
+    const sourceDay = sourceRoutine?.find(day => day.id === session.dayId);
+    const untouched = session.initialLogs && !this.hasSessionProgress(session);
+    const targets = Object.assign(Object.create(this), state, {routine, session, deloadActive: Boolean(session.deload)});
+    day.exercises.forEach(ex => {
+      const source = sourceDay?.exercises.find(item => item.id === ex.id) || ex;
+      if (untouched && source.name !== ex.name && Array.isArray(session.logs[ex.id])) {
+        session.logs[ex.id] = session.logs[ex.id].map((set, index) => {
+          const target = targets.getSetTarget(ex, index, ex.name);
+          return {...set, weight: target.targetWeight, reps: target.targetReps, needsBaseline: Boolean(target.needsBaseline),
+            exerciseName: ex.name, muscle: ex.muscle, targetReps: ex.targetReps};
+        });
+        session.initialLogs[ex.id] = JSON.parse(JSON.stringify(session.logs[ex.id]));
+      } else {
+        targets.reconcileSessionEquipmentIdentity(session, ex, source);
+        if (untouched && session.initialLogs?.[ex.id]) session.initialLogs[ex.id] = JSON.parse(JSON.stringify(session.logs[ex.id]));
+      }
+    });
+    return session;
   }
 
   retainSavedDraft(session, writes) {
     const same = this.getSavedDrafts(undefined, this.storageOverlay(writes))
       .find(item => this.draftFingerprint(item.session) === this.draftFingerprint(session));
     if (same) return {recoveryId: same.recoveryId, added: false};
-    const base = session.recoveryId || session.id || `s_import_${session.dayId}`;
+    let base = session.recoveryId || this.importedSessionId(session);
+    if (base.startsWith('for_')) base = `recovery_${base}`;
     let recoveryId = base, suffix = 2;
     while (this.storageOverlay(writes).getItem(`gym_saved_draft_${recoveryId}`) !== null) recoveryId = `${base}_copy${suffix++}`;
     const copy = JSON.parse(JSON.stringify(session)); delete copy.recoveryId;
-    copy.id ||= `s_import_${copy.dayId}`;
+    copy.id = this.importedSessionId(copy);
     writes.set(`gym_saved_draft_${recoveryId}`, JSON.stringify(copy));
     writes.set(`gym_saved_draft_for_${copy.dayId}`, recoveryId);
     return {recoveryId, added: true};
@@ -3780,32 +3823,39 @@ class WorkoutApp {
       const storageKey = this.storageKeys[key] || (key === 'equipmentSettings' ? 'gym_equipment_settings_v1' : null);
       if (storageKey) writes.set(storageKey, JSON.stringify(merged[key]));
     });
-    merged.lastWeights = {...(data.lastWeights || {}), ...(this.lastWeights || {})};
-    const recordedWeights = this.buildLastWeightsFromHistory(history);
-    [data.lastWeights || {}, recordedWeights].forEach(weights => Object.entries(weights).forEach(([name, entry]) => {
+    const weightReader = Object.assign(Object.create(this), {history});
+    const normalizeWeights = weights => weightReader.loadLastWeights({getItem: () => JSON.stringify(weights || {})});
+    merged.lastWeights = JSON.parse(JSON.stringify(this.lastWeights || {}));
+    [normalizeWeights(data.lastWeights), this.buildLastWeightsFromHistory(history)].forEach(weights => Object.entries(weights).forEach(([name, entry]) => {
       const existing = merged.lastWeights[name];
-      if (!existing || Date.parse(entry.date) > (Date.parse(existing.date) || 0)) merged.lastWeights[name] = entry;
+      if (!existing || (existing.deload && !entry.deload) ||
+        (Boolean(existing.deload) === Boolean(entry.deload) && Date.parse(entry.date) > (Date.parse(existing.date) || 0))) merged.lastWeights[name] = entry;
     }));
     writes.set(this.storageKeys.lastWeights, JSON.stringify(merged.lastWeights));
     const routine = this.normalizeRoutineData(restoreSettings && data.routine ? data.routine : this.routine);
+    const normalize = (session, source = this.routine) => this.normalizeImportedDraft(session, routine, source, {...merged, history});
+    const currentDrafts = localSessions.map(session => normalize(session));
+    this.getSavedDrafts().forEach(({recoveryId, session}) => writes.set(`gym_saved_draft_${recoveryId}`, JSON.stringify(normalize(session))));
     const availableDays = new Set(routine.map(day => day.id));
     const archivedIds = new Set(history.map(record => record.sessionId || record.sessionSnapshot?.id).filter(Boolean));
-    const incomingSessions = new Map(localSessions.map(session => [session.dayId, session]));
+    const incomingSessions = new Map(currentDrafts.map(session => [session.dayId, session]));
     const retain = draft => {if (this.retainSavedDraft(draft, writes).added) summary.retained++;};
-    (data.sessions || []).forEach(session => {
+    (data.sessions || []).forEach(inputSession => {
+      const session = normalize(inputSession, data.routine || this.routine);
       const current = incomingSessions.get(session.dayId);
       if (current && this.draftFingerprint(current) === this.draftFingerprint(session)) return;
       if (archivedIds.has(session.id) || !availableDays.has(session.dayId) || (current && this.hasSessionProgress(current))) {retain(session); return;}
       const copy = JSON.parse(JSON.stringify(session));
-      copy.id ||= `s_import_${copy.dayId}`;
+      copy.id = this.importedSessionId(copy);
       incomingSessions.set(copy.dayId, copy);
       writes.set(this.getSessionKey(copy.dayId), JSON.stringify(copy));
     });
-    (data.savedDrafts || []).forEach(draft => {
-      if (!localSessions.some(current => this.draftFingerprint(current) === this.draftFingerprint(draft))) retain(draft);
+    (data.savedDrafts || []).forEach(inputDraft => {
+      const draft = normalize(inputDraft, data.routine || this.routine);
+      if (!currentDrafts.some(current => this.draftFingerprint(current) === this.draftFingerprint(draft))) retain(draft);
     });
     // Include current in-memory drafts in the same transaction, even if they have not reached storage yet.
-    localSessions.forEach(session => {
+    currentDrafts.forEach(session => {
       if (this.hasSessionProgress(session)) {
         writes.set(this.getSessionKey(session.dayId), JSON.stringify(session));
         if (!availableDays.has(session.dayId)) retain(session);

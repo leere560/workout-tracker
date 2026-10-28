@@ -97,3 +97,21 @@ Validation: all 119 Node tests pass, including 25 equipment-repair/swap regressi
 Release assets and displayed build version are v32. This feature branch has not been deployed. Physical iPhone Safari, installed-PWA updates/offline, keyboard, VoiceOver and locked-screen alerts remain device checks.
 
 ![Temporary swap with Smith default retained](equipment-swap-preview.png)
+
+## Everyday improvements v33 (2026-10-28)
+
+Implemented equipment-specific setup memory, restore previews with protected active work, and reversible per-workout skips. Feature agents worked in isolated Git worktrees for setup and skipping; the coordinating agent integrated backup/recovery and reviewed the combined behavior. An independent persistence review added targeted regressions. The prescribed program and existing v32 repairs remain covered by the original fixture.
+
+- Seat/pin settings follow effective equipment names across days and temporary/permanent swaps. Legacy slot settings require explicit adoption. Save failures retain the previous setting. Backups include the new equipment map.
+- Restore preview stages validation, migration and all writes without changing data. Current progressed workouts, selection and running timer win by default; other versions remain selectable recovery entries. Restoring one retains the current progressed draft and other entries. Duplicate history and active/archive overlaps are handled without double counting. Unknown program days remain listed/exportable. Program/settings replacement is explicit. Downloads say requested rather than confirmed saved; imports do not update export status.
+- Skip one working set or an exercise's remaining working sets/warm-ups. Superset partners continue, completed work remains intact, and Restore retains entered values. Counts distinguish completed/skipped/remaining; skipped work receives no volume, record or progression credit. Final completed-set effort remains available. Original set numbers survive gaps in history. Skips persist through reload, recovery, v3.4 backups and reopened snapshots; fresh workouts reset them. No empty saved workout is created.
+- Integration regressions cover anonymous legacy IDs, reserved recovery prefixes, repeated imports, unsupported days, source equipment identity, normal versus deload baselines, stale previews, and transaction rollback including late equipment-repair writes. Backup formats 2.4, 3.2 and 3.3 remain accepted.
+
+Validation: 164 Node tests pass; JavaScript syntax checks and git diff --check pass. Automated browser acceptance against the isolated preview at 375, 402 and 430 by 874 pixels passed setup adoption/swaps, skip/reload/restore, backup preview/cancel/protected import, multiple draft recovery, and independent superset skipping. No horizontal overflow, visible buttons below 44px or visible form text below 16px; browser error/warning logs were empty. Modal keyboard focus remained within the open dialog. Screenshots contain synthetic data.
+
+Run node --test tests/*.test.cjs and the five node --check commands from package.json. For browser checks, start python tests/preview_server.py and run node tests/browser-everyday.cjs with Playwright available (PLAYWRIGHT_MODULE can select the bundled module; CHROME_EXECUTABLE can select an installed browser). PREVIEW_URL optionally overrides the local preview address.
+
+Release assets and displayed build are v33. This is a tested local feature branch; no push, merge or deployment was performed. Physical iPhone Safari keyboard, VoiceOver, installed-PWA update/offline cycles and locked-screen alerts remain unverified device checks.
+
+![Protected backup restore preview](backup-restore-preview.png)
+![Equipment setup and per-workout skips](everyday-workout-preview.png)

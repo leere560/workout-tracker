@@ -1,0 +1,74 @@
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+(async () => {
+  const installedChrome = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+  const executablePath = process.env.CHROME_EXECUTABLE || (require('node:fs').existsSync(installedChrome) ? installedChrome : undefined);
+  const browser = await chromium.launch({executablePath, headless:true});
+  const reports=[];
+  try {
+    for (const width of [375,402,430]) {
+      const context=await browser.newContext({viewport:{width,height:874},deviceScaleFactor:1,reducedMotion:"reduce"});
+      const page=await context.newPage(), errors=[];
+      page.on('pageerror',e=>errors.push(e.message));
+      page.on('console',m=>{if(['error','warning'].includes(m.type())) errors.push(m.text());});
+      await page.goto(process.env.PREVIEW_URL || 'http://127.0.0.1:8766/preview.html');
+      await page.selectOption('#workoutDayPicker','2');
+      const original=await page.evaluate(()=>{const ex=app.routine[2].exercises[0];app.machineSettings[ex.id]='Legacy seat 7';app.saveMachineSettings();app.renderWorkout();return app.getExerciseSnapshot(ex);});
+      await page.locator('.exercise-details > summary').first().click();
+      await page.getByRole('button',{name:'Use for this equipment',exact:true}).click();
+      assert.equal(await page.locator('.machine-settings-input').first().inputValue(),'Legacy seat 7');
+      await page.locator('.machine-settings-input').first().fill('Smith seat 4');
+      await page.evaluate(()=>app.applyExerciseSwap(app.routine[2].exercises[0].id,{name:'Incline Dumbbell Bench Press',muscle:'Chest',targetReps:'6–8'},'today'));
+      await page.locator('.exercise-details > summary').first().click();
+      assert.equal(await page.locator('.machine-settings-input').first().inputValue(),'');
+      await page.locator('.machine-settings-input').first().fill('Bench 30 degrees');
+      await page.evaluate(original=>app.applyExerciseSwap(app.routine[2].exercises[0].id,original,'today'),original);
+      await page.locator('.exercise-details > summary').first().click();
+      assert.equal(await page.locator('.machine-settings-input').first().inputValue(),'Smith seat 4');
+      await page.locator('.exercise-details > summary').first().click();
+      await page.locator('.set-weight-input[data-setidx="1"]').first().fill('111');
+      await page.locator('.skip-set-btn[data-setidx="1"]').first().click();
+      assert.equal(await page.locator('.skipped-set-row').count(),1);
+      await page.reload();
+      assert.equal(await page.locator('.skipped-set-row').count(),1);
+      await page.locator('.restore-skipped-set-btn[data-setidx="1"]').click();
+      assert.equal(await page.locator('.set-weight-input[data-setidx="1"]').first().inputValue(),'111');
+      await page.locator('.skip-set-btn[data-setidx="1"]').first().click();
+      await page.evaluate(()=>{const ex=app.routine[2].exercises[0];app.updateSetWeight(ex.id,0,111);});
+      const backup=await page.evaluate(()=>{const data=JSON.parse(JSON.stringify(app.createBackupData()));data.sessions.find(s=>s.dayId===app.session.dayId).logs[app.routine[2].exercises[0].id][0].weight=333;return JSON.stringify(data);});
+      const before=await page.evaluate(()=>JSON.stringify(Object.entries(localStorage).sort()));
+      await page.locator('#importFileInput').setInputFiles({name:'synthetic-backup.json',mimeType:'application/json',buffer:Buffer.from(backup)});
+      await page.getByRole('button',{name:'Restore backup',exact:true}).waitFor();
+      assert.equal(await page.locator('#restoreBackupSettings').isChecked(),false);
+      assert.equal(await page.evaluate(()=>JSON.stringify(Object.entries(localStorage).sort())),before);
+      await page.keyboard.press('Tab');
+      assert.equal(await page.evaluate(()=>document.querySelector('#summaryModal').contains(document.activeElement)),true);
+      if(width===402) await page.screenshot({path:path.join(__dirname,'../docs/backup-restore-preview.png')});
+      await page.getByRole('button',{name:'Cancel',exact:true}).click();
+      assert.equal(await page.evaluate(()=>JSON.stringify(Object.entries(localStorage).sort())),before);
+      await page.locator('#importFileInput').setInputFiles({name:'synthetic-backup.json',mimeType:'application/json',buffer:Buffer.from(backup)});
+      await page.getByRole('button',{name:'Restore backup',exact:true}).click();
+      assert.equal(await page.evaluate(()=>app.session.logs[app.routine[2].exercises[0].id][0].weight),111);
+      assert.equal(await page.evaluate(()=>app.getSavedDrafts().length),1);
+      await page.locator('.nav-btn[data-view="routine"]').click();
+      await page.getByText('Recovery drafts',{exact:true}).click();
+      await page.getByRole('button',{name:'Restore draft',exact:true}).click();
+      assert.equal(await page.evaluate(()=>app.session.logs[app.routine[2].exercises[0].id][0].weight),333);
+      assert.equal(await page.evaluate(()=>app.getSavedDrafts().length),1);
+      await page.locator('.nav-btn[data-view="workout"]').click();
+      if(width===402) {await page.locator('.app-toast').waitFor({state:'detached'});await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(__dirname,'../docs/everyday-workout-preview.png')});}
+      const layout=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth>innerWidth,small:[...document.querySelectorAll('button')].filter(el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'&&el.getBoundingClientRect().height<43.5).map(el=>({text:el.textContent.trim(),height:el.getBoundingClientRect().height})),tinyInputs:[...document.querySelectorAll('input:not([type=checkbox]),select')].filter(el=>el.getClientRects().length&&parseFloat(getComputedStyle(el).fontSize)<16).map(el=>el.className)}));
+      assert.equal(layout.overflow,false);assert.deepEqual(layout.small,[]);assert.deepEqual(layout.tinyInputs,[]);
+      await page.selectOption('#workoutDayPicker','1');
+      const pair=await page.evaluate(()=>{const ex=app.routine[1].exercises.find(ex=>ex.superset);app.focusedExerciseId=ex.id;app.renderWorkout();return {id:ex.id,partner:app.routine[1].exercises.find(e=>e.id!==ex.id&&e.superset?.id===ex.superset.id).id};});
+      await page.locator(`.skip-exercise-btn[data-exid="${pair.id}"]`).click();
+      assert.equal(await page.evaluate(id=>app.session.logs[id].every(s=>s.skipped&&!s.completed),pair.id),true);
+      assert.equal(await page.evaluate(id=>app.session.logs[id].some(s=>s.skipped),pair.partner),false);
+      assert.deepEqual(errors,[]);
+      reports.push({width,overflow:false,minButtonHeight:44,inputFontSize:16,errors,flows:'equipment/legacy/swaps; skip/reload/restore; backup preview/cancel/retain/recovery; superset partner'});
+      await context.close();
+    }
+    console.log(JSON.stringify(reports,null,2));
+  } finally {await browser.close();}
+})().catch(error=>{console.error(error);process.exitCode=1;});
