@@ -1,8 +1,8 @@
 // A release is cached together. Existing tabs opt in before activating an update.
-const CACHE_NAME = 'workout-tracker-v32';
+const CACHE_NAME = 'workout-tracker-v33';
 const ASSETS_TO_CACHE = [
-  './', './index.html', './styles.css?v=32', './app.js?v=32',
-  './warmups.css?v=32', './workout-flow.css?v=32', './insights.css?v=32', './routine-data.js?v=32', './update-manager.js?v=32', './accessibility.js?v=32',
+  './', './index.html', './styles.css?v=33', './app.js?v=33',
+  './warmups.css?v=33', './workout-flow.css?v=33', './insights.css?v=33', './routine-data.js?v=33', './update-manager.js?v=33', './accessibility.js?v=33',
   './manifest.json', './icon-192.png', './icon-512.png'
 ];
 

@@ -60,3 +60,7 @@
 .insights-page .insight-jump { display: inline-flex; min-height: 44px; align-items: center; color: #7dd3fc; font-size: 14px; }
 .insights-page .insight-jump:focus-visible { outline: 3px solid #7dd3fc; outline-offset: 3px; }
 #settingsBackupHeading { scroll-margin-top: 20px; }
+
+.restore-settings-choice { display: flex; align-items: center; gap: 12px; min-height: 44px; line-height: 1.5; padding: 8px 0; cursor: pointer; }
+.restore-settings-choice input { flex: 0 0 24px; width: 24px; height: 24px; accent-color: var(--accent-color); }
+.recovery-draft { overflow-wrap: anywhere; }
