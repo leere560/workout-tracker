@@ -52,6 +52,14 @@
 .completed-set-summary > span { min-width: 0; }
 .completed-set-summary small { display: block; font-size: 14px; color: var(--text-muted); }
 .edit-set-btn { min-width: 44px; min-height: 44px; flex-shrink: 0; padding: 8px 10px; border: 0; background: none; color: var(--accent-blue); font-size: 14px; border-radius: 6px; }
+.skipped-set-row { padding: 8px 10px; border: 1px dashed var(--border-color); border-radius: 8px; background: var(--bg-input); color: var(--text-secondary); }
+.skipped-set-row .completed-set-summary { flex-wrap: wrap; }
+.skipped-set-row .completed-set-summary > span { flex: 1 1 160px; overflow-wrap: anywhere; }
+.skip-set-btn, .skip-exercise-btn, .restore-skipped-set-btn, .restore-skipped-exercise-btn { min-width: 44px; min-height: 44px; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--accent-blue); font: inherit; font-size: 14px; }
+.skip-set-btn { display: block; margin-top: 4px; }
+.exercise-skip-actions { display: flex; flex-wrap: wrap; gap: 0 8px; margin-top: 6px; }
+.exercise-skip-actions:empty { display: none; }
+.session-skip-summary { margin: 0 0 8px; font-size: 14px; color: var(--text-secondary); }
 .rir-selector-row { gap: 5px; padding-top: 8px; }
 .rir-prompt { font-size: 14px; line-height: 1.4; color: var(--text-secondary); }
 .rir-chip { font-size: 14px; border-radius: 8px; box-shadow: none; }

@@ -580,7 +580,7 @@ class WorkoutApp {
     }
 
     const targetSetsCount = ex.sets || 3;
-    const exactPrevSet = validPrevSets[setIdx];
+    const exactPrevSet = this.getPreviousSetAt(validPrevSets, setIdx);
     const fallbackWeightSet = validPrevSets[validPrevSets.length - 1] || validPrevSets[0] || {};
     let baseWeight = exactPrevSet ? (exactPrevSet.weight || 0) : (fallbackWeightSet.weight || 0);
     const topPrevWeight = Math.max(...validPrevSets.map(s => s.weight || 0));
@@ -634,6 +634,65 @@ class WorkoutApp {
       if (list.every(s => s.completed)) this.collapsedCards.add(exId);
     }
     this.renderWorkout();
+  }
+
+  getPreviousSetAt(sets, setIdx) {
+    if (!Array.isArray(sets)) return undefined;
+    // Modern records keep the original position even when another set was skipped.
+    // Unnumbered legacy records retain their original positional interpretation.
+    return sets.some(set => Number.isInteger(set?.setNum) && set.setNum > 0)
+      ? sets.find(set => set?.setNum === setIdx + 1)
+      : sets[setIdx];
+  }
+
+  isSetPending(set) {
+    return Boolean(set && !set.completed && !set.skipped);
+  }
+
+  getWorkingSetCounts(session = this.session) {
+    const sets = Object.values(session?.logs || {}).flat();
+    const completed = sets.filter(set => set.completed).length;
+    const skipped = sets.filter(set => !set.completed && set.skipped).length;
+    return { total: sets.length, completed, skipped, remaining: sets.length - completed - skipped };
+  }
+
+  setSetSkipped(exId, setIdx, skipped, type = 'working') {
+    const set = (type === 'warmup' ? this.session?.warmups : this.session?.logs)?.[exId]?.[setIdx];
+    if (!set || set.completed || Boolean(set.skipped) === skipped) return false;
+    if (!this.saveSessionFlowChange(() => {
+      if (skipped) set.skipped = true;
+      else delete set.skipped;
+    }, false)) return false;
+    this.afterSkipChange(skipped ? null : { exId, setIdx, type });
+    return true;
+  }
+
+  setExerciseSkipped(exId, skipped) {
+    const sets = [...(this.session?.logs?.[exId] || []), ...this.getWarmupSets(exId)];
+    const affected = sets.filter(set => !set.completed && Boolean(set.skipped) !== skipped);
+    if (!affected.length) return false;
+    if (!this.saveSessionFlowChange(() => affected.forEach(set => {
+      if (skipped) set.skipped = true;
+      else delete set.skipped;
+    }), false)) return false;
+    this.afterSkipChange();
+    return true;
+  }
+
+  afterSkipChange(restored = null) {
+    this.editingCompletedSet = null;
+    this.editingCompletedWarmup = null;
+    this.focusedExerciseId = restored?.exId || null;
+    this.renderWorkout();
+    this.updateNowLiftingHUD();
+    if (restored) this.revealWorkoutSet(restored.exId, restored.setIdx, true, false, restored.type);
+    else this.jumpToActiveExercise({ automatic: true });
+  }
+
+  renderSkippedSet(exId, set, index, type = 'working') {
+    const warmup = type === 'warmup';
+    const label = warmup ? `Warm-up ${this.getWarmupNumber(set, index)}` : `Set ${index + 1}`;
+    return `<section class="${warmup ? 'warmup-row' : 'set-row'} skipped-set-row" data-exid="${exId}" ${warmup ? 'data-warmupidx' : 'data-setidx'}="${index}" aria-label="${label}, skipped for today"><div class="completed-set-summary"><span><strong>${label} · Skipped for today</strong><small>${this.escapeHtml(set.exerciseName || '')}</small></span><button type="button" class="restore-skipped-set-btn" data-exid="${exId}" data-setidx="${index}" data-type="${type}" aria-label="Restore ${label.toLowerCase()}">Restore</button></div></section>`;
   }
 
   getSessionKey(dayId) {
@@ -983,8 +1042,8 @@ class WorkoutApp {
   }
 
   isExerciseGroupUnfinished(group) {
-    return group.some(ex => (this.session?.logs?.[ex.id] || []).some(set => !set.completed) ||
-      (this.session?.warmups?.[ex.id] || []).some(set => !set.completed));
+    return group.some(ex => (this.session?.logs?.[ex.id] || []).some(set => this.isSetPending(set)) ||
+      (this.session?.warmups?.[ex.id] || []).some(set => this.isSetPending(set)));
   }
 
   getDeferTargetGroup(exId) {
@@ -1036,7 +1095,7 @@ class WorkoutApp {
       for (let setIdx = 0; setIdx < maxSets; setIdx++) {
         for (const candidate of group) {
           const set = this.session?.logs?.[candidate.id]?.[setIdx];
-          if (set && !set.completed) return { ex: candidate, setIdx, type: 'working' };
+          if (this.isSetPending(set)) return { ex: candidate, setIdx, type: 'working' };
         }
       }
     }
@@ -1114,7 +1173,7 @@ class WorkoutApp {
     const valid = Number.isFinite(value) && value >= 0;
     const affected = [setIdx];
     if (setIdx === 0 && valid) list.forEach((set, idx) => {
-      if (idx > 0 && !set.completed && (!set.exerciseName || !list[0].exerciseName || set.exerciseName === list[0].exerciseName)) affected.push(idx);
+      if (idx > 0 && this.isSetPending(set) && (!set.exerciseName || !list[0].exerciseName || set.exerciseName === list[0].exerciseName)) affected.push(idx);
     });
     if (!affected.some(idx => list[idx].weight !== value || Boolean(list[idx].needsBaseline) !== !valid)) return;
     if (!this.saveSessionFlowChange(() => affected.forEach(idx => {
@@ -1460,6 +1519,7 @@ class WorkoutApp {
     const core = orderedExercises.filter(ex => !ex.isOptional);
     const total = core.reduce((sum, ex) => sum + (this.session.logs[ex.id] || []).length, 0);
     const complete = core.reduce((sum, ex) => sum + (this.session.logs[ex.id] || []).filter(set => set.completed).length, 0);
+    const skipped = core.reduce((sum, ex) => sum + (this.session.logs[ex.id] || []).filter(set => !set.completed && set.skipped).length, 0);
     const estimateSeconds = core.reduce((sum, ex) => {
       const count = (this.session.logs[ex.id] || []).length;
       return sum + count * 45 + Math.max(0, count - 1) * this.getRestSeconds(ex) + 90;
@@ -1471,11 +1531,12 @@ class WorkoutApp {
       const groups = this.getExerciseGroups();
       const nextGroupIndex = groups.findIndex(group => group.some(ex => ex.id === next?.ex.id));
       const eligible = nextGroupIndex < 0 ? orderedExercises : groups.slice(0, nextGroupIndex + 1).flat();
-      const pendingExercise = eligible.find(ex => {
+      for (const ex of eligible) {
         const sets = this.session.logs[ex.id] || [];
-        return sets.length && sets.every(set => set.completed) && !sets.at(-1).rirAnswered && sets.at(-1).rir == null;
-      });
-      if (pendingExercise) this.pendingRir = { exId: pendingExercise.id, setIdx: this.session.logs[pendingExercise.id].length - 1 };
+        if (sets.some(set => this.isSetPending(set))) continue;
+        const setIdx = sets.findLastIndex(set => set.completed && !set.rirAnswered && set.rir == null);
+        if (setIdx >= 0) { this.pendingRir = { exId: ex.id, setIdx }; break; }
+      }
     }
     const pending = this.pendingRir && orderedExercises.find(ex => ex.id === this.pendingRir.exId);
     const focus = orderedExercises.find(ex => ex.id === this.focusedExerciseId) || pending || (next && next.ex) || core[0];
@@ -1486,20 +1547,24 @@ class WorkoutApp {
     this.sessionInfoEl.innerHTML = `<details class="workout-overview" ${overviewOpen ? 'open' : ''}>
       <summary><span class="session-summary-line"><span class="session-completion"><strong>${complete} / ${total}</strong> sets</span><span class="session-overview-label">Overview</span></span><span class="workout-progress-track" role="progressbar" aria-label="Workout sets" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${complete}"><span class="workout-progress-fill" style="width:${total ? complete / total * 100 : 0}%"></span></span></summary>
       <div class="session-detail-summary">${day.exercises.length} exercises · ~${Math.ceil(estimateSeconds / 60)} min planned</div>
+      ${skipped ? `<p class="session-skip-summary">${complete} completed · ${skipped} skipped · ${total - complete - skipped} remaining</p>` : ''}
       ${resume.inProgress ? `<div class="session-resume-info">In progress${resume.date ? ` · Started ${this.escapeHtml(new Date(resume.date).toLocaleString())}` : ''}<button type="button" class="secondary-btn start-new-session-btn">Start new workout</button></div>` : ''}
       ${resume.savedDraftId ? '<button type="button" class="secondary-btn restore-draft-btn">Restore previous draft</button>' : ''}
       ${this.session.deload ? `<div class="deload-banner">Deload: ${reducedSets} of ${normalSets} planned sets (${Math.round((normalSets - reducedSets) / normalSets * 100)}% fewer), loads eased 10%.</div>` : ''}
       <div class="overview-list">${orderedExercises.map(ex => {
         const sets = this.session.logs[ex.id] || [];
         const pendingEffort = sets.filter(set => set.completed && !set.rirAnswered && set.rir == null).length;
-        return `<button type="button" class="overview-exercise ${visible.includes(ex) ? 'selected' : ''}" data-exid="${ex.id}"><span>${this.escapeHtml(this.getEffectiveExerciseName(ex.id, ex))}${ex.isOptional ? ' · Optional' : ''}${pendingEffort ? `<small>${pendingEffort} effort ${pendingEffort === 1 ? 'entry' : 'entries'} pending</small>` : ''}</span><span>${sets.filter(set => set.completed).length}/${sets.length}</span></button>`;
+        const skippedCount = sets.filter(set => !set.completed && set.skipped).length;
+        return `<button type="button" class="overview-exercise ${visible.includes(ex) ? 'selected' : ''}" data-exid="${ex.id}"><span>${this.escapeHtml(this.getEffectiveExerciseName(ex.id, ex))}${ex.isOptional ? ' · Optional' : ''}${pendingEffort ? `<small>${pendingEffort} effort ${pendingEffort === 1 ? 'entry' : 'entries'} pending</small>` : ''}${skippedCount ? `<small>${skippedCount} skipped · Select to restore</small>` : ''}</span><span>${sets.filter(set => set.completed).length}/${sets.length}</span></button>`;
       }).join('')}</div>
     </details>`;
     const pendingSet = pending && this.session.logs[pending.id]?.[this.pendingRir.setIdx];
     const effortPrompt = pending && !visible.includes(pending) && pendingSet?.completed && !pendingSet.rirAnswered ? `<aside class="pending-effort" aria-label="Last exercise effort">
       <p><strong>Last set: ${this.escapeHtml(pendingSet.exerciseName || pending.name)}</strong></p>${this.renderEffortPrompt(pending.id, this.pendingRir.setIdx, pendingSet)}
     </aside>` : '';
-    this.exerciseListEl.innerHTML = `${!next ? '<aside class="workout-ready"><strong>All sets complete</strong><button type="button" class="primary-btn review-finish-btn">Review & finish</button></aside>' : ''}${effortPrompt}${this.focusedExerciseId && next && this.focusedExerciseId !== next.ex.id ? '<button type="button" class="secondary-btn return-next-btn">Return to next set</button>' : ''}
+    const workoutCounts = this.getWorkingSetCounts();
+    const ready = !next ? `<aside class="workout-ready">${workoutCounts.completed ? `<strong>${workoutCounts.skipped ? 'No sets remaining' : 'All sets complete'}</strong><button type="button" class="primary-btn review-finish-btn">Review & finish</button>` : '<span>No working sets logged. Restore a skipped set to continue, or use Overview to start a new workout.</span>'}</aside>` : '';
+    this.exerciseListEl.innerHTML = `${ready}${effortPrompt}${this.focusedExerciseId && next && this.focusedExerciseId !== next.ex.id ? '<button type="button" class="secondary-btn return-next-btn">Return to next set</button>' : ''}
     ${visible.map(ex => this.renderExerciseCard(ex, ex.isOptional)).join('')}`;
     this.bindWorkoutCardEvents();
   }
@@ -1525,6 +1590,8 @@ class WorkoutApp {
     const conventionLabel = {'per-hand':'per hand', 'total':'total load', 'plates-only':'plates only; exclude Smith bar', 'including-bar':'including Smith bar'}[convention] || 'total load';
     const next = this.getNextSet();
     const allDone = sets.length > 0 && sets.every(set => set.completed);
+    const remaining = [...sets, ...this.getWarmupSets(ex.id)].some(set => this.isSetPending(set));
+    const hasSkipped = [...sets, ...this.getWarmupSets(ex.id)].some(set => !set.completed && set.skipped);
     const pending = this.pendingRir && this.pendingRir.exId === ex.id;
     const collapsed = false; // Completed sets remain individually reviewable; effort is never hidden.
     const enabled = this.isSupersetEnabled(ex);
@@ -1533,7 +1600,7 @@ class WorkoutApp {
     const exerciseCount = this.routine[this.activeDayIndex].exercises.length;
     const canDefer = this.canDeferExercise(ex.id);
     const deferHelp = this.isExerciseGroupUnfinished(this.getExerciseGroups().find(group => group.some(item => item.id === ex.id)) || [])
-      ? 'No other unfinished exercise to switch to.' : 'This exercise is complete.';
+      ? 'No other unfinished exercise to switch to.' : hasSkipped ? 'No sets remaining for this exercise.' : 'This exercise is complete.';
     const seat = this.getEquipmentSetting(name);
     const legacySeat = this.getLegacyMachineSetting(ex.id);
     const note = this.exerciseNotes[name] || '';
@@ -1547,11 +1614,13 @@ class WorkoutApp {
         <div class="exercise-heading-tools">${this.renderWarmupButton(ex)}<button type="button" class="swap-btn secondary-btn" aria-label="Swap equipment" data-exid="${ex.id}" data-exname="${this.escapeHtml(ex.name)}">Swap</button><button type="button" class="machine-taken-btn secondary-btn" data-exid="${ex.id}" ${canDefer ? '' : `disabled aria-describedby="machineTakenHelp_${ex.id}"`}>Machine taken</button></div>
         ${canDefer ? '' : `<small id="machineTakenHelp_${ex.id}" class="machine-availability-help muted-text">${deferHelp}</small>`}
         <div class="saved-setup-cue" ${!seat && !note ? 'hidden' : ''}><span class="saved-seat-cue">${seat ? `Seat / pin: ${this.escapeHtml(seat)}` : ''}</span><span class="saved-note-cue">${this.escapeHtml(note)}</span></div>
+        <div class="exercise-skip-actions">${remaining ? `<button type="button" class="skip-exercise-btn" data-exid="${ex.id}" aria-label="Skip remaining sets for ${this.escapeHtml(name)} today">Skip remaining exercise</button>` : ''}${hasSkipped ? `<button type="button" class="restore-skipped-exercise-btn" data-exid="${ex.id}" aria-label="Restore skipped sets for ${this.escapeHtml(name)}">Restore skipped sets</button>` : ''}</div>
       </div>
       ${this.renderWarmupSets(ex)}
       ${collapsed ? `<button type="button" class="card-collapse-toggle-btn" data-exid="${ex.id}">✓ All sets complete · Review sets</button>` : `<div class="set-blocks">
       ${sets.map((set, idx) => {
-        const prev = previous && previous.sets && previous.sets[idx];
+        if (set.skipped && !set.completed) return this.renderSkippedSet(ex.id, set, idx);
+        const prev = this.getPreviousSetAt(previous?.sets, idx);
         const target = this.getSetTarget(ex, idx, name);
         const needsBaseline = set.needsBaseline || set.weight === null;
         const editing = this.editingCompletedSet?.exId === ex.id && this.editingCompletedSet?.setIdx === idx;
@@ -1571,7 +1640,7 @@ class WorkoutApp {
             <label>Reps<span class="stepper-wrap reps-stepper"><button type="button" class="stepper-btn" data-type="reps" data-delta="-1" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Decrease set ${idx + 1} reps">−</button><input type="number" class="set-input set-reps-input" value="${this.escapeHtml(String(set.reps ?? ''))}" data-exid="${ex.id}" data-setidx="${idx}" min="1" step="1" inputmode="numeric" aria-label="Set ${idx + 1} reps"><button type="button" class="stepper-btn" data-type="reps" data-delta="1" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Increase set ${idx + 1} reps">+</button></span></label>
           </div>
           <button type="button" class="set-check-btn" data-exid="${ex.id}" data-setidx="${idx}" data-rest="${rest}" ${needsBaseline && !set.completed ? 'disabled' : ''} aria-pressed="${set.completed}">${set.completed ? '✓ Completed · Undo' : 'Complete set'}</button>
-          ${set.completed ? `${this.renderEffortPrompt(ex.id, idx, set)}<button type="button" class="done-editing-set-btn secondary-btn" data-exid="${ex.id}" data-setidx="${idx}">Done editing</button>` : ''}
+          ${set.completed ? `${this.renderEffortPrompt(ex.id, idx, set)}<button type="button" class="done-editing-set-btn secondary-btn" data-exid="${ex.id}" data-setidx="${idx}">Done editing</button>` : `<button type="button" class="skip-set-btn" data-exid="${ex.id}" data-setidx="${idx}" aria-label="Skip set ${idx + 1} for today">Skip this set</button>`}
         </section>`;
       }).join('')}</div>`}
       <details class="exercise-details"><summary>Setup, notes & exercise options</summary>
@@ -1594,6 +1663,10 @@ class WorkoutApp {
   }
 
   bindWorkoutCardEvents() {
+    this.exerciseListEl.querySelectorAll('.skip-set-btn').forEach(button => button.addEventListener('click', () => this.setSetSkipped(button.dataset.exid, Number(button.dataset.setidx), true)));
+    this.exerciseListEl.querySelectorAll('.restore-skipped-set-btn').forEach(button => button.addEventListener('click', () => this.setSetSkipped(button.dataset.exid, Number(button.dataset.setidx), false, button.dataset.type)));
+    this.exerciseListEl.querySelectorAll('.skip-exercise-btn').forEach(button => button.addEventListener('click', () => this.setExerciseSkipped(button.dataset.exid, true)));
+    this.exerciseListEl.querySelectorAll('.restore-skipped-exercise-btn').forEach(button => button.addEventListener('click', () => this.setExerciseSkipped(button.dataset.exid, false)));
     this.exerciseListEl.querySelectorAll('.machine-taken-btn').forEach(button => {
       button.addEventListener('click', () => this.deferExercise(button.dataset.exid));
     });
@@ -1607,7 +1680,7 @@ class WorkoutApp {
         this.renderWorkout();
         const overview = this.sessionInfoEl.querySelector('.workout-overview');
         if (overview) overview.open = false;
-        const first = (this.session.logs[button.dataset.exid] || []).findIndex(set => !set.completed);
+        const first = (this.session.logs[button.dataset.exid] || []).findIndex(set => this.isSetPending(set));
         const warmup = this.getNextWarmup(button.dataset.exid);
         this.revealWorkoutSet(button.dataset.exid, warmup ? warmup.setIdx : first >= 0 ? first : 0, true, false, warmup ? 'warmup' : 'working');
       });
@@ -1823,7 +1896,7 @@ class WorkoutApp {
 
   toggleSetCompletion(exId, setIdx, restStr) {
     const setObj = this.session.logs[exId] && this.session.logs[exId][setIdx];
-    if (!setObj) return;
+    if (!setObj || setObj.skipped) return;
     const ex = this.findExerciseById(exId);
     const validationError = this.getSetValidationError(setObj);
     if (!setObj.completed && validationError) {
@@ -1854,7 +1927,7 @@ class WorkoutApp {
 
       // Keep the final effort prompt accessible until answered or skipped.
       const list = this.session.logs[exId] || [];
-      if (list.length > 0 && list.every(s => s.completed)) {
+      if (list.length > 0 && !list.some(s => this.isSetPending(s))) {
         this.pendingRir = { exId, setIdx };
         this.collapsedCards.delete(exId);
       }
@@ -1940,7 +2013,7 @@ class WorkoutApp {
       const targetTop = Math.max(0, window.scrollY + rect.top - top);
       window.scrollTo({top: targetTop, behavior: automatic || window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
     }
-    if (focus) (row.querySelector('.rir-selector-row') || row.querySelector('.set-heading, .edit-set-btn, .warmup-edit-btn') || row).focus({preventScroll: true});
+    if (focus) (row.querySelector('.rir-selector-row') || row.querySelector('.set-heading, .edit-set-btn, .warmup-edit-btn, .restore-skipped-set-btn') || row).focus({preventScroll: true});
   }
 
   jumpToActiveExercise({automatic = false} = {}) {
@@ -1960,7 +2033,7 @@ class WorkoutApp {
       const effort = this.pendingRir && this.exerciseListEl.querySelector(`.rir-selector-row[data-exid="${this.pendingRir.exId}"][data-setidx="${this.pendingRir.setIdx}"]`);
       if (effort) { effort.scrollIntoView({block: 'center', behavior: 'instant'}); effort.focus({preventScroll: true}); }
       else {
-        const finish = this.exerciseListEl.querySelector('.review-finish-btn');
+        const finish = this.exerciseListEl.querySelector('.review-finish-btn') || this.exerciseListEl.querySelector('.restore-skipped-set-btn');
         if (finish) { finish.scrollIntoView({block: 'center', behavior: 'instant'}); finish.focus({preventScroll: true}); }
       }
       return;
@@ -2196,7 +2269,7 @@ class WorkoutApp {
       document.getElementById('restoreSwapBtn')?.addEventListener('click', () => {
         if (!this.session.swaps?.[exId]) return;
         if (!this.saveSessionFlowChange(() => {
-          if (this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed);
+          if (this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed || set.skipped);
           delete this.session.swaps[exId];
           // Recalculate uncompleted sets back to original targets.
           const sets = this.session.logs?.[exId] || [];
@@ -2272,7 +2345,7 @@ class WorkoutApp {
       const previousName = this.getEffectiveExerciseName(exId, ex);
       const previousSwap = this.session?.swaps?.[exId];
       const changingEquipment = previousName !== sub.name;
-      if (changingEquipment && this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed);
+      if (changingEquipment && this.session.warmups?.[exId]) this.session.warmups[exId] = this.session.warmups[exId].filter(set => set.completed || set.skipped);
       const sets = this.session?.logs?.[exId] || [];
       sets.filter(s => s.completed).forEach(s => {
         s.exerciseName = s.exerciseName || previousName;
@@ -2344,8 +2417,9 @@ class WorkoutApp {
     const name = this.getEffectiveExerciseName(exId, ex);
     const matches = (this.session?.logs?.[exId] || []).filter(set =>
       set.exerciseName === name || (!set.exerciseName && !this.session?.swaps?.[exId]));
+    if (!matches.some(set => this.isSetPending(set))) return null;
     const positive = set => !set.needsBaseline && set.weight !== null && String(set.weight).trim() !== '' && Number.isFinite(Number(set.weight)) && Number(set.weight) > 0;
-    return matches.find(set => !set.completed && positive(set)) || matches.find(positive) || null;
+    return matches.find(set => this.isSetPending(set) && positive(set)) || matches.find(set => !set.skipped && positive(set)) || null;
   }
 
   hasWarmupRamp(exId) {
@@ -2356,7 +2430,7 @@ class WorkoutApp {
   }
 
   getNextWarmup(exId) {
-    const setIdx = this.getWarmupSets(exId).findIndex(set => !set.completed);
+    const setIdx = this.getWarmupSets(exId).findIndex(set => this.isSetPending(set));
     const ex = this.findExerciseById(exId);
     return ex && setIdx >= 0 ? {ex, setIdx, type: 'warmup'} : null;
   }
@@ -2436,7 +2510,7 @@ class WorkoutApp {
   toggleWarmupCompletion(exId, setIdx) {
     const set = this.getWarmupSets(exId)[setIdx];
     const ex = this.findExerciseById(exId);
-    if (!set || !ex) return false;
+    if (!set || !ex || set.skipped) return false;
     const validationError = this.getSetValidationError(set);
     if (!set.completed && validationError) { this.showToast(validationError); return false; }
     const completed = !set.completed;
@@ -2450,7 +2524,7 @@ class WorkoutApp {
     })) return false;
     this.editingCompletedWarmup = null;
     if (completed) {
-      const finalWarmup = !this.getWarmupSets(exId).some(row => !row.completed);
+      const finalWarmup = !this.getWarmupSets(exId).some(row => this.isSetPending(row));
       const seconds = finalWarmup ? this.getRestSeconds(ex) : 90;
       this.triggerHaptic([40]);
       this.startTimer(seconds, finalWarmup ? (this.isSupersetEnabled(ex) ? 0 : 120) : 90);
@@ -2485,8 +2559,9 @@ class WorkoutApp {
     if (!rows.length) return '';
     const name = this.getEffectiveExerciseName(ex.id, ex);
     const next = this.getNextSet();
-    const remaining = rows.filter(set => !set.completed).length;
+    const remaining = rows.filter(set => this.isSetPending(set)).length;
     return `<section class="warmup-sets" aria-label="Warm-up sets for ${this.escapeHtml(name)}"><div class="warmup-section-heading"><strong>Warm-up sets</strong><span>This workout only</span></div>${rows.map((set, idx) => {
+      if (set.skipped && !set.completed) return this.renderSkippedSet(ex.id, set, idx, 'warmup');
       const label = `Warm-up ${this.getWarmupNumber(set, idx)}`;
       const editing = this.editingCompletedWarmup?.exId === ex.id && this.editingCompletedWarmup.setIdx === idx;
       const active = next?.type === 'warmup' && next.ex.id === ex.id && next.setIdx === idx;
@@ -2843,14 +2918,12 @@ class WorkoutApp {
 
   // Workout Completion & Summary
   showWorkoutSummary() {
-    const sets = Object.values(this.session?.logs || {}).flat();
-    const completed = sets.filter(set => set.completed).length;
+    const { completed, skipped, remaining } = this.getWorkingSetCounts();
     if (!completed) { this.showToast('Complete at least one set before finishing.'); return; }
     const sessionId = this.session.id;
-    const remaining = sets.length - completed;
     const title = document.getElementById('summaryModalTitle');
     if (title) title.textContent = 'Review workout';
-    this.summaryContentEl.innerHTML = `<p>${this.escapeHtml(this.session.dayTitle)}</p><p><strong>${completed} sets completed · ${remaining} remaining</strong></p><p>Your workout stays open until you confirm.</p><button class="primary-btn" id="keepTrainingBtn">Keep training</button><button class="secondary-btn" id="confirmFinishBtn">${remaining ? 'Finish early' : 'Finish workout'}</button>`;
+    this.summaryContentEl.innerHTML = `<p>${this.escapeHtml(this.session.dayTitle)}</p><p><strong>${completed} sets completed · ${skipped} skipped · ${remaining} remaining</strong></p><p>Your workout stays open until you confirm.</p><button class="primary-btn" id="keepTrainingBtn">Keep training</button><button class="secondary-btn" id="confirmFinishBtn">${remaining ? 'Finish early' : 'Finish workout'}</button>`;
     this.summaryModalEl.classList.add('open');
     document.getElementById('keepTrainingBtn')?.addEventListener('click', () => {
       this.selectionLocalDate = this.getLocalDateKey(new Date());
@@ -2915,7 +2988,7 @@ class WorkoutApp {
           if (description && !newPRs.includes(description)) newPRs.push(description);
         });
         const entry = recordedExercises[effectiveName] ||= { swappedFrom: isSwapped ? ex.name : null, sets: [] };
-        completedSets.forEach(s => entry.sets.push({ ...s, setNum: entry.sets.length + 1, exerciseName: effectiveName, muscle: s.muscle || (currentSwap?.name === effectiveName ? currentSwap.muscle : ex.muscle), completed: true, rir: typeof s.rir === 'number' ? s.rir : null, type: s.type || 'working' }));
+        completedSets.forEach(s => entry.sets.push({ ...s, setNum: sets.indexOf(s) + 1, exerciseName: effectiveName, muscle: s.muscle || (currentSwap?.name === effectiveName ? currentSwap.muscle : ex.muscle), completed: true, rir: typeof s.rir === 'number' ? s.rir : null, type: s.type || 'working' }));
         // A recovery week must not overwrite the normal progression baseline.
         if (!this.session.deload) {
           this.lastWeights ||= {};
@@ -2992,6 +3065,8 @@ class WorkoutApp {
           <div class="stat-label">Duration</div>
         </div>
       </div>
+
+      ${this.getWorkingSetCounts(sessionSnapshot).skipped ? `<p>${this.getWorkingSetCounts(sessionSnapshot).skipped} working sets skipped for this workout. Skipped sets do not count toward volume or progression.</p>` : ''}
 
       ${weightIncreaseUnlocked.length > 0 ? `
         <div class="summary-progression-box">
@@ -3390,11 +3465,13 @@ class WorkoutApp {
     const date = new Date(workout.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const id = this.escapeHtml(workout.id);
     const duration = workout.durationLabel || (Number.isFinite(workout.durationMins) ? `${workout.durationMins} min` : 'Duration unavailable');
+    const skipped = this.getWorkingSetCounts(workout.sessionSnapshot || null).skipped;
     return `<article class="history-item insight-history">
       <div class="insight-history-heading"><h3>${title}</h3><time datetime="${this.escapeHtml(workout.date)}">${date}</time></div>
-      <p class="insight-meta">${workout.totalCompletedSets || 0} sets · ${this.escapeHtml(duration)}${workout.deload ? ' · Deload' : ''}</p>
+      <p class="insight-meta">${workout.totalCompletedSets || 0} sets${skipped ? ` · ${skipped} skipped` : ''} · ${this.escapeHtml(duration)}${workout.deload ? ' · Deload' : ''}</p>
       <details class="insight-details"><summary>Exercise sets</summary>
         ${Object.entries(workout.exercises || {}).map(([name, entry]) => `<div class="insight-set-list"><h4>${this.escapeHtml(name)}</h4><ul>${(entry.sets || []).filter(Boolean).map(set => `<li>Set ${set.setNum}: ${set.weight === 0 ? 'Bodyweight' : `${set.weight} lb`} × ${set.reps}${typeof set.rir === 'number' ? ` · ${set.rir} RIR` : ''}</li>`).join('')}</ul></div>`).join('')}
+        ${skipped ? `<div class="insight-set-list"><h4>Skipped for this workout</h4><ul>${Object.entries(workout.sessionSnapshot.logs).flatMap(([exId, sets]) => sets.flatMap((set, index) => set.skipped && !set.completed ? `<li>${this.escapeHtml(set.exerciseName || this.findExerciseById(exId)?.name || 'Exercise')} · Set ${index + 1}</li>` : [])).join('')}</ul></div>` : ''}
         <p class="insight-meta">Recorded volume: ${(workout.totalVolume || 0).toLocaleString()} lb</p>
       </details>
       <div class="insight-actions">${workout.sessionSnapshot ? `<button type="button" class="secondary-btn history-reopen-btn" data-wid="${id}" aria-label="Reopen ${title}, ${date}">Reopen workout</button>` : ''}<button type="button" class="history-delete-btn" data-wid="${id}" aria-label="Delete ${title}, ${date}">Delete</button></div>

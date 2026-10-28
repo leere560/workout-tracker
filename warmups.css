@@ -8,6 +8,7 @@
 .warmup-heading { margin-bottom: 10px; }
 .warmup-row small { display: block; color: var(--text-muted); font-size: 14px; overflow-wrap: anywhere; }
 .completed-warmup-row { padding: 6px 10px; }
+.warmup-row.skipped-set-row { border-style: dashed; border-left-width: 1px; background: var(--bg-input); }
 .warmup-summary-actions { display: flex; align-items: center; flex-shrink: 0; gap: 2px; }
 .warmup-row .warmup-edit-btn, .warmup-row .warmup-undo-btn, .warmup-row .warmup-remove-btn { min-height: 44px; min-width: 44px; padding: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--accent-blue); font-size: 14px; }
 .warmup-row .warmup-remove-btn { margin-top: 4px; }
