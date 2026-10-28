@@ -70,7 +70,9 @@ test('backup restores actual activity without passive import making old workouts
  const {app,advance}=setup();app.activeDayIndex=4;app.session=app.initNewSession(4);app.updateSetWeight(app.routine[4].exercises[0].id,0,135);
  const time=app.session.lastInteractionAt,backup=clone(app.createBackupData());assert.doesNotThrow(()=>app.validateBackup(backup));
  app.importData(JSON.stringify(backup));assert.equal(app.activeDayIndex,4);assert.equal(app.session.lastInteractionAt,time);
- advance(86400000);app.importData(JSON.stringify(backup));assert.equal(app.activeDayIndex,0);assert.equal(app.loadSession(4).lastInteractionAt,time);
+ advance(86400000);app.importData(JSON.stringify(backup));assert.equal(app.activeDayIndex,4);assert.equal(app.loadSession(4).lastInteractionAt,time);
+ // Import preserves the selected progressed workout; foreground schedule refresh remains responsible for a date change.
+ app.selectionLocalDate='2026-10-20';app.refreshWorkoutSelectionForDate();assert.equal(app.activeDayIndex,0);
 });
 
 test('warmup-only and reordered drafts resume and survive deload changes',()=>{
@@ -96,7 +98,8 @@ test('finish/reopen and backup retain warmups and order without affecting workin
  const backup=clone(app.createBackupData());assert.doesNotThrow(()=>app.validateBackup(backup));
  assert.deepEqual(backup.history[0].sessionSnapshot.warmups,original.warmups);
  assert.equal(app.reopenWorkout(record.id),true);assert.deepEqual(clone(app.session.warmups),original.warmups);assert.deepEqual(clone(app.session.exerciseOrder),original.exerciseOrder);assert.equal(first().weight,100);
- const activeBackup=clone(app.createBackupData());app.session.warmups={};app.importData(JSON.stringify(activeBackup));assert.deepEqual(clone(app.session.warmups),original.warmups);
+ const activeBackup=clone(app.createBackupData());app.session.warmups={};app.importData(JSON.stringify(activeBackup));assert.deepEqual(clone(app.session.warmups),{});
+ const recovery=app.getSavedDrafts().find(item=>Object.keys(item.session.warmups).length);assert.ok(recovery);assert.equal(app.restoreSavedDraft(recovery.recoveryId),true);assert.deepEqual(clone(app.session.warmups),original.warmups);
 });
 
 test('invalid flow metadata in backups is rejected before changing saved values',()=>{

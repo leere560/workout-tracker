@@ -103,20 +103,7 @@ class WorkoutApp {
       if (Array.isArray(parsed) && parsed.length && parsed.every(d => Array.isArray(d.exercises))) routine = parsed;
     } catch (e) { console.error(e); }
     routine ||= JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
-    // Add only the new fields. User exercises, order, sets, reps and notes are authoritative.
-    routine.forEach(day => day.exercises.forEach(ex => {
-      const defaults = DEFAULT_ROUTINE.flatMap(d => d.exercises).find(e => e.id === ex.id || e.name === ex.name);
-      const restText = String(ex.rest || '');
-      const legacyRest = /min/i.test(restText) ? parseFloat(restText) * 60 : parseFloat(restText);
-      if (!Number.isFinite(ex.restSeconds)) ex.restSeconds = Math.max(120, legacyRest || defaults?.restSeconds || 120);
-      ex.restSeconds = Math.max(120, ex.restSeconds);
-      ex.rest = ex.restSeconds % 60 === 0 ? `${ex.restSeconds / 60} min` : `${ex.restSeconds} sec`;
-      if (ex.superset) {
-        if (!Number.isFinite(ex.superset.restSeconds)) ex.superset.restSeconds = defaults?.superset?.restSeconds || (/seated leg curl/i.test(ex.name) ? 75 : 60);
-        ex.superset.rest = `${ex.superset.restSeconds} sec`;
-      }
-      if (!Number.isFinite(ex.increment)) ex.increment = defaults?.increment || this.getExerciseIncrement(ex, ex.name);
-    }));
+    routine = this.normalizeRoutineData(routine);
     const repair = this.prepareSaturdayEquipmentRepair(routine);
     repair.writes.set(this.storageKeys.routineRev, '16');
     repair.writes.set(this.storageKeys.routine, JSON.stringify(repair.routine));
@@ -131,7 +118,26 @@ class WorkoutApp {
     }
   }
 
-  prepareSaturdayEquipmentRepair(routine) {
+  normalizeRoutineData(input) {
+    const routine = JSON.parse(JSON.stringify(input));
+    // Add only the new fields. User exercises, order, sets, reps and notes are authoritative.
+    routine.forEach(day => day.exercises.forEach(ex => {
+      const defaults = DEFAULT_ROUTINE.flatMap(d => d.exercises).find(e => e.id === ex.id || e.name === ex.name);
+      const restText = String(ex.rest || '');
+      const legacyRest = /min/i.test(restText) ? parseFloat(restText) * 60 : parseFloat(restText);
+      if (!Number.isFinite(ex.restSeconds)) ex.restSeconds = Math.max(120, legacyRest || defaults?.restSeconds || 120);
+      ex.restSeconds = Math.max(120, ex.restSeconds);
+      ex.rest = ex.restSeconds % 60 === 0 ? `${ex.restSeconds / 60} min` : `${ex.restSeconds} sec`;
+      if (ex.superset) {
+        if (!Number.isFinite(ex.superset.restSeconds)) ex.superset.restSeconds = defaults?.superset?.restSeconds || (/seated leg curl/i.test(ex.name) ? 75 : 60);
+        ex.superset.rest = `${ex.superset.restSeconds} sec`;
+      }
+      if (!Number.isFinite(ex.increment)) ex.increment = defaults?.increment || this.getExerciseIncrement(ex, ex.name);
+    }));
+    return routine;
+  }
+
+  prepareSaturdayEquipmentRepair(routine, storage = localStorage) {
     const repaired = JSON.parse(JSON.stringify(routine));
     const writes = new Map(), changes = [];
     const day = repaired.find(day => day.id === 'sat___upper_b');
@@ -158,14 +164,14 @@ class WorkoutApp {
     });
     if (!changes.length) return {routine: repaired, writes};
     const keys = [];
-    for (let index = 0; index < localStorage.length; index++) {
-      const key = localStorage.key(index);
+    for (let index = 0; index < storage.length; index++) {
+      const key = storage.key(index);
       if (key === this.storageKeys.legacyCurrentSession || key.startsWith(this.storageKeys.currentSessionPrefix) ||
           (key.startsWith('gym_saved_draft_') && !key.startsWith('gym_saved_draft_for_'))) keys.push(key);
     }
     keys.forEach(key => {
       let draft;
-      try { draft = JSON.parse(localStorage.getItem(key)); } catch (_) { return; }
+      try { draft = JSON.parse(storage.getItem(key)); } catch (_) { return; }
       if (draft?.dayId !== day.id || !draft.logs || typeof draft.logs !== 'object') return;
       const before = JSON.stringify(draft);
       changes.forEach(({ex, old}) => {
@@ -392,13 +398,9 @@ class WorkoutApp {
   }
 
   getBackupStatusText() {
-    const raw = localStorage.getItem(this.storageKeys.lastBackupTime);
-    if (!raw) return 'No backup yet (Export recommended)';
-    const ts = parseInt(raw, 10);
-    const days = Math.floor((Date.now() - ts) / (24 * 60 * 60 * 1000));
-    if (days === 0) return 'Backed up today';
-    if (days === 1) return 'Backed up yesterday';
-    return `Last backed up ${days} days ago`;
+    const ts = Number(localStorage.getItem(this.storageKeys.lastBackupTime));
+    if (!ts || !Number.isFinite(ts)) return 'No export requested yet';
+    return `Last export requested ${new Date(ts).toLocaleDateString()}`;
   }
 
   getEffectiveExerciseName(exId, ex) {
@@ -671,7 +673,7 @@ class WorkoutApp {
     const date = this.session?.startTime || this.session?.createdAt || this.session?.updatedAt;
     const parsed = date ? new Date(date) : null;
     return { date, inProgress: this.hasSessionProgress(this.session),
-      savedDraftId: localStorage.getItem(`gym_saved_draft_for_${this.session?.dayId}`),
+      savedDraftId: this.getSavedDrafts(this.session?.dayId)[0]?.recoveryId,
       stale: Boolean(parsed && !Number.isNaN(parsed.getTime()) && parsed.toDateString() !== new Date().toDateString()) };
   }
 
@@ -695,8 +697,7 @@ class WorkoutApp {
     if (expectedId !== this.session?.id) return false;
     const writes = new Map();
     if (this.hasSessionProgress(this.session)) {
-      writes.set(`gym_saved_draft_${this.session.id}`, JSON.stringify(this.session));
-      writes.set(`gym_saved_draft_for_${this.session.dayId}`, this.session.id);
+      this.retainSavedDraft(this.session, writes);
     }
     const next = this.initNewSession(this.activeDayIndex);
     writes.set(this.getSessionKey(next.dayId), JSON.stringify(next));
@@ -717,31 +718,33 @@ class WorkoutApp {
   }
 
   restoreSavedDraft(draftId) {
-    let draft;
-    try { draft = JSON.parse(localStorage.getItem(`gym_saved_draft_${draftId}`)); } catch (_) { return false; }
-    const dayIndex = this.routine.findIndex(day => day.id === draft?.dayId);
-    if (dayIndex < 0 || !draft?.logs) return false;
-    if (this.hasSessionProgress(this.loadSession(dayIndex))) { this.showToast('Save or finish the current workout before restoring the previous draft.'); return false; }
-    try {
-      draft.lastInteractionAt = new Date().toISOString();
-      const writes = new Map([
-        [this.getSessionKey(draft.dayId), JSON.stringify(draft)],
-        ['gym_last_active_day_v1', draft.dayId],
-        [`gym_saved_draft_${draftId}`, null],
-        [`gym_saved_draft_for_${draft.dayId}`, null]
-      ]);
-      if (this.session.dayId !== draft.dayId) writes.set(this.getSessionKey(this.session.dayId), JSON.stringify(this.session));
-      this.writeStorageTransaction(writes);
-    } catch (_) { this.showToast('Could not restore the draft. Both workouts are still saved.'); return false; }
+    const entry = this.getSavedDrafts().find(item => item.recoveryId === draftId);
+    if (!entry) return false;
+    const draft = JSON.parse(JSON.stringify(entry.session));
+    const dayIndex = this.routine.findIndex(day => day.id === draft.dayId);
+    if (dayIndex < 0) {this.showToast('Restore this draft’s program before resuming it.'); return false;}
+    if (this.history.some(record => (record.sessionId || record.sessionSnapshot?.id) === draft.id)) {
+      this.showToast('This workout is already saved. Reopen it from Progress.'); return false;
+    }
+    const writes = new Map();
+    const current = this.session?.dayId === draft.dayId ? this.session : this.loadSession(dayIndex);
+    if (this.hasSessionProgress(current) && this.draftFingerprint(current) !== this.draftFingerprint(draft)) this.retainSavedDraft(current, writes);
+    draft.lastInteractionAt = new Date().toISOString();
+    this.normalizeSessionFlow(draft, this.routine[dayIndex]);
+    writes.set(this.getSessionKey(draft.dayId), JSON.stringify(draft));
+    writes.set('gym_last_active_day_v1', draft.dayId);
+    writes.set(`gym_saved_draft_${draftId}`, null);
+    if (this.session && this.session.dayId !== draft.dayId) writes.set(this.getSessionKey(this.session.dayId), JSON.stringify(this.session));
+    const remaining = this.getSavedDrafts(draft.dayId, this.storageOverlay(writes));
+    writes.set(`gym_saved_draft_for_${draft.dayId}`, remaining[0]?.recoveryId || null);
+    try {this.writeStorageTransaction(writes);}
+    catch (_) {this.showToast('Could not restore the draft. Both workouts are still saved.'); return false;}
     this.stopTimer();
     this.activeDayIndex = dayIndex;
+    this.session = draft;
     this.selectionLocalDate = this.getLocalDateKey(new Date());
-    this.session = this.normalizeSessionFlow(draft);
-    this.pendingRir = null;
-    this.editingCompletedSet = null;
-    this.editingCompletedWarmup = null;
-    this.focusedExerciseId = null;
-    this.collapsedCards = new Set();
+    this.pendingRir = null; this.editingCompletedSet = null; this.editingCompletedWarmup = null;
+    this.focusedExerciseId = null; this.collapsedCards = new Set();
     this.summaryModalEl?.classList.remove('open');
     this.render();
     return true;
@@ -1276,7 +1279,7 @@ class WorkoutApp {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (event) => {
-          this.importData(event.target.result);
+          this.previewBackupImport(event.target.result);
           fileInput.value = '';
         };
         reader.readAsText(file);
@@ -3422,6 +3425,7 @@ class WorkoutApp {
       </section>
       <section aria-labelledby="settingsBackupHeading"><h2 id="settingsBackupHeading">Settings & backup</h2>
         <div class="insight-panel"><div class="insight-section-heading"><h3>Backup</h3><span class="insight-meta">${this.escapeHtml(this.getBackupStatusText())}</span></div><p>Save a copy of your history, active workouts, program and preferences before changing phones.</p><div class="insight-actions"><button type="button" class="secondary-btn" id="exportDataBtn">Download backup</button><button type="button" class="secondary-btn" id="importBackupBtn">Restore backup</button></div></div>
+        <details class="insight-details"><summary>Recovery drafts</summary>${this.renderRecoveryDrafts()}</details>
         <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v32</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
         <div class="setting-row insight-panel"><div><label id="deloadSettingLabel" for="deloadSettingToggle">7-day deload</label><p id="deloadSettingDescription">${normalSets} → ${deloadSets} planned sets (${normalSets ? Math.round((normalSets-deloadSets)/normalSets*100) : 0}% fewer) and 10% lighter loads. Ends automatically after 7 days.${this.deloadActive ? ` ${this.getDeloadDaysLeft()} days remaining.` : ''}</p></div><label class="switch"><input type="checkbox" id="deloadSettingToggle" aria-labelledby="deloadSettingLabel" aria-describedby="deloadSettingDescription" ${this.deloadActive ? 'checked' : ''}><span class="slider"></span></label></div>
         <div class="setting-row insight-panel"><div><label id="wakeLockSettingLabel" for="wakeLockSettingToggle">Keep screen awake</label><p id="wakeLockSettingDescription">Keep the display on while logging a workout, when supported by your browser.</p></div><label class="switch"><input type="checkbox" id="wakeLockSettingToggle" aria-labelledby="wakeLockSettingLabel" aria-describedby="wakeLockSettingDescription" ${this.wakeLockEnabled ? 'checked' : ''}><span class="slider"></span></label></div>
@@ -3469,6 +3473,7 @@ class WorkoutApp {
     document.getElementById('importBackupBtn')?.addEventListener('click', () => {
       document.getElementById('importFileInput')?.click();
     });
+    this.routineEditorEl.querySelectorAll?.('.recovery-restore-btn').forEach(button => button.addEventListener('click', () => this.restoreSavedDraft(button.dataset.recoveryid)));
     document.getElementById('resetRoutineBtn')?.addEventListener('click', () => this.resetRoutine());
   }
 
@@ -3487,15 +3492,10 @@ class WorkoutApp {
   }
 
   createBackupData() {
-    const savedDrafts = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key.startsWith('gym_saved_draft_') || key.startsWith('gym_saved_draft_for_')) continue;
-      try { const draft = JSON.parse(localStorage.getItem(key)); if (draft?.id && draft.logs) savedDrafts.push(draft); } catch (_) {}
-    }
+    const savedDrafts = this.getSavedDrafts().map(({recoveryId, session}) => ({...session, recoveryId}));
     return {
-      version: '3.3', routine: this.routine, history: this.history,
-      machineSettings: this.machineSettings, exerciseNotes: this.exerciseNotes,
+      version: '3.4', routine: this.routine, history: this.history,
+      machineSettings: this.machineSettings, equipmentSettings: this.equipmentSettings || {}, exerciseNotes: this.exerciseNotes,
       lastWeights: this.lastWeights, exercisePreferences: this.exercisePreferences || {},
       wakeLockEnabled: this.wakeLockEnabled, routineRev: localStorage.getItem(this.storageKeys.routineRev) || '15',
       sessions: this.getStoredSessions(), deloadActive: this.deloadActive, deloadStartDate: this.deloadStartDate,
@@ -3506,23 +3506,30 @@ class WorkoutApp {
   }
 
   exportData() {
-    this.saveCurrentSession();
-    const blob = new Blob([JSON.stringify(this.createBackupData(), null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `MachineMaster_Backup_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    localStorage.setItem(this.storageKeys.lastBackupTime, String(Date.now()));
-    this.showToast('Backup exported successfully!');
-    if (this.activeView === 'routine') this.renderRoutineEditor();
+    let url;
+    try {
+      // The export includes in-memory edits even when device storage is full.
+      const blob = new Blob([JSON.stringify(this.createBackupData(), null, 2)], {type: 'application/json'});
+      url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `MachineMaster_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      try { localStorage.setItem(this.storageKeys.lastBackupTime, String(Date.now())); } catch (_) {}
+      this.showToast('Download requested. Check your downloads and keep the backup file somewhere safe.');
+      if (this.activeView === 'routine') this.renderRoutineEditor();
+      return true;
+    } catch (_) {
+      this.showToast('Could not request the download. Your workouts are unchanged; try again.');
+      return false;
+    } finally { if (url) setTimeout(() => URL.revokeObjectURL(url), 1000); }
   }
 
   validateBackup(data) {
     const object = value => value && typeof value === 'object' && !Array.isArray(value);
-    const setsValid = sets => Array.isArray(sets) && sets.every(s => object(s) && (s.weight === null || Number.isFinite(Number(s.weight))) && Number.isFinite(Number(s.reps)) && Number(s.reps) >= 0 && Number(s.weight) >= 0);
+    const setsValid = sets => Array.isArray(sets) && sets.every(s => object(s) && !s.skipped && (s.weight === null || Number.isFinite(Number(s.weight))) && Number.isFinite(Number(s.reps)) && Number(s.reps) >= 0 && Number(s.weight) >= 0);
     const draftSetsValid = sets => Array.isArray(sets) && sets.every(s => object(s) &&
+      (s.skipped === undefined || (typeof s.skipped === 'boolean' && !(s.skipped && s.completed))) &&
       [s.weight, s.reps].every(value => value === null || typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))));
     const flowValid = session =>
       (session.lastInteractionAt === undefined || session.lastInteractionAt === null || (typeof session.lastInteractionAt === 'string' && Number.isFinite(Date.parse(session.lastInteractionAt)))) &&
@@ -3536,10 +3543,11 @@ class WorkoutApp {
     if (data.routine !== undefined && (!Array.isArray(data.routine) || !data.routine.length || !data.routine.every(d => object(d) && typeof d.id === 'string' && Array.isArray(d.exercises) && d.exercises.every(ex => object(ex) && typeof ex.id === 'string' && typeof ex.name === 'string' && Number.isInteger(ex.sets) && ex.sets > 0 && typeof ex.targetReps === 'string')))) throw new Error('Invalid routine in backup');
     if (data.history !== undefined && (!Array.isArray(data.history) || !data.history.every(h => object(h) && typeof h.id === 'string' && Number.isFinite(new Date(h.date).getTime()) && object(h.exercises) && Object.values(h.exercises).every(ex => object(ex) && setsValid(ex.sets))))) throw new Error('Invalid workout history in backup');
     if (data.sessions !== undefined && (!Array.isArray(data.sessions) || !data.sessions.every(sessionValid))) throw new Error('Invalid sessions in backup');
-    if (data.savedDrafts !== undefined && (!Array.isArray(data.savedDrafts) || !data.savedDrafts.every(draft => sessionValid(draft) && typeof draft.id === 'string'))) throw new Error('Invalid saved drafts in backup');
+    if (data.savedDrafts !== undefined && (!Array.isArray(data.savedDrafts) || !data.savedDrafts.every(draft => sessionValid(draft) && typeof draft.id === 'string' && (draft.recoveryId === undefined || typeof draft.recoveryId === 'string')))) throw new Error('Invalid saved drafts in backup');
     if (data.history?.some(record => record.sessionSnapshot && !sessionValid(record.sessionSnapshot))) throw new Error('Invalid recoverable workout in backup');
     if (data.lastActiveDay != null && typeof data.lastActiveDay !== 'string') throw new Error('Invalid last active day');
-    ['machineSettings', 'exerciseNotes', 'lastWeights', 'exercisePreferences', 'timer'].forEach(key => { if (data[key] !== undefined && !object(data[key])) throw new Error(`Invalid ${key} in backup`); });
+    ['machineSettings', 'equipmentSettings', 'exerciseNotes', 'lastWeights', 'exercisePreferences', 'timer'].forEach(key => { if (data[key] !== undefined && !object(data[key])) throw new Error(`Invalid ${key} in backup`); });
+    if (data.equipmentSettings && !Object.values(data.equipmentSettings).every(value => typeof value === 'string')) throw new Error('Invalid equipment settings');
     if (data.exercisePreferences && !Object.values(data.exercisePreferences).every(pref => object(pref) && (pref.increment === undefined || [1, 2.5, 5, 10].includes(pref.increment)))) throw new Error('Invalid exercise preferences');
     if (data.lastWeights && !Object.values(data.lastWeights).every(entry => object(entry) && Array.isArray(entry.sets) && setsValid(entry.sets.filter(Boolean)))) throw new Error('Invalid previous weights');
     if (data.deloadActive !== undefined && typeof data.deloadActive !== 'boolean') throw new Error('Invalid deload setting');
@@ -3548,58 +3556,200 @@ class WorkoutApp {
     return data;
   }
 
-  importData(jsonString) {
-    try {
-      // Validate the complete backup before changing memory or browser storage.
-      const data = this.validateBackup(JSON.parse(jsonString));
-      const restoreRoutine = data.routine && confirm('Restore routine configurations from this backup? Cancel keeps your current routine.');
-      const existingIds = new Set(this.history.map(h => h.id));
-      const added = (data.history || []).filter(h => !existingIds.has(h.id) && existingIds.add(h.id));
-      const history = [...this.history, ...added].sort((a, b) => new Date(a.date) - new Date(b.date));
-      const writes = new Map([[this.storageKeys.history, JSON.stringify(history)]]);
-      const merged = {};
-      ['machineSettings', 'exerciseNotes', 'lastWeights', 'exercisePreferences'].forEach(key => {
-        merged[key] = { ...(this[key] || {}), ...(data[key] || {}) };
-        if (key === 'lastWeights') Object.entries(this.lastWeights || {}).forEach(([name, entry]) => {
-          if (new Date(entry.date).getTime() > new Date(merged[key][name]?.date).getTime()) merged[key][name] = entry;
-        });
-        writes.set(this.storageKeys[key], JSON.stringify(merged[key]));
-      });
-      if (restoreRoutine) writes.set(this.storageKeys.routine, JSON.stringify(data.routine));
-      (data.sessions || []).forEach(session => writes.set(this.getSessionKey(session.dayId), JSON.stringify(session)));
-      [...(data.savedDrafts || [])].sort((a, b) => Date.parse(a.updatedAt || a.createdAt) - Date.parse(b.updatedAt || b.createdAt)).forEach(draft => {
-        writes.set(`gym_saved_draft_${draft.id}`, JSON.stringify(draft));
-        writes.set(`gym_saved_draft_for_${draft.dayId}`, draft.id);
-      });
-      if (data.lastActiveDay) writes.set('gym_last_active_day_v1', data.lastActiveDay);
-      ['wakeLockEnabled', 'deloadActive', 'deloadStartDate'].forEach(key => { if (data[key] !== undefined) writes.set(this.storageKeys[key], String(data[key])); });
-      if (data.timer) {
-        const keys = { targetEnd: this.storageKeys.timerTargetEnd, totalDuration: this.storageKeys.timerTotalDuration, minimumRest: 'gym_timer_minimum_v1', startedAt: 'gym_timer_started_at_v1' };
-        Object.entries(keys).forEach(([field, key]) => { if (field in data.timer) writes.set(key, data.timer[field] === null ? null : String(data.timer[field])); });
+  getStorageSnapshot() {
+    return new Map(Array.from({length: localStorage.length}, (_, i) => {
+      const key = localStorage.key(i); return [key, localStorage.getItem(key)];
+    }));
+  }
+
+  storageOverlay(writes = new Map()) {
+    const values = this.getStorageSnapshot();
+    writes.forEach((value, key) => value === null ? values.delete(key) : values.set(key, value));
+    return {getItem: key => values.get(key) ?? null, key: index => [...values.keys()][index], get length() {return values.size;}};
+  }
+
+  getSavedDrafts(dayId, storage = localStorage) {
+    const entries = [];
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (!key.startsWith('gym_saved_draft_') || key.startsWith('gym_saved_draft_for_')) continue;
+      try {
+        const session = JSON.parse(storage.getItem(key));
+        if (session?.dayId && session.logs && (!dayId || session.dayId === dayId))
+          entries.push({recoveryId: key.slice('gym_saved_draft_'.length), session});
+      } catch (_) {}
+    }
+    return entries.sort((a, b) => (Date.parse(b.session.lastInteractionAt || b.session.startTime || b.session.createdAt) || 0) -
+      (Date.parse(a.session.lastInteractionAt || a.session.startTime || a.session.createdAt) || 0));
+  }
+
+  draftFingerprint(session) {
+    const {updatedAt, recoveryId, ...content} = session;
+    content.id ||= `s_import_${content.dayId}`;
+    const stable = value => Array.isArray(value) ? value.map(stable) : value && typeof value === 'object'
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value;
+    return JSON.stringify(stable(content));
+  }
+
+  retainSavedDraft(session, writes) {
+    const same = this.getSavedDrafts(undefined, this.storageOverlay(writes))
+      .find(item => this.draftFingerprint(item.session) === this.draftFingerprint(session));
+    if (same) return {recoveryId: same.recoveryId, added: false};
+    const base = session.recoveryId || session.id || `s_import_${session.dayId}`;
+    let recoveryId = base, suffix = 2;
+    while (this.storageOverlay(writes).getItem(`gym_saved_draft_${recoveryId}`) !== null) recoveryId = `${base}_copy${suffix++}`;
+    const copy = JSON.parse(JSON.stringify(session)); delete copy.recoveryId;
+    copy.id ||= `s_import_${copy.dayId}`;
+    writes.set(`gym_saved_draft_${recoveryId}`, JSON.stringify(copy));
+    writes.set(`gym_saved_draft_for_${copy.dayId}`, recoveryId);
+    return {recoveryId, added: true};
+  }
+
+  backupImportStateSignature() {
+    return JSON.stringify([this.session, this.routine, this.history, this.lastWeights, this.machineSettings,
+      this.equipmentSettings, this.exerciseNotes, this.exercisePreferences, this.activeDayIndex]);
+  }
+
+  prepareBackupImport(input, {restoreSettings = false} = {}) {
+    const data = this.validateBackup(JSON.parse(JSON.stringify(input)));
+    const sourceStorage = this.getStorageSnapshot(), sourceState = this.backupImportStateSignature();
+    const localSessions = this.getStoredSessions();
+    const legacy = localStorage.getItem(this.storageKeys.legacyCurrentSession);
+    try { const parsed = JSON.parse(legacy); if (parsed?.logs && !localSessions.some(item => item.dayId === parsed.dayId)) localSessions.push(parsed); } catch (_) {}
+    const progressed = localSessions.filter(session => this.hasSessionProgress(session) &&
+      !this.history.some(record => (record.sessionId || record.sessionSnapshot?.id) === session.id));
+    const activeIds = new Set(progressed.map(session => session.id).filter(Boolean));
+    const summary = {added: 0, duplicates: 0, protected: progressed.length, retained: 0, overlapping: 0, restoreSettings, exportedAt: data.exportedAt};
+    const history = JSON.parse(JSON.stringify(this.history)), ids = new Set(history.map(record => record.id));
+    (data.history || []).forEach(record => {
+      if (ids.has(record.id)) {summary.duplicates++; return;}
+      if ([record.sessionId, record.sessionSnapshot?.id].some(id => id && activeIds.has(id))) {summary.overlapping++; return;}
+      ids.add(record.id); history.push(record); summary.added++;
+    });
+    history.sort((a, b) => new Date(a.date) - new Date(b.date));
+    const writes = new Map([[this.storageKeys.history, JSON.stringify(history)]]);
+    const merged = {};
+    ['machineSettings', 'equipmentSettings', 'exerciseNotes', 'exercisePreferences'].forEach(key => {
+      merged[key] = restoreSettings ? {...(this[key] || {}), ...(data[key] || {})} : {...(data[key] || {}), ...(this[key] || {})};
+      const storageKey = this.storageKeys[key] || (key === 'equipmentSettings' ? 'gym_equipment_settings_v1' : null);
+      if (storageKey) writes.set(storageKey, JSON.stringify(merged[key]));
+    });
+    merged.lastWeights = {...(data.lastWeights || {}), ...(this.lastWeights || {})};
+    const recordedWeights = this.buildLastWeightsFromHistory(history);
+    [data.lastWeights || {}, recordedWeights].forEach(weights => Object.entries(weights).forEach(([name, entry]) => {
+      const existing = merged.lastWeights[name];
+      if (!existing || Date.parse(entry.date) > (Date.parse(existing.date) || 0)) merged.lastWeights[name] = entry;
+    }));
+    writes.set(this.storageKeys.lastWeights, JSON.stringify(merged.lastWeights));
+    const routine = this.normalizeRoutineData(restoreSettings && data.routine ? data.routine : this.routine);
+    const availableDays = new Set(routine.map(day => day.id));
+    const archivedIds = new Set(history.map(record => record.sessionId || record.sessionSnapshot?.id).filter(Boolean));
+    const incomingSessions = new Map(localSessions.map(session => [session.dayId, session]));
+    const retain = draft => {if (this.retainSavedDraft(draft, writes).added) summary.retained++;};
+    (data.sessions || []).forEach(session => {
+      const current = incomingSessions.get(session.dayId);
+      if (current && this.draftFingerprint(current) === this.draftFingerprint(session)) return;
+      if (archivedIds.has(session.id) || !availableDays.has(session.dayId) || (current && this.hasSessionProgress(current))) {retain(session); return;}
+      const copy = JSON.parse(JSON.stringify(session));
+      copy.id ||= `s_import_${copy.dayId}`;
+      incomingSessions.set(copy.dayId, copy);
+      writes.set(this.getSessionKey(copy.dayId), JSON.stringify(copy));
+    });
+    (data.savedDrafts || []).forEach(draft => {
+      if (!localSessions.some(current => this.draftFingerprint(current) === this.draftFingerprint(draft))) retain(draft);
+    });
+    // Include current in-memory drafts in the same transaction, even if they have not reached storage yet.
+    localSessions.forEach(session => {
+      if (this.hasSessionProgress(session)) {
+        writes.set(this.getSessionKey(session.dayId), JSON.stringify(session));
+        if (!availableDays.has(session.dayId)) retain(session);
       }
-      writes.set(this.storageKeys.lastBackupTime, String(Date.now()));
-      const before = new Map([...writes.keys()].map(key => [key, localStorage.getItem(key)]));
-      try { writes.forEach((value, key) => value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value)); }
-      catch (e) { before.forEach((value, key) => { try { value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch (_) {} }); throw e; }
-      this.history = history;
-      Object.assign(this, merged);
-      this.lastWeights = this.loadLastWeights();
-      ['wakeLockEnabled', 'deloadActive', 'deloadStartDate'].forEach(key => { if (data[key] !== undefined) this[key] = data[key]; });
-      if (restoreRoutine) this.routine = this.loadRoutine();
-      this.activeDayIndex = this.getResumeDayIndex();
+    });
+    const nextState = {...merged, history, routine, preserveActive: Boolean(this.session && this.hasSessionProgress(this.session) && availableDays.has(this.session.dayId))};
+    if (restoreSettings) ['wakeLockEnabled', 'deloadActive', 'deloadStartDate'].forEach(key => {
+      if (data[key] !== undefined) {writes.set(this.storageKeys[key], String(data[key])); nextState[key] = data[key];}
+    });
+    if (!progressed.length && data.lastActiveDay && availableDays.has(data.lastActiveDay)) writes.set('gym_last_active_day_v1', data.lastActiveDay);
+    if (!progressed.length && data.timer) {
+      const keys = {targetEnd: this.storageKeys.timerTargetEnd, totalDuration: this.storageKeys.timerTotalDuration,
+        minimumRest: 'gym_timer_minimum_v1', startedAt: 'gym_timer_started_at_v1'};
+      Object.entries(keys).forEach(([field, key]) => {if (field in data.timer) writes.set(key, data.timer[field] === null ? null : String(data.timer[field]));});
+      nextState.restoreTimer = true;
+    }
+    const staged = Object.assign(Object.create(this), nextState);
+    const repair = staged.prepareSaturdayEquipmentRepair(routine, this.storageOverlay(writes));
+    repair.writes.forEach((value, key) => writes.set(key, value));
+    writes.set(this.storageKeys.routine, JSON.stringify(repair.routine));
+    writes.set(this.storageKeys.routineRev, '16');
+    nextState.routine = repair.routine;
+    return {summary, writes, nextState, sourceStorage, sourceState};
+  }
+
+  applyBackupImport(plan) {
+    try {
+      const current = this.getStorageSnapshot();
+      if (plan.sourceState !== this.backupImportStateSignature() || current.size !== plan.sourceStorage.size ||
+        [...current].some(([key, value]) => plan.sourceStorage.get(key) !== value))
+        throw new Error('Your workout changed. Preview the backup again before restoring.');
+      this.writeStorageTransaction(plan.writes);
+      const {preserveActive, restoreTimer, ...state} = plan.nextState;
+      Object.assign(this, state);
+      if (preserveActive) this.activeDayIndex = this.routine.findIndex(day => day.id === this.session.dayId);
+      else this.activeDayIndex = this.getResumeDayIndex();
       this.session = this.loadSession();
       this.selectionLocalDate = this.getLocalDateKey(new Date());
-      if (data.timer) {
+      if (restoreTimer) {
         if (this.timer?.intervalId) clearInterval(this.timer.intervalId);
-        if (this.timer) { this.timer.active = false; this.timer.intervalId = null; }
+        if (this.timer) {this.timer.active = false; this.timer.intervalId = null;}
         this.restoreActiveTimer();
       }
-      this.showToast(`Restore complete! Added ${added.length} workouts.`);
+      this.summaryModalEl?.classList.remove('open');
+      this.showToast(`Restore complete. Added ${plan.summary.added} workouts; ${plan.summary.retained} recovery drafts retained.`);
       this.render();
-    } catch (e) {
-      console.error('Import error:', e);
-      alert('Could not restore backup file: ' + (e.message || 'Invalid format'));
+      return true;
+    } catch (error) {
+      this.showToast(`Could not restore backup: ${error.message || 'Storage unavailable'}`);
+      return false;
     }
+  }
+
+  previewBackupImport(jsonString, restoreSettings = false) {
+    try {
+      const data = this.validateBackup(JSON.parse(jsonString));
+      const plan = this.prepareBackupImport(data, {restoreSettings});
+      const info = plan.summary;
+      const title = document.getElementById('summaryModalTitle'); if (title) title.textContent = 'Restore backup';
+      this.summaryContentEl.innerHTML = `<p>${info.exportedAt && Number.isFinite(Date.parse(info.exportedAt)) ? `Exported ${this.escapeHtml(new Date(info.exportedAt).toLocaleString())}` : 'Backup date unavailable'}</p>
+        <ul><li>${info.added} workouts to add · ${info.duplicates} duplicates kept unchanged</li><li>${info.protected} current workouts protected</li><li>${info.retained} recovery drafts to add</li>${info.overlapping ? `<li>${info.overlapping} saved workouts omitted because the same workout is active here</li>` : ''}</ul>
+        <p>Current unfinished workouts stay active. Other versions are available under Recovery drafts.</p>
+        <label class="restore-settings-choice"><input type="checkbox" id="restoreBackupSettings" ${restoreSettings ? 'checked' : ''}> Replace program and matching settings from this backup</label>
+        <p>${restoreSettings ? 'Program and matching settings will be replaced. Workouts from unavailable days remain in recovery.' : 'Current program and matching settings will be kept.'}</p>
+        <div class="insight-actions"><button type="button" class="secondary-btn" id="cancelBackupRestore">Cancel</button><button type="button" class="primary-btn" id="confirmBackupRestore">Restore backup</button></div>`;
+      this.summaryModalEl.classList.add('open');
+      document.getElementById('cancelBackupRestore')?.addEventListener('click', () => this.summaryModalEl.classList.remove('open'));
+      document.getElementById('restoreBackupSettings')?.addEventListener('change', event => this.previewBackupImport(jsonString, event.target.checked));
+      document.getElementById('confirmBackupRestore')?.addEventListener('click', () => this.applyBackupImport(plan));
+      return plan;
+    } catch (error) {this.showToast(`Could not read backup: ${error.message || 'Invalid format'}`); return null;}
+  }
+
+  importData(jsonString, options = {}) {
+    try {return this.applyBackupImport(this.prepareBackupImport(JSON.parse(jsonString), options));}
+    catch (error) {console.error('Import error:', error); alert('Could not restore backup file: ' + (error.message || 'Invalid format')); return false;}
+  }
+
+  renderRecoveryDrafts() {
+    const drafts = this.getSavedDrafts();
+    if (!drafts.length) return '<p class="insight-empty">No recovery drafts.</p>';
+    return drafts.map(({recoveryId, session}) => {
+      const day = this.routine.find(day => day.id === session.dayId);
+      const archived = this.history.find(record => (record.sessionId || record.sessionSnapshot?.id) === session.id);
+      const count = Object.values(session.logs).flat().filter(set => set.completed).length;
+      const stamp = session.lastInteractionAt || session.startTime || session.createdAt;
+      const date = Number.isFinite(Date.parse(stamp)) ? new Date(stamp).toLocaleString() : 'Date unavailable';
+      return `<article class="recovery-draft insight-panel"><h4>${this.escapeHtml(session.dayTitle || day?.title || session.dayId)}</h4><p>${this.escapeHtml(date)} · ${count} completed sets</p>
+        ${!day ? '<p>Restore this draft’s program before resuming it.</p>' : archived ? '<p>This workout is already saved in Progress. Reopen it there to continue.</p>' : `<button type="button" class="secondary-btn recovery-restore-btn" data-recoveryid="${this.escapeHtml(recoveryId)}">Restore draft</button>`}</article>`;
+    }).join('');
   }
 
   resetRoutine() {
