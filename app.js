@@ -6,6 +6,7 @@ class WorkoutApp {
       routine: 'gym_routine_v4',
       history: 'gym_history_v1',
       machineSettings: 'gym_machine_settings_v1',
+      equipmentSettings: 'gym_equipment_settings_v1',
       exerciseNotes: 'gym_exercise_notes_v1',
       deloadActive: 'gym_deload_active',
       deloadStartDate: 'gym_deload_start_date',
@@ -24,6 +25,7 @@ class WorkoutApp {
     this.history = this.loadHistory();
     this.lastWeights = this.loadLastWeights();
     this.machineSettings = this.loadMachineSettings();
+    this.equipmentSettings = this.loadEquipmentSettings();
     this.exerciseNotes = this.loadExerciseNotes();
     this.exercisePreferences = this.loadExercisePreferences();
     this.deloadActive = localStorage.getItem(this.storageKeys.deloadActive) === 'true';
@@ -346,6 +348,80 @@ class WorkoutApp {
 
   saveMachineSettings() {
     localStorage.setItem(this.storageKeys.machineSettings, JSON.stringify(this.machineSettings));
+  }
+
+  isEquipmentSettingsMap(value) {
+    return Boolean(value && typeof value === 'object' && !Array.isArray(value) &&
+      Object.entries(value).every(([name, setting]) => name.trim() && typeof setting === 'string'));
+  }
+
+  loadEquipmentSettings() {
+    try {
+      const value = JSON.parse(localStorage.getItem(this.storageKeys.equipmentSettings) || '{}');
+      return this.isEquipmentSettingsMap(value) ? value : {};
+    } catch (_) { return {}; }
+  }
+
+  hasEquipmentSetting(name) {
+    return typeof name === 'string' && Object.prototype.hasOwnProperty.call(this.equipmentSettings || {}, name) &&
+      typeof this.equipmentSettings[name] === 'string';
+  }
+
+  getEquipmentSetting(name) {
+    return this.hasEquipmentSetting(name) ? this.equipmentSettings[name] : '';
+  }
+
+  getLegacyMachineSetting(exId) {
+    const legacy = this.machineSettings || {};
+    return Object.prototype.hasOwnProperty.call(legacy, exId) && typeof legacy[exId] === 'string' ? legacy[exId] : '';
+  }
+
+  updateEquipmentSetting(name, value) {
+    if (typeof name !== 'string' || !name.trim() || typeof value !== 'string') return false;
+    if (this.hasEquipmentSetting(name) && this.equipmentSettings[name] === value) return true;
+    const next = { ...(this.equipmentSettings || {}), [name]: value };
+    try {
+      this.writeStorageTransaction(new Map([[this.storageKeys.equipmentSettings, JSON.stringify(next)]]));
+    } catch (_) {
+      this.showToast('Could not save this equipment setup. Your previous setting is unchanged; free some device storage and try again.');
+      return false;
+    }
+    this.equipmentSettings = next;
+    return true;
+  }
+
+  refreshEquipmentSetupInputs(name) {
+    this.exerciseListEl.querySelectorAll('.machine-settings-input').forEach(input => {
+      if (input.dataset.exname !== name) return;
+      input.value = this.getEquipmentSetting(name);
+      const card = input.closest('.exercise-card');
+      const cue = card.querySelector('.saved-seat-cue');
+      if (cue) {
+        cue.textContent = input.value ? 'Seat / pin: ' + input.value : '';
+        cue.parentElement.hidden = !cue.parentElement.textContent.trim();
+      }
+      const legacy = card.querySelector('.legacy-machine-setting');
+      if (legacy) legacy.hidden = this.hasEquipmentSetting(name);
+    });
+  }
+
+  bindEquipmentSetupEvents() {
+    this.exerciseListEl.querySelectorAll('.machine-settings-input').forEach(input => {
+      input.addEventListener('input', () => {
+        this.updateEquipmentSetting(input.dataset.exname, input.value);
+        this.refreshEquipmentSetupInputs(input.dataset.exname);
+      });
+    });
+    this.exerciseListEl.querySelectorAll('.use-legacy-machine-setting-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        const name = button.dataset.exname;
+        const value = this.getLegacyMachineSetting(button.dataset.exid);
+        if (!value || !this.updateEquipmentSetting(name, value)) return;
+        this.refreshEquipmentSetupInputs(name);
+        button.closest('.exercise-card').querySelector('.machine-settings-input')?.focus();
+        this.showToast('Previous setup saved for this equipment.');
+      });
+    });
   }
 
   loadExerciseNotes() {
@@ -1458,7 +1534,8 @@ class WorkoutApp {
     const canDefer = this.canDeferExercise(ex.id);
     const deferHelp = this.isExerciseGroupUnfinished(this.getExerciseGroups().find(group => group.some(item => item.id === ex.id)) || [])
       ? 'No other unfinished exercise to switch to.' : 'This exercise is complete.';
-    const seat = this.machineSettings[ex.id] || '';
+    const seat = this.getEquipmentSetting(name);
+    const legacySeat = this.getLegacyMachineSetting(ex.id);
     const note = this.exerciseNotes[name] || '';
     return `<article class="exercise-card focused-card ${allDone ? 'completed' : ''}" id="card_${ex.id}" data-exid="${ex.id}">
       <div class="card-header">
@@ -1506,7 +1583,8 @@ class WorkoutApp {
           <label>Weight increment<select class="exercise-increment-input" data-exname="${this.escapeHtml(name)}">${[1,2.5,5,10].map(value => `<option value="${value}" ${increment === value ? 'selected' : ''}>${value} lb</option>`).join('')}</select></label>
           <label>Weight convention<select class="exercise-convention-input" data-exname="${this.escapeHtml(name)}">${[['total','Total load'],['per-hand','Dumbbell weight per hand'],['plates-only','Smith plates only (exclude bar)'],['including-bar','Smith total including bar']].map(([value,label]) => `<option value="${value}" ${convention === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
           <p class="muted-text">Changing the label keeps your recorded numbers unchanged.</p>
-          <label>Pin / seat<input type="text" class="machine-settings-input" value="${this.escapeHtml(this.machineSettings[ex.id] || '')}" data-exid="${ex.id}" placeholder="Seat #4, pin #8"></label>
+          <label>Pin / seat for this equipment<input type="text" class="machine-settings-input" value="${this.escapeHtml(seat)}" data-exid="${ex.id}" data-exname="${this.escapeHtml(name)}" placeholder="Seat #4, pin #8"></label>
+          ${legacySeat ? `<div class="legacy-machine-setting" ${this.hasEquipmentSetting(name) ? 'hidden' : ''}><p><strong>Previous setup:</strong> ${this.escapeHtml(legacySeat)}</p><p>This old setting was saved for the exercise slot. Check that it matches this equipment before using it.</p><button type="button" class="secondary-btn use-legacy-machine-setting-btn" data-exid="${ex.id}" data-exname="${this.escapeHtml(name)}">Use for this equipment</button></div>` : ''}
           <label>Note to self<input type="text" class="exercise-note-input" value="${this.escapeHtml(this.exerciseNotes[name] || '')}" data-exname="${this.escapeHtml(name)}" data-exid="${ex.id}" placeholder="Setup or technique reminders"></label>
           ${progression.unlocked ? `<p>All previous sets reached ${progression.maxReps} reps. Progression step: ${progression.increment} lb.</p><button class="bump-weight-btn" data-exid="${ex.id}" data-bump="${sets[0] && sets[0].weight > progression.topWeight ? -progression.increment : progression.increment}">${sets[0] && sets[0].weight > progression.topWeight ? 'Revert' : 'Apply'} ${progression.increment} lb progression</button>` : ''}
           <div class="card-footer"><button type="button" class="add-set-btn" data-exid="${ex.id}">+ Add set</button>${sets.length > 1 ? `<button type="button" class="remove-set-btn icon-btn" data-exid="${ex.id}">− Remove set</button>` : ''}</div>
@@ -1700,16 +1778,7 @@ class WorkoutApp {
       });
     });
 
-    // Machine Settings input changes
-    this.exerciseListEl.querySelectorAll('.machine-settings-input').forEach(input => {
-      input.addEventListener('input', () => {
-        const exId = input.dataset.exid;
-        this.machineSettings[exId] = input.value;
-        this.saveMachineSettings();
-        const cue = input.closest('.exercise-card').querySelector('.saved-seat-cue');
-        if (cue) { cue.textContent = input.value ? 'Seat / pin: ' + input.value : ''; cue.parentElement.hidden = !cue.parentElement.textContent.trim(); }
-      });
-    });
+    this.bindEquipmentSetupEvents();
 
     // Exercise Notes input changes
     this.exerciseListEl.querySelectorAll('.exercise-note-input').forEach(input => {
