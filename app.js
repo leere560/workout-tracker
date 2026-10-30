@@ -93,7 +93,7 @@ class WorkoutApp {
 
     this.render();
     this.showSessionResumePrompt();
-    if (this.equipmentRepairFailed) this.showToast('Could not restore equipment defaults. Your saved workouts are unchanged; free some device storage and check for an update again.');
+    if (this.equipmentRepairFailed) this.showToast('Could not update the routine defaults. Your saved workouts are unchanged; free some device storage and check for an update again.');
     this.requestWakeLock();
   }
 
@@ -106,8 +106,8 @@ class WorkoutApp {
     } catch (e) { console.error(e); }
     routine ||= JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
     routine = this.normalizeRoutineData(routine);
-    const repair = this.prepareSaturdayEquipmentRepair(routine);
-    repair.writes.set(this.storageKeys.routineRev, '16');
+    const repair = this.prepareRoutineUpgrade(routine);
+    repair.writes.set(this.storageKeys.routineRev, '17');
     repair.writes.set(this.storageKeys.routine, JSON.stringify(repair.routine));
     try {
       this.writeStorageTransaction(repair.writes);
@@ -137,6 +137,87 @@ class WorkoutApp {
       if (!Number.isFinite(ex.increment)) ex.increment = defaults?.increment || this.getExerciseIncrement(ex, ex.name);
     }));
     return routine;
+  }
+
+  prepareRoutineUpgrade(routine, storage = localStorage) {
+    const saturday = this.prepareSaturdayEquipmentRepair(routine, storage);
+    const monday = this.prepareMondayRoutineUpgrade(saturday.routine, this.storageOverlay(saturday.writes, storage));
+    return {routine: monday.routine, writes: new Map([...saturday.writes, ...monday.writes])};
+  }
+
+  prepareMondayRoutineUpgrade(routine, storage = localStorage) {
+    const updated = JSON.parse(JSON.stringify(routine)), writes = new Map();
+    const day = updated.find(day => day.id === 'mon__lower_b');
+    const defaults = DEFAULT_ROUTINE.find(day => day.id === 'mon__lower_b');
+    if (!day) return {routine: updated, writes};
+    day.exercises.forEach(ex => {
+      const canonical = defaults.exercises.find(item => item.id === ex.id && item.previousExercise);
+      if (!canonical || ex.mondayRevision === 1) return;
+      ex.mondayRevision = 1;
+      const legacy = canonical.previousExercise;
+      if (ex.name !== legacy.name) return; // Custom equipment and deliberate later defaults remain authoritative.
+      const old = {...this.getExerciseSnapshot(ex), programSets: ex.sets};
+      ex.previousExercise = old;
+      ex.equipmentAlternatives = [...(ex.equipmentAlternatives || []).filter(item => item?.name !== old.name), old];
+      if (ex.sets === legacy.programSets) ex.sets = canonical.sets;
+      if (ex.targetReps === legacy.targetReps) ex.targetReps = canonical.targetReps;
+      if (ex.increment === legacy.increment) ex.increment = canonical.increment;
+      ['name', 'muscle', 'startingWeight', 'needsBaseline', 'notes', 'videoUrl'].forEach(key => {ex[key] = canonical[key];});
+    });
+    const staged = Object.assign(Object.create(this), {routine: updated});
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i), retained = key.startsWith('gym_saved_draft_') && !key.startsWith('gym_saved_draft_for_');
+      if (!(retained || key === this.storageKeys.legacyCurrentSession || key.startsWith(this.storageKeys.currentSessionPrefix))) continue;
+      let draft; try {draft = JSON.parse(storage.getItem(key));} catch (_) {continue;}
+      if (draft?.dayId !== day.id || !draft.logs) continue;
+      const before = JSON.stringify(draft);
+      staged.reconcileMondaySession(draft, day, {preserve: retained || !draft.initialLogs || staged.hasSessionProgress(draft)});
+      if (JSON.stringify(draft) !== before) writes.set(key, JSON.stringify(draft));
+    }
+    return {routine: updated, writes};
+  }
+
+  reconcileMondaySession(session, day, {preserve = true, recordedExercises = {}} = {}) {
+    if (day?.id !== 'mon__lower_b' || !session?.logs) return session;
+    const defaults = DEFAULT_ROUTINE.find(candidate => candidate.id === day.id)?.exercises || [];
+    const legacySession = session.mondayRevision !== 1;
+    day.exercises.forEach(ex => {
+      const canonical = defaults.find(item => item.id === ex.id);
+      const previous = ex.previousExercise || (ex.name === canonical?.name ? canonical.previousExercise : null);
+      const rows = session.logs[ex.id];
+      if (!previous || !Array.isArray(rows)) return;
+      const sourceName = session.swaps?.[ex.id]?.name || rows.find(set => set.exerciseName)?.exerciseName ||
+        (session.mondayRevision === 1 ? ex.name : previous.name);
+      if (preserve && legacySession) {
+        rows.forEach(set => {set.programSets ||= previous.programSets;});
+        if (session.swaps?.[ex.id]) session.swaps[ex.id].programSets ||= previous.programSets;
+      }
+      rows.forEach(set => {if (set.exerciseName === previous.name && previous.name !== ex.name) set.programSets ||= previous.programSets;});
+      if (sourceName === ex.name) return;
+      if (!preserve && !session.swaps?.[ex.id]) {
+        const targets = Object.assign(Object.create(this), {session: { ...session, swaps: {} }, deloadActive: Boolean(session.deload)});
+        const count = session.deload ? Math.max(2, Math.floor(ex.sets * .67)) : ex.sets;
+        session.logs[ex.id] = Array.from({length: count}, (_, index) => {
+          const target = targets.getSetTarget(ex, index, ex.name);
+          return {setNum: index + 1, weight: target.targetWeight, reps: target.targetReps, completed: false, rir: null,
+            exerciseName: ex.name, muscle: ex.muscle, targetReps: ex.targetReps, needsBaseline: Boolean(target.needsBaseline)};
+        });
+        session.initialLogs[ex.id] = JSON.parse(JSON.stringify(session.logs[ex.id]));
+      } else {
+        this.reconcileSessionEquipmentIdentity(session, ex, previous, recordedExercises);
+        const swap = session.swaps?.[ex.id];
+        if (swap?.name === previous.name) swap.programSets ||= previous.programSets;
+      }
+    });
+    session.mondayRevision = 1;
+    return session;
+  }
+
+  getPrescribedSetCount(ex, name = this.getEffectiveExerciseName(ex.id, ex)) {
+    const swap = this.session?.swaps?.[ex.id];
+    if (swap?.name === name && Number.isInteger(swap.programSets) && swap.programSets > 0) return swap.programSets;
+    const row = this.session?.logs?.[ex.id]?.find(set => set.exerciseName === name && Number.isInteger(set.programSets) && set.programSets > 0);
+    return row?.programSets || ex.sets;
   }
 
   prepareSaturdayEquipmentRepair(routine, storage = localStorage) {
@@ -238,11 +319,16 @@ class WorkoutApp {
     // Completed rows retain their own equipment, including when pending sets use a newer swap.
     const completedEquipment = descriptor(completedName || recordedName || fallback.name);
     rows.forEach(set => {
-      if (named(set)) return;
+      if (named(set)) {
+        const programSets = descriptor(set.exerciseName).programSets;
+        if (programSets) set.programSets ||= programSets;
+        return;
+      }
       const identity = set.completed ? completedEquipment : equipment;
       set.exerciseName ||= identity.name;
       set.muscle ||= identity.muscle || fallback.muscle;
       set.targetReps ||= identity.targetReps || fallback.targetReps;
+      if (identity.programSets) set.programSets ||= identity.programSets;
     });
     warmups.forEach(set => {
       set.exerciseName ||= (set.completed ? completedEquipment : equipment).name;
@@ -579,7 +665,7 @@ class WorkoutApp {
       };
     }
 
-    const targetSetsCount = ex.sets || 3;
+    const targetSetsCount = this.getPrescribedSetCount(ex, activeSubName) || 3;
     const exactPrevSet = this.getPreviousSetAt(validPrevSets, setIdx);
     const fallbackWeightSet = validPrevSets[validPrevSets.length - 1] || validPrevSets[0] || {};
     let baseWeight = exactPrevSet ? (exactPrevSet.weight || 0) : (fallbackWeightSet.weight || 0);
@@ -865,6 +951,7 @@ class WorkoutApp {
     const current = this.session?.dayId === draft.dayId ? this.session : this.loadSession(dayIndex);
     if (this.hasSessionProgress(current) && this.draftFingerprint(current) !== this.draftFingerprint(draft)) this.retainSavedDraft(current, writes);
     draft.lastInteractionAt = new Date().toISOString();
+    this.reconcileMondaySession(draft, this.routine[dayIndex], {preserve: true});
     this.normalizeSessionFlow(draft, this.routine[dayIndex]);
     writes.set(this.getSessionKey(draft.dayId), JSON.stringify(draft));
     writes.set('gym_last_active_day_v1', draft.dayId);
@@ -900,6 +987,7 @@ class WorkoutApp {
           if (untouched && Boolean(parsed.deload) !== Boolean(this.deloadActive)) return this.initNewSession(dayIndex);
           if (typeof parsed.deload !== 'boolean') parsed.deload = Boolean(this.deloadActive);
           parsed.id ||= `s_${day.id}_${parsed.startTime || Date.now()}`;
+          this.reconcileMondaySession(parsed, day, {preserve: !untouched});
           return this.normalizeSessionFlow(parsed, day);
         }
       } catch (e) { console.error(e); }
@@ -936,12 +1024,13 @@ class WorkoutApp {
       deload: Boolean(this.deloadActive)
     };
 
+    const targets = Object.assign(Object.create(this), {session});
     day.exercises.forEach(ex => {
       const effectiveName = ex.name;
       const targetSetsCount = this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets;
       session.logs[ex.id] = [];
       for (let i = 1; i <= targetSetsCount; i++) {
-        const target = this.getSetTarget(ex, i - 1, effectiveName);
+        const target = targets.getSetTarget(ex, i - 1, effectiveName);
         session.logs[ex.id].push({
           setNum: i,
           weight: target.targetWeight,
@@ -957,6 +1046,7 @@ class WorkoutApp {
     });
 
     session.initialLogs = JSON.parse(JSON.stringify(session.logs));
+    if (day.id === 'mon__lower_b') session.mondayRevision = 1;
     return session;
   }
 
@@ -1595,7 +1685,8 @@ class WorkoutApp {
     const pending = this.pendingRir && this.pendingRir.exId === ex.id;
     const collapsed = false; // Completed sets remain individually reviewable; effort is never hidden.
     const enabled = this.isSupersetEnabled(ex);
-    const progression = this.getPreviousProgressionFlag(name, targetReps, this.deloadActive ? Math.max(2, Math.floor(ex.sets * .67)) : ex.sets, ex);
+    const prescribedCount = this.getPrescribedSetCount(ex, name);
+    const progression = this.getPreviousProgressionFlag(name, targetReps, this.deloadActive ? Math.max(2, Math.floor(prescribedCount * .67)) : prescribedCount, ex);
     const position = this.getOrderedExercises().findIndex(item => item.id === ex.id) + 1;
     const exerciseCount = this.routine[this.activeDayIndex].exercises.length;
     const canDefer = this.canDeferExercise(ex.id);
@@ -2148,9 +2239,9 @@ class WorkoutApp {
   // Equipment Swapper Controller
   getExerciseSnapshot(exercise) {
     const snapshot = {};
-    for (const key of ['name', 'muscle', 'targetReps', 'notes', 'videoUrl', 'increment', 'startingWeight', 'needsBaseline']) {
+    for (const key of ['name', 'muscle', 'targetReps', 'notes', 'videoUrl', 'increment', 'startingWeight', 'needsBaseline', 'programSets']) {
       const value = exercise?.[key];
-      if (key === 'needsBaseline' ? typeof value === 'boolean' : key === 'increment' ? typeof value === 'number' && Number.isFinite(value) && value > 0 :
+      if (key === 'needsBaseline' ? typeof value === 'boolean' : key === 'programSets' ? Number.isInteger(value) && value > 0 : key === 'increment' ? typeof value === 'number' && Number.isFinite(value) && value > 0 :
           typeof value === 'string' || (key === 'startingWeight' && typeof value === 'number' && Number.isFinite(value))) snapshot[key] = value;
     }
     return snapshot;
@@ -2197,7 +2288,12 @@ class WorkoutApp {
       if (typeof sub.name !== 'string' || !key || seen.has(key)) return false;
       seen.add(key);
       return true;
-    }).map(sub => ({...this.getExerciseSnapshot(sub), type: typeof sub.type === 'string' ? sub.type : this.getSwapEquipmentType(sub.name)}));
+    }).map(sub => {
+      const alternative = {...this.getExerciseSnapshot(sub), type: typeof sub.type === 'string' ? sub.type : this.getSwapEquipmentType(sub.name)};
+      // Preserved draft prescriptions must not change the set count of a newly selected alternative.
+      delete alternative.programSets;
+      return alternative;
+    });
   }
 
   openSwapModal(exId, exName) {
@@ -2283,6 +2379,7 @@ class WorkoutApp {
               s.muscle = ex.muscle;
               s.targetReps = ex.targetReps;
               s.rir = null;
+              delete s.programSets;
               delete s.rirAnswered;
             }
           });
@@ -2388,6 +2485,8 @@ class WorkoutApp {
           s.exerciseName = effectiveName;
           s.muscle = sub.muscle || ex.muscle;
           s.targetReps = target.targetRepsDisplay;
+          delete s.programSets;
+          if (Number.isInteger(sub.programSets) && sub.programSets > 0) s.programSets = sub.programSets;
           s.rir = null;
         }
       });
@@ -2974,7 +3073,8 @@ class WorkoutApp {
         const currentSwap = this.session.swaps?.[ex.id];
         const effectiveTargetReps = completedSets[0].targetReps || (currentSwap?.name === effectiveName ? currentSwap.targetReps : null) || ex.targetReps;
         const maxTarget = this.getMaxTargetReps(effectiveTargetReps);
-        const targetSetsCount = this.session.deload ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets;
+        const prescribedCount = completedSets[0].programSets || this.getPrescribedSetCount(ex, effectiveName);
+        const targetSetsCount = this.session.deload ? Math.max(2, Math.floor(prescribedCount * 0.67)) : prescribedCount;
         const topW = Math.max(...completedSets.map(s => s.weight || 0));
         if (!this.session.deload && completedSets.length >= targetSetsCount && completedSets.every(s => (s.reps || 0) >= maxTarget && (topW === 0 || (s.weight || 0) >= topW))) {
           weightIncreaseUnlocked.push({ name: effectiveName, reps: maxTarget, setsCount: completedSets.length, topWeight: topW, increment: this.getExerciseIncrement(ex, effectiveName) });
@@ -3117,6 +3217,7 @@ class WorkoutApp {
       return false;
     }
     const snapshot = JSON.parse(JSON.stringify(record.sessionSnapshot));
+    this.reconcileMondaySession(snapshot, this.routine[dayIndex], {preserve: true, recordedExercises: record.exercises});
     this.routine[dayIndex].exercises.forEach(exercise =>
       this.reconcileSessionEquipmentIdentity(snapshot, exercise, exercise, record.exercises));
     snapshot.lastInteractionAt = new Date().toISOString();
@@ -3387,7 +3488,7 @@ class WorkoutApp {
 
   getExerciseMuscleCredits(name, muscle) {
     // Only names from the exercise catalog (or explicitly tagged custom exercises) are mapped.
-    const catalog = [...DEFAULT_ROUTINE.flatMap(d => d.exercises), ...(typeof EXERCISE_SUBSTITUTIONS === 'object' ? Object.values(EXERCISE_SUBSTITUTIONS).flat() : []), ...(this.routine || []).flatMap(d => d.exercises)];
+    const catalog = [...DEFAULT_ROUTINE.flatMap(d => d.exercises).flatMap(ex => [ex, ex.previousExercise, ...(ex.equipmentAlternatives || [])]).filter(Boolean), ...(typeof EXERCISE_SUBSTITUTIONS === 'object' ? Object.values(EXERCISE_SUBSTITUTIONS).flat() : []), ...(this.routine || []).flatMap(d => d.exercises)];
     const exercise = catalog.find(ex => ex.name === name);
     if (!exercise && !muscle) return null;
     const n = name.toLowerCase();
@@ -3572,7 +3673,7 @@ class WorkoutApp {
       <section aria-labelledby="settingsBackupHeading"><h2 id="settingsBackupHeading">Settings & backup</h2>
         <div class="insight-panel"><div class="insight-section-heading"><h3>Backup</h3><span class="insight-meta">${this.escapeHtml(this.getBackupStatusText())}</span></div><p>Save a copy of your history, active workouts, program and preferences before changing phones.</p><div class="insight-actions"><button type="button" class="secondary-btn" id="exportDataBtn">Download backup</button><button type="button" class="secondary-btn" id="importBackupBtn">Restore backup</button></div></div>
         <details class="insight-details"><summary>Recovery drafts</summary>${this.renderRecoveryDrafts()}</details>
-        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v33</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
+        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v34</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
         <div class="setting-row insight-panel"><div><label id="deloadSettingLabel" for="deloadSettingToggle">7-day deload</label><p id="deloadSettingDescription">${normalSets} → ${deloadSets} planned sets (${normalSets ? Math.round((normalSets-deloadSets)/normalSets*100) : 0}% fewer) and 10% lighter loads. Ends automatically after 7 days.${this.deloadActive ? ` ${this.getDeloadDaysLeft()} days remaining.` : ''}</p></div><label class="switch"><input type="checkbox" id="deloadSettingToggle" aria-labelledby="deloadSettingLabel" aria-describedby="deloadSettingDescription" ${this.deloadActive ? 'checked' : ''}><span class="slider"></span></label></div>
         <div class="setting-row insight-panel"><div><label id="wakeLockSettingLabel" for="wakeLockSettingToggle">Keep screen awake</label><p id="wakeLockSettingDescription">Keep the display on while logging a workout, when supported by your browser.</p></div><label class="switch"><input type="checkbox" id="wakeLockSettingToggle" aria-labelledby="wakeLockSettingLabel" aria-describedby="wakeLockSettingDescription" ${this.wakeLockEnabled ? 'checked' : ''}><span class="slider"></span></label></div>
         <details class="insight-panel insight-details"><summary>Rest sound & vibration</summary><p>Test alerts with the page open. Background and locked-screen alerts may not fire on iPhone; reopening restores the countdown.</p><button type="button" class="secondary-btn" id="testChimeBtn">Test sound & vibration</button></details>
@@ -3676,6 +3777,7 @@ class WorkoutApp {
     const setsValid = sets => Array.isArray(sets) && sets.every(s => object(s) && !s.skipped && (s.weight === null || Number.isFinite(Number(s.weight))) && Number.isFinite(Number(s.reps)) && Number(s.reps) >= 0 && Number(s.weight) >= 0);
     const draftSetsValid = sets => Array.isArray(sets) && sets.every(s => object(s) &&
       (s.skipped === undefined || (typeof s.skipped === 'boolean' && !(s.skipped && s.completed))) &&
+      (s.programSets === undefined || (Number.isInteger(s.programSets) && s.programSets > 0)) &&
       [s.weight, s.reps].every(value => value === null || typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))));
     const flowValid = session =>
       (session.lastInteractionAt === undefined || session.lastInteractionAt === null || (typeof session.lastInteractionAt === 'string' && Number.isFinite(Date.parse(session.lastInteractionAt)))) &&
@@ -3702,14 +3804,14 @@ class WorkoutApp {
     return data;
   }
 
-  getStorageSnapshot() {
-    return new Map(Array.from({length: localStorage.length}, (_, i) => {
-      const key = localStorage.key(i); return [key, localStorage.getItem(key)];
+  getStorageSnapshot(storage = localStorage) {
+    return new Map(Array.from({length: storage.length}, (_, i) => {
+      const key = storage.key(i); return [key, storage.getItem(key)];
     }));
   }
 
-  storageOverlay(writes = new Map()) {
-    const values = this.getStorageSnapshot();
+  storageOverlay(writes = new Map(), storage = localStorage) {
+    const values = this.getStorageSnapshot(storage);
     writes.forEach((value, key) => value === null ? values.delete(key) : values.set(key, value));
     return {getItem: key => values.get(key) ?? null, key: index => [...values.keys()][index], get length() {return values.size;}};
   }
@@ -3754,13 +3856,14 @@ class WorkoutApp {
     return JSON.stringify(this.stableDraftContent(content));
   }
 
-  normalizeImportedDraft(input, routine, sourceRoutine, state) {
+  normalizeImportedDraft(input, routine, sourceRoutine, state, preserveDraft = false) {
     const session = JSON.parse(JSON.stringify(input));
     session.id = this.importedSessionId(session);
     const day = routine.find(day => day.id === session.dayId);
     if (!day) return session;
     const sourceDay = sourceRoutine?.find(day => day.id === session.dayId);
-    const untouched = session.initialLogs && !this.hasSessionProgress(session);
+    const untouched = !preserveDraft && session.initialLogs && !this.hasSessionProgress(session);
+    this.reconcileMondaySession(session, day, {preserve: !untouched});
     const targets = Object.assign(Object.create(this), state, {routine, session, deloadActive: Boolean(session.deload)});
     day.exercises.forEach(ex => {
       const source = sourceDay?.exercises.find(item => item.id === ex.id) || ex;
@@ -3832,10 +3935,13 @@ class WorkoutApp {
         (Boolean(existing.deload) === Boolean(entry.deload) && Date.parse(entry.date) > (Date.parse(existing.date) || 0))) merged.lastWeights[name] = entry;
     }));
     writes.set(this.storageKeys.lastWeights, JSON.stringify(merged.lastWeights));
-    const routine = this.normalizeRoutineData(restoreSettings && data.routine ? data.routine : this.routine);
-    const normalize = (session, source = this.routine) => this.normalizeImportedDraft(session, routine, source, {...merged, history});
+    const candidate = this.normalizeRoutineData(restoreSettings && data.routine ? data.routine : this.routine);
+    // Resolve program revisions before comparing drafts, so repeated legacy imports deduplicate after normalization.
+    const emptyStorage = {length: 0, key() {return null;}, getItem() {return null;}};
+    const routine = Object.assign(Object.create(this), merged, {history}).prepareRoutineUpgrade(candidate, emptyStorage).routine;
+    const normalize = (session, source = this.routine, preserve = false) => this.normalizeImportedDraft(session, routine, source, {...merged, history}, preserve);
     const currentDrafts = localSessions.map(session => normalize(session));
-    this.getSavedDrafts().forEach(({recoveryId, session}) => writes.set(`gym_saved_draft_${recoveryId}`, JSON.stringify(normalize(session))));
+    this.getSavedDrafts().forEach(({recoveryId, session}) => writes.set(`gym_saved_draft_${recoveryId}`, JSON.stringify(normalize(session, this.routine, true))));
     const availableDays = new Set(routine.map(day => day.id));
     const archivedIds = new Set(history.map(record => record.sessionId || record.sessionSnapshot?.id).filter(Boolean));
     const incomingSessions = new Map(currentDrafts.map(session => [session.dayId, session]));
@@ -3851,7 +3957,7 @@ class WorkoutApp {
       writes.set(this.getSessionKey(copy.dayId), JSON.stringify(copy));
     });
     (data.savedDrafts || []).forEach(inputDraft => {
-      const draft = normalize(inputDraft, data.routine || this.routine);
+      const draft = normalize(inputDraft, data.routine || this.routine, true);
       if (!currentDrafts.some(current => this.draftFingerprint(current) === this.draftFingerprint(draft))) retain(draft);
     });
     // Include current in-memory drafts in the same transaction, even if they have not reached storage yet.
@@ -3873,10 +3979,10 @@ class WorkoutApp {
       nextState.restoreTimer = true;
     }
     const staged = Object.assign(Object.create(this), nextState);
-    const repair = staged.prepareSaturdayEquipmentRepair(routine, this.storageOverlay(writes));
+    const repair = staged.prepareRoutineUpgrade(routine, this.storageOverlay(writes));
     repair.writes.forEach((value, key) => writes.set(key, value));
     writes.set(this.storageKeys.routine, JSON.stringify(repair.routine));
-    writes.set(this.storageKeys.routineRev, '16');
+    writes.set(this.storageKeys.routineRev, '17');
     nextState.routine = repair.routine;
     return {summary, writes, nextState, sourceStorage, sourceState};
   }

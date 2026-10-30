@@ -6,12 +6,19 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const read = name => fs.readFileSync(path.join(root, name), 'utf8');
 
-test('the existing schedule, exercises, prescribed sets and rep ranges are preserved', () => {
+test('the program is preserved except the explicitly approved Monday revision', () => {
   const routine = vm.runInNewContext(read('routine-data.js') + '; DEFAULT_ROUTINE;');
   const actual = routine.map(d => ({ id: d.id, title: d.title, exercises: d.exercises.map(e => ({
     id: e.id, name: e.name, sets: e.sets, targetReps: e.targetReps
   })) }));
-  assert.deepEqual(JSON.parse(JSON.stringify(actual)), JSON.parse(read('tests/fixtures/original-program.json')));
+  const expected = JSON.parse(read('tests/fixtures/original-program.json'));
+  const changes = {
+    mon__lower_b_ex_hip_thrust: {name: 'Barbell Romanian Deadlift', sets: 3, targetReps: '8–10'},
+    mon__lower_b_ex_back_ext: {name: 'Seated Hip Abduction', sets: 2, targetReps: '12–20'},
+    mon__lower_b_ex6: {name: 'Machine Crunch', sets: 3, targetReps: '10–12'}
+  };
+  expected.find(day => day.id === 'mon__lower_b').exercises.forEach(ex => Object.assign(ex, changes[ex.id] || {}));
+  assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected);
 });
 
 test('all published release assets exist and the script versions match the worker', () => {

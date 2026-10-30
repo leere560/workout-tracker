@@ -12,7 +12,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.split('?')[0] == '/preview.html':
             html = (ROOT / 'index.html').read_text(encoding='utf-8')
-            html = html.replace('  <script src="update-manager.js?v=33"></script>', '')
+            html = html.replace('  <script src="update-manager.js?v=34"></script>', '')
             data = html.encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'text/html; charset=utf-8')

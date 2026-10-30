@@ -1,4 +1,4 @@
-// Pre-loaded routine parsed from routine.xlsx + Sunday DB Arms & Shoulders
+// Routine from routine.xlsx + Sunday DB Arms & Shoulders + approved Monday revision (2026-10-30)
 const DEFAULT_ROUTINE = [
   {
     "id": "wed___upper_a",
@@ -407,18 +407,42 @@ const DEFAULT_ROUTINE = [
     "exercises": [
       {
         "id": "mon__lower_b_ex_hip_thrust",
-        "name": "Machine Hip Thrust / Glute Drive",
-        "muscle": "Glutes",
+        "name": "Barbell Romanian Deadlift",
+        "muscle": "Hamstrings / Glutes",
         "sets": 3,
-        "targetReps": "6–8",
+        "targetReps": "8–10",
         "startingWeight": "Light (find weight)",
         "rest": "3 min",
-        "notes": "Position the belt/pad across the hips, brace, and raise the hips without arching the lower back. Lower under control. Effort: finish with 2–3 reps in reserve.",
-        "videoUrl": "https://www.youtube.com/results?search_query=machine+hip+thrust+glute+drive+technique",
+        "notes": "Count the bar in total load. Brace, keep a soft knee bend, and push hips back with the bar close to your legs. Lower only as far as you can control the hinge; stand tall without leaning back. Leave 2–3 reps in reserve. For your first couple of sessions, use 2 working sets (remove one in exercise options), then build to 3.",
+        "videoUrl": "https://www.youtube.com/results?search_query=barbell+romanian+deadlift+technique",
         "isOptional": false,
         "superset": null,
-        "increment": 10,
-        "restSeconds": 180
+        "increment": 5,
+        "restSeconds": 180,
+        "needsBaseline": true,
+        "mondayRevision": 1,
+        "previousExercise": {
+          "name": "Machine Hip Thrust / Glute Drive",
+          "muscle": "Glutes",
+          "targetReps": "6–8",
+          "startingWeight": "Light (find weight)",
+          "notes": "Position the belt/pad across the hips, brace, and raise the hips without arching the lower back. Lower under control. Effort: finish with 2–3 reps in reserve.",
+          "videoUrl": "https://www.youtube.com/results?search_query=machine+hip+thrust+glute+drive+technique",
+          "increment": 10,
+          "programSets": 3
+        },
+        "equipmentAlternatives": [
+          {
+            "name": "Machine Hip Thrust / Glute Drive",
+            "muscle": "Glutes",
+            "targetReps": "6–8",
+            "startingWeight": "Light (find weight)",
+            "notes": "Position the belt/pad across the hips, brace, and raise the hips without arching the lower back. Lower under control. Effort: finish with 2–3 reps in reserve.",
+            "videoUrl": "https://www.youtube.com/results?search_query=machine+hip+thrust+glute+drive+technique",
+            "increment": 10,
+            "programSets": 3
+          }
+        ]
       },
       {
         "id": "mon__lower_b_ex2",
@@ -481,33 +505,81 @@ const DEFAULT_ROUTINE = [
       },
       {
         "id": "mon__lower_b_ex_back_ext",
-        "name": "45-Degree Back Extension",
-        "muscle": "Glutes / Hamstrings",
-        "sets": 3,
-        "targetReps": "8–12",
-        "startingWeight": "Bodyweight",
+        "name": "Seated Hip Abduction",
+        "muscle": "Glutes",
+        "sets": 2,
+        "targetReps": "12–20",
+        "startingWeight": "Light (find weight)",
         "rest": "2 min",
-        "notes": "Pad just below the hip crease, feet secured, hinge slowly at the hips while keeping the spine comfortably steady. Rise until torso and legs align; don’t swing or arch backward. Effort: finish with 3–4 clean reps in reserve.",
-        "videoUrl": "https://www.youtube.com/results?search_query=45+degree+back+extension+for+glutes+technique",
+        "notes": "Push your knees apart against the pads; this is abduction, not adduction. Keep your pelvis steady, use a controlled range, and return slowly. Leave 1–3 clean reps in reserve.",
+        "videoUrl": "https://www.youtube.com/results?search_query=seated+hip+abduction+machine+technique",
         "isOptional": false,
         "superset": null,
         "increment": 5,
-        "restSeconds": 120
+        "restSeconds": 120,
+        "needsBaseline": true,
+        "mondayRevision": 1,
+        "previousExercise": {
+          "name": "45-Degree Back Extension",
+          "muscle": "Glutes / Hamstrings",
+          "targetReps": "8–12",
+          "startingWeight": "Bodyweight",
+          "notes": "Pad just below the hip crease, feet secured, hinge slowly at the hips while keeping the spine comfortably steady. Rise until torso and legs align; don’t swing or arch backward. Effort: finish with 3–4 clean reps in reserve.",
+          "videoUrl": "https://www.youtube.com/results?search_query=45+degree+back+extension+for+glutes+technique",
+          "increment": 5,
+          "programSets": 3
+        },
+        "equipmentAlternatives": [
+          {
+            "name": "45-Degree Back Extension",
+            "muscle": "Glutes / Hamstrings",
+            "targetReps": "8–12",
+            "startingWeight": "Bodyweight",
+            "notes": "Pad just below the hip crease, feet secured, hinge slowly at the hips while keeping the spine comfortably steady. Rise until torso and legs align; don’t swing or arch backward. Effort: finish with 3–4 clean reps in reserve.",
+            "videoUrl": "https://www.youtube.com/results?search_query=45+degree+back+extension+for+glutes+technique",
+            "increment": 5,
+            "programSets": 3
+          }
+        ]
       },
       {
         "id": "mon__lower_b_ex6",
-        "name": "Captain's Chair Knee Raise",
+        "name": "Machine Crunch",
         "muscle": "Abs / Core",
         "sets": 3,
         "targetReps": "10–12",
-        "startingWeight": "Bodyweight",
+        "startingWeight": "Light (find weight)",
         "rest": "2 min",
-        "notes": "Forearms locked on pads; pull knees up while actively rolling pelvis toward your chest.",
-        "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+hanging+knee+raise+technique",
+        "notes": "Adjust the seat and pads to fit. Curl your ribcage toward your pelvis with a controlled exhale, keeping your hips steady. Return slowly and avoid pulling mainly with your arms. Leave 1–3 clean reps in reserve.",
+        "videoUrl": "https://www.youtube.com/results?search_query=abdominal+crunch+machine+technique",
         "isOptional": false,
         "superset": null,
         "increment": 5,
-        "restSeconds": 120
+        "restSeconds": 120,
+        "needsBaseline": true,
+        "mondayRevision": 1,
+        "previousExercise": {
+          "name": "Captain's Chair Knee Raise",
+          "muscle": "Abs / Core",
+          "targetReps": "10–12",
+          "startingWeight": "Bodyweight",
+          "notes": "Forearms locked on pads; pull knees up while actively rolling pelvis toward your chest.",
+          "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+hanging+knee+raise+technique",
+          "increment": 5,
+          "programSets": 3
+        },
+        "equipmentAlternatives": [
+          {
+            "name": "Captain's Chair Knee Raise",
+            "muscle": "Abs / Core",
+            "targetReps": "10–12",
+            "startingWeight": "Bodyweight",
+            "notes": "Forearms locked on pads; pull knees up while actively rolling pelvis toward your chest.",
+            "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+hanging+knee+raise+technique",
+            "increment": 5,
+            "programSets": 3
+          }
+        ]
       }
     ]
   }
@@ -708,6 +780,16 @@ const EXERCISE_SUBSTITUTIONS = {
     { name: "Standing Calf Raise Machine", type: "Machine", muscle: "Calves", targetReps: "10–15", notes: "Full stretch at bottom; pause 2s; explode onto balls of feet.", videoUrl: "https://www.youtube.com/results?search_query=standing+calf+raise" },
     { name: "Seated Calf Raise Machine", type: "Machine", muscle: "Calves", targetReps: "12–15", notes: "Knees bent 90°; targets soleus muscle; full stretch pause.", videoUrl: "https://www.youtube.com/results?search_query=seated+calf+raise" },
     { name: "Single-Leg Dumbbell Calf Raise", type: "Dumbbell", muscle: "Calves", targetReps: "12–15", notes: "Hold dumbbell on working side; ball of foot on step; deep pause.", videoUrl: "https://www.youtube.com/results?search_query=single+leg+calf+raise" }
+  ],
+  "Barbell Romanian Deadlift": [
+    { name: "Dumbbell Romanian Deadlift (RDL)", type: "Dumbbell", muscle: "Hamstrings / Glutes", targetReps: "8–10", notes: "Hold dumbbells close to your legs and hinge under control.", videoUrl: "https://www.youtube.com/results?search_query=dumbbell+rdl+technique" },
+    { name: "Smith Machine Romanian Deadlift", type: "Machine", muscle: "Hamstrings / Glutes", targetReps: "8–10", notes: "Set up for a controlled hip hinge with the bar close to your legs.", videoUrl: "https://www.youtube.com/results?search_query=smith+machine+romanian+deadlift" }
+  ],
+  "Seated Hip Abduction": [
+    { name: "Standing Cable Hip Abduction", type: "Cable", muscle: "Glutes", targetReps: "12–20", notes: "Use an ankle strap and move the leg outward without leaning your torso.", videoUrl: "https://www.youtube.com/results?search_query=standing+cable+hip+abduction" }
+  ],
+  "Machine Crunch": [
+    { name: "Kneeling Cable Crunch", type: "Cable", muscle: "Abs / Core", targetReps: "10–12", notes: "Curl your ribcage toward your pelvis without swinging your hips.", videoUrl: "https://www.youtube.com/results?search_query=kneeling+cable+crunch" }
   ],
   "Standing Dumbbell Romanian Deadlift (RDL)": [
     { name: "Barbell Romanian Deadlift", type: "Barbell", muscle: "Hamstrings / Glutes", targetReps: "8–10", notes: "Keep bar skimming shins; push hips back; maintain flat back.", videoUrl: "https://www.youtube.com/results?search_query=barbell+rdl+technique" },

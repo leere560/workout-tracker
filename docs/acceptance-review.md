@@ -115,3 +115,19 @@ Release assets and displayed build are v33. This is a tested local feature branc
 
 ![Protected backup restore preview](backup-restore-preview.png)
 ![Equipment setup and per-workout skips](everyday-workout-preview.png)
+
+## Approved Monday routine revision v34 (2026-10-30)
+
+Monday Lower B now uses Barbell Romanian Deadlift, 3 x 8-10 with 180-second rest; Seated Hip Abduction (knees outward), 2 x 12-20 with 120-second rest; and Machine Crunch, 3 x 10-12 with 120-second rest. These replace hip thrust, 45-degree back extension, and captain's chair respectively. RDL notes advise two working sets for the first couple of sessions (remove one through existing exercise options), then three, with 2-3 reps in reserve and the bar included in total load. The leg press/calf pairing, lying curl, all other days and Friday's 4 x 8-12 leg extensions are preserved. Monday has 18 planned working sets; the weekly plan has 10 primary quad sets, 10 hamstring sets and 6 core sets, with hip-abduction work recorded under glutes.
+
+New equipment requires its own starting load unless its own prior history exists. Stable routine slot IDs keep old records addressable. A one-time per-slot Monday revision updates recognized defaults and preserves custom replacements or modified prescriptions. Saturday and Monday upgrades share the existing atomic startup/restore transaction. Unedited active drafts regenerate the correct row counts and new baselines; progressed, legacy and recovery drafts retain rows, skips, warm-ups, equipment and activity times. Fresh workouts receive the new routine. Archived records remain untouched; reopening reconciles a clone. Backup restore normalizes program revisions before deduplication and preserves retained drafts in either program-restore mode.
+
+Preserved old/custom equipment carries its original prescribed set count so two completed back-extension sets plus a skipped third cannot unlock progression through the new abduction two-set threshold. Equipment changes clear stale pending prescription metadata while completed rows retain it. Historical lifts remain recognized in volume reporting. The original program fixture is retained; its acceptance check permits exactly the three authorized Monday differences.
+
+Validation: 183 Node tests pass (19 focused Monday migration regressions plus all 164 prior tests). All five JavaScript syntax checks and git diff --check pass. An independent agent reviewed persistence and wrote migration tests; parent integrated fixes and browser acceptance. Tests include custom defaults, repeated loads/imports, own-equipment baselines, unedited/current/legacy/recovery drafts, mixed equipment, archived clone reopen, storage rollback, both backup modes and progression across swaps.
+
+Synthetic browser acceptance at 375/402/430 x 874 confirms fresh prescriptions/counts and required load entry; RDL completion starts 180-second rest; reload recovery; old unedited/progressed migration; correct new workout reset; unchanged Friday extensions; no overflow, visible buttons under 44px or visible form text under 16px; no browser warnings/errors. The existing everyday-flow browser script also passes at all three widths, including setup, swaps, skipping and protected backup recovery.
+
+Run python tests/preview_server.py, then node tests/browser-monday.cjs with Playwright available (PLAYWRIGHT_MODULE and CHROME_EXECUTABLE can select local runtime paths). Screenshots use synthetic data. Release assets and displayed build are v34. This implementation is a local feature branch; no push, merge or deployment was performed for v34. Physical iPhone keyboard, VoiceOver and installed-PWA update/offline checks remain device acceptance work.
+
+![Monday barbell RDL with independent baseline](monday-rdl-preview.png)
