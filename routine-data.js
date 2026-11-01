@@ -407,14 +407,14 @@ const DEFAULT_ROUTINE = [
     "exercises": [
       {
         "id": "mon__lower_b_ex_hip_thrust",
-        "name": "Barbell Romanian Deadlift",
-        "muscle": "Hamstrings / Glutes",
+        "name": "45-Degree Back Extension",
+        "muscle": "Glutes / Hamstrings",
         "sets": 3,
-        "targetReps": "8–10",
-        "startingWeight": "Light (find weight)",
+        "targetReps": "10–12",
+        "startingWeight": "Bodyweight or light added weight",
         "rest": "3 min",
-        "notes": "Count the bar in total load. Brace, keep a soft knee bend, and push hips back with the bar close to your legs. Lower only as far as you can control the hinge; stand tall without leaning back. Leave 2–3 reps in reserve. For your first couple of sessions, use 2 working sets (remove one in exercise options), then build to 3.",
-        "videoUrl": "https://www.youtube.com/results?search_query=barbell+romanian+deadlift+technique",
+        "notes": "Hold a plate or dumbbell securely. Hinge at the hips with control, then raise your torso to a straight body line without leaning back. Leave 2–3 reps in reserve; add weight gradually when all three sets reach 12 controlled reps.",
+        "videoUrl": "https://www.youtube.com/results?search_query=45+degree+weighted+back+extension+technique",
         "isOptional": false,
         "superset": null,
         "increment": 5,
@@ -442,7 +442,47 @@ const DEFAULT_ROUTINE = [
             "increment": 10,
             "programSets": 3
           }
-        ]
+        ],
+        "backExtensionRevision": 1,
+        "rdlVersion": {
+          "id": "mon__lower_b_ex_hip_thrust",
+          "name": "Barbell Romanian Deadlift",
+          "muscle": "Hamstrings / Glutes",
+          "sets": 3,
+          "targetReps": "8–10",
+          "startingWeight": "Light (find weight)",
+          "rest": "3 min",
+          "notes": "Count the bar in total load. Brace, keep a soft knee bend, and push hips back with the bar close to your legs. Lower only as far as you can control the hinge; stand tall without leaning back. Leave 2–3 reps in reserve. For your first couple of sessions, use 2 working sets (remove one in exercise options), then build to 3.",
+          "videoUrl": "https://www.youtube.com/results?search_query=barbell+romanian+deadlift+technique",
+          "isOptional": false,
+          "superset": null,
+          "increment": 5,
+          "restSeconds": 180,
+          "needsBaseline": true,
+          "mondayRevision": 1,
+          "previousExercise": {
+            "name": "Machine Hip Thrust / Glute Drive",
+            "muscle": "Glutes",
+            "targetReps": "6–8",
+            "startingWeight": "Light (find weight)",
+            "notes": "Position the belt/pad across the hips, brace, and raise the hips without arching the lower back. Lower under control. Effort: finish with 2–3 reps in reserve.",
+            "videoUrl": "https://www.youtube.com/results?search_query=machine+hip+thrust+glute+drive+technique",
+            "increment": 10,
+            "programSets": 3
+          },
+          "equipmentAlternatives": [
+            {
+              "name": "Machine Hip Thrust / Glute Drive",
+              "muscle": "Glutes",
+              "targetReps": "6–8",
+              "startingWeight": "Light (find weight)",
+              "notes": "Position the belt/pad across the hips, brace, and raise the hips without arching the lower back. Lower under control. Effort: finish with 2–3 reps in reserve.",
+              "videoUrl": "https://www.youtube.com/results?search_query=machine+hip+thrust+glute+drive+technique",
+              "increment": 10,
+              "programSets": 3
+            }
+          ]
+        }
       },
       {
         "id": "mon__lower_b_ex2",

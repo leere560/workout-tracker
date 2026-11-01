@@ -13,7 +13,7 @@ test('the program is preserved except the explicitly approved Monday revision', 
   })) }));
   const expected = JSON.parse(read('tests/fixtures/original-program.json'));
   const changes = {
-    mon__lower_b_ex_hip_thrust: {name: 'Barbell Romanian Deadlift', sets: 3, targetReps: '8–10'},
+    mon__lower_b_ex_hip_thrust: {name: '45-Degree Back Extension', sets: 3, targetReps: '10–12'},
     mon__lower_b_ex_back_ext: {name: 'Seated Hip Abduction', sets: 2, targetReps: '12–20'},
     mon__lower_b_ex6: {name: 'Machine Crunch', sets: 3, targetReps: '10–12'}
   };

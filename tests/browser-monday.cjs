@@ -3,7 +3,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const root=path.join(__dirname,'..');
 const defaults=vm.runInNewContext(fs.readFileSync(path.join(root,'routine-data.js'),'utf8')+';DEFAULT_ROUTINE;');
 const legacy=JSON.parse(JSON.stringify(defaults));
-for(const ex of legacy[4].exercises){if(!ex.previousExercise)continue;const old=ex.previousExercise;Object.assign(ex,old,{sets:old.programSets,needsBaseline:false});delete ex.mondayRevision;delete ex.previousExercise;delete ex.equipmentAlternatives;delete ex.programSets;}
+for(const ex of legacy[4].exercises){if(!ex.previousExercise)continue;const old=ex.previousExercise;Object.assign(ex,old,{sets:old.programSets,needsBaseline:false});delete ex.mondayRevision;delete ex.backExtensionRevision;delete ex.previousExercise;delete ex.equipmentAlternatives;delete ex.programSets;}
 const ids=['mon__lower_b_ex_hip_thrust','mon__lower_b_ex_back_ext','mon__lower_b_ex6'];
 async function focus(page,id){const summary=page.locator('.workout-overview > summary');if(!await page.locator('.workout-overview').evaluate(el=>el.open))await summary.click();await page.locator(`.overview-exercise[data-exid="${id}"]`).click();}
 (async()=>{const installed='C:/Program Files/Google/Chrome/Application/chrome.exe';const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_EXECUTABLE||(fs.existsSync(installed)?installed:undefined)});const report=[];try{
@@ -11,7 +11,7 @@ for(const width of [375,402,430]){
  const context=await browser.newContext({viewport:{width,height:874},reducedMotion:'reduce'}),page=await context.newPage(),errors=[];
  page.on('pageerror',error=>errors.push(error.message));page.on('console',message=>{if(['error','warning'].includes(message.type()))errors.push(message.text());});
  const url=process.env.PREVIEW_URL||'http://127.0.0.1:8766/preview.html';await page.goto(url);await page.selectOption('#workoutDayPicker','4');
- for(const [id,name,count,reps] of [[ids[0],'Barbell Romanian Deadlift',3,'8–10'],[ids[1],'Seated Hip Abduction',2,'12–20'],[ids[2],'Machine Crunch',3,'10–12']]){
+ for(const [id,name,count,reps] of [[ids[0],'45-Degree Back Extension',3,'10–12'],[ids[1],'Seated Hip Abduction',2,'12–20'],[ids[2],'Machine Crunch',3,'10–12']]){
   await focus(page,id);assert.equal(await page.locator('.exercise-name').textContent(),name);
   assert.equal(await page.locator('.set-row').count(),count);assert.ok((await page.locator('.focus-prescription').textContent()).includes(reps));
   assert.equal(await page.locator('.set-weight-input').first().inputValue(),'');assert.equal(await page.locator('.set-check-btn').first().isDisabled(),true);

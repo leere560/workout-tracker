@@ -107,7 +107,7 @@ class WorkoutApp {
     routine ||= JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
     routine = this.normalizeRoutineData(routine);
     const repair = this.prepareRoutineUpgrade(routine);
-    repair.writes.set(this.storageKeys.routineRev, '17');
+    repair.writes.set(this.storageKeys.routineRev, '18');
     repair.writes.set(this.storageKeys.routine, JSON.stringify(repair.routine));
     try {
       this.writeStorageTransaction(repair.writes);
@@ -142,7 +142,9 @@ class WorkoutApp {
   prepareRoutineUpgrade(routine, storage = localStorage) {
     const saturday = this.prepareSaturdayEquipmentRepair(routine, storage);
     const monday = this.prepareMondayRoutineUpgrade(saturday.routine, this.storageOverlay(saturday.writes, storage));
-    return {routine: monday.routine, writes: new Map([...saturday.writes, ...monday.writes])};
+    const priorWrites = new Map([...saturday.writes, ...monday.writes]);
+    const back = this.prepareBackExtensionUpgrade(monday.routine, this.storageOverlay(priorWrites, storage));
+    return {routine: back.routine, writes: new Map([...priorWrites, ...back.writes])};
   }
 
   prepareMondayRoutineUpgrade(routine, storage = localStorage) {
@@ -154,15 +156,16 @@ class WorkoutApp {
       const canonical = defaults.exercises.find(item => item.id === ex.id && item.previousExercise);
       if (!canonical || ex.mondayRevision === 1) return;
       ex.mondayRevision = 1;
-      const legacy = canonical.previousExercise;
+      const target = canonical.rdlVersion || canonical;
+      const legacy = target.previousExercise;
       if (ex.name !== legacy.name) return; // Custom equipment and deliberate later defaults remain authoritative.
       const old = {...this.getExerciseSnapshot(ex), programSets: ex.sets};
       ex.previousExercise = old;
       ex.equipmentAlternatives = [...(ex.equipmentAlternatives || []).filter(item => item?.name !== old.name), old];
-      if (ex.sets === legacy.programSets) ex.sets = canonical.sets;
-      if (ex.targetReps === legacy.targetReps) ex.targetReps = canonical.targetReps;
-      if (ex.increment === legacy.increment) ex.increment = canonical.increment;
-      ['name', 'muscle', 'startingWeight', 'needsBaseline', 'notes', 'videoUrl'].forEach(key => {ex[key] = canonical[key];});
+      if (ex.sets === legacy.programSets) ex.sets = target.sets;
+      if (ex.targetReps === legacy.targetReps) ex.targetReps = target.targetReps;
+      if (ex.increment === legacy.increment) ex.increment = target.increment;
+      ['name', 'muscle', 'startingWeight', 'needsBaseline', 'notes', 'videoUrl'].forEach(key => {ex[key] = target[key];});
     });
     const staged = Object.assign(Object.create(this), {routine: updated});
     for (let i = 0; i < storage.length; i++) {
@@ -172,6 +175,40 @@ class WorkoutApp {
       if (draft?.dayId !== day.id || !draft.logs) continue;
       const before = JSON.stringify(draft);
       staged.reconcileMondaySession(draft, day, {preserve: retained || !draft.initialLogs || staged.hasSessionProgress(draft)});
+      if (JSON.stringify(draft) !== before) writes.set(key, JSON.stringify(draft));
+    }
+    return {routine: updated, writes};
+  }
+
+  prepareBackExtensionUpgrade(routine, storage = localStorage) {
+    const updated = JSON.parse(JSON.stringify(routine)), writes = new Map();
+    const day = updated.find(item => item.id === 'mon__lower_b');
+    const ex = day?.exercises.find(item => item.id === 'mon__lower_b_ex_hip_thrust');
+    const canonical = DEFAULT_ROUTINE.find(item => item.id === 'mon__lower_b')?.exercises.find(item => item.id === ex?.id);
+    if (!ex || !canonical || ex.backExtensionRevision === 1) return {routine: updated, writes};
+    ex.backExtensionRevision = 1;
+    if (ex.name !== 'Barbell Romanian Deadlift') return {routine: updated, writes};
+    const old = {...this.getExerciseSnapshot(ex), programSets: ex.sets};
+    ex.equipmentAlternatives = [...(ex.equipmentAlternatives || []).filter(item => item?.name !== old.name), old];
+    if (ex.targetReps === canonical.rdlVersion.targetReps) ex.targetReps = canonical.targetReps;
+    ['name', 'muscle', 'startingWeight', 'needsBaseline', 'notes', 'videoUrl'].forEach(key => {ex[key] = canonical[key];});
+    const staged = Object.assign(Object.create(this), {routine: updated});
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i), retained = key.startsWith('gym_saved_draft_') && !key.startsWith('gym_saved_draft_for_');
+      if (!(retained || key === this.storageKeys.legacyCurrentSession || key.startsWith(this.storageKeys.currentSessionPrefix))) continue;
+      let draft; try {draft = JSON.parse(storage.getItem(key));} catch (_) {continue;}
+      if (draft?.dayId !== day.id || !Array.isArray(draft.logs?.[ex.id])) continue;
+      const before = JSON.stringify(draft), rows = draft.logs[ex.id];
+      const untouched = !retained && draft.initialLogs && !staged.hasSessionProgress(draft) && !draft.swaps?.[ex.id];
+      if (untouched) {
+        const targets = Object.assign(Object.create(staged), {session: draft, deloadActive: Boolean(draft.deload)});
+        draft.logs[ex.id] = rows.map((set, index) => {
+          const target = targets.getSetTarget(ex, index, ex.name);
+          return {setNum: index + 1, weight: target.targetWeight, reps: target.targetReps, completed: false, rir: null,
+            exerciseName: ex.name, muscle: ex.muscle, targetReps: ex.targetReps, needsBaseline: Boolean(target.needsBaseline)};
+        });
+        draft.initialLogs[ex.id] = JSON.parse(JSON.stringify(draft.logs[ex.id]));
+      } else staged.reconcileSessionEquipmentIdentity(draft, ex, old);
       if (JSON.stringify(draft) !== before) writes.set(key, JSON.stringify(draft));
     }
     return {routine: updated, writes};
@@ -3673,7 +3710,7 @@ class WorkoutApp {
       <section aria-labelledby="settingsBackupHeading"><h2 id="settingsBackupHeading">Settings & backup</h2>
         <div class="insight-panel"><div class="insight-section-heading"><h3>Backup</h3><span class="insight-meta">${this.escapeHtml(this.getBackupStatusText())}</span></div><p>Save a copy of your history, active workouts, program and preferences before changing phones.</p><div class="insight-actions"><button type="button" class="secondary-btn" id="exportDataBtn">Download backup</button><button type="button" class="secondary-btn" id="importBackupBtn">Restore backup</button></div></div>
         <details class="insight-details"><summary>Recovery drafts</summary>${this.renderRecoveryDrafts()}</details>
-        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v34</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
+        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v35</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
         <div class="setting-row insight-panel"><div><label id="deloadSettingLabel" for="deloadSettingToggle">7-day deload</label><p id="deloadSettingDescription">${normalSets} → ${deloadSets} planned sets (${normalSets ? Math.round((normalSets-deloadSets)/normalSets*100) : 0}% fewer) and 10% lighter loads. Ends automatically after 7 days.${this.deloadActive ? ` ${this.getDeloadDaysLeft()} days remaining.` : ''}</p></div><label class="switch"><input type="checkbox" id="deloadSettingToggle" aria-labelledby="deloadSettingLabel" aria-describedby="deloadSettingDescription" ${this.deloadActive ? 'checked' : ''}><span class="slider"></span></label></div>
         <div class="setting-row insight-panel"><div><label id="wakeLockSettingLabel" for="wakeLockSettingToggle">Keep screen awake</label><p id="wakeLockSettingDescription">Keep the display on while logging a workout, when supported by your browser.</p></div><label class="switch"><input type="checkbox" id="wakeLockSettingToggle" aria-labelledby="wakeLockSettingLabel" aria-describedby="wakeLockSettingDescription" ${this.wakeLockEnabled ? 'checked' : ''}><span class="slider"></span></label></div>
         <details class="insight-panel insight-details"><summary>Rest sound & vibration</summary><p>Test alerts with the page open. Background and locked-screen alerts may not fire on iPhone; reopening restores the countdown.</p><button type="button" class="secondary-btn" id="testChimeBtn">Test sound & vibration</button></details>
@@ -3982,7 +4019,7 @@ class WorkoutApp {
     const repair = staged.prepareRoutineUpgrade(routine, this.storageOverlay(writes));
     repair.writes.forEach((value, key) => writes.set(key, value));
     writes.set(this.storageKeys.routine, JSON.stringify(repair.routine));
-    writes.set(this.storageKeys.routineRev, '17');
+    writes.set(this.storageKeys.routineRev, '18');
     nextState.routine = repair.routine;
     return {summary, writes, nextState, sourceStorage, sourceState};
   }

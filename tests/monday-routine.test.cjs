@@ -8,7 +8,7 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const root = path.join(__dirname, '..');
 const dayId = 'mon__lower_b';
 const revisions = [
-  {id: 'mon__lower_b_ex_hip_thrust', oldName: 'Machine Hip Thrust / Glute Drive', oldMuscle: 'Glutes', oldReps: '6–8', oldWeight: 'Light (find weight)', name: 'Barbell Romanian Deadlift', sets: 3, targetReps: '8–10', restSeconds: 180},
+  {id: 'mon__lower_b_ex_hip_thrust', oldName: 'Machine Hip Thrust / Glute Drive', oldMuscle: 'Glutes', oldReps: '6–8', oldWeight: 'Light (find weight)', name: '45-Degree Back Extension', sets: 3, targetReps: '10–12', restSeconds: 180},
   {id: 'mon__lower_b_ex_back_ext', oldName: '45-Degree Back Extension', oldMuscle: 'Glutes / Hamstrings', oldReps: '8–12', oldWeight: 'Bodyweight', name: 'Seated Hip Abduction', sets: 2, targetReps: '12–20', restSeconds: 120},
   {id: 'mon__lower_b_ex6', oldName: "Captain's Chair Knee Raise", oldMuscle: 'Abs / Core', oldReps: '10–12', oldWeight: 'Bodyweight', name: 'Machine Crunch', sets: 3, targetReps: '10–12', restSeconds: 120}
 ];
@@ -24,7 +24,7 @@ function legacyRoutine(defaults) {
     Object.assign(ex, {name: change.oldName, muscle: change.oldMuscle, sets: 3, targetReps: change.oldReps,
       startingWeight: change.oldWeight, rest: change.restSeconds === 180 ? '3 min' : '2 min', restSeconds: change.restSeconds,
       notes: `Legacy setup for ${change.oldName}`, increment: change.id.includes('hip_thrust') ? 10 : 5});
-    for (const key of ['mondayRevision', 'previousExercise', 'equipmentAlternatives', 'originalExercise', 'needsBaseline']) delete ex[key];
+    for (const key of ['mondayRevision', 'previousExercise', 'equipmentAlternatives', 'originalExercise', 'needsBaseline', 'backExtensionRevision']) delete ex[key];
   });
   return routine;
 }
@@ -116,7 +116,7 @@ test('saved original Monday defaults upgrade once while unrelated prescriptions 
     else for (const ex of day.exercises.filter(ex => !revisions.some(change => change.id === ex.id)))
       assert.deepEqual(clone(monday.exercises.find(item => item.id === ex.id)), ex);
   }
-  assert.equal(values.get('routineRev'), '17');
+  assert.equal(values.get('routineRev'), '18');
   const first = JSON.stringify(app.routine); upgrade(); assert.equal(JSON.stringify(app.routine), first);
 });
 
@@ -125,7 +125,7 @@ test('custom replacements and deliberate later returns to legacy equipment are p
   const ex = app.routine.find(day => day.id === dayId).exercises.find(item => item.id === revisions[0].id);
   Object.assign(ex, {name: 'My custom hinge', sets: 4, targetReps: '5–7', restSeconds: 240, rest: '4 min', notes: 'My custom cue'});
   values.set('routine', JSON.stringify(app.routine)); const monday = upgrade();
-  assert.deepEqual(clone(monday.exercises.find(item => item.id === ex.id)), {...clone(ex), mondayRevision: 1});
+  assert.deepEqual(clone(monday.exercises.find(item => item.id === ex.id)), {...clone(ex), mondayRevision: 1, backExtensionRevision: 1});
   const changed = monday.exercises.find(item => item.id === revisions[1].id);
   changed.name = revisions[1].oldName; changed.sets = 4; changed.targetReps = '6–9';
   values.set('routine', JSON.stringify(app.routine)); upgrade();
@@ -140,7 +140,9 @@ test('untouched drafts regenerate exact new counts and never reuse old-equipment
   const updated = stored(app.getSessionKey(dayId));
   for (const change of revisions) {
     assert.equal(updated.logs[change.id].length, change.sets);
-    assert.ok(updated.logs[change.id].every(set => set.exerciseName === change.name && set.weight === null && set.needsBaseline));
+    assert.ok(updated.logs[change.id].every(set => set.exerciseName === change.name));
+    if (change.id === revisions[0].id) assert.equal(updated.logs[change.id][0].weight, 200); // Same-named prior back extensions.
+    else assert.ok(updated.logs[change.id].every(set => set.weight === null && set.needsBaseline));
   }
   assert.deepEqual(updated.logs, updated.initialLogs);
   assert.equal(app.hasSessionProgress(updated), false);
@@ -165,7 +167,7 @@ test('recognized legacy equipment retains customized prescriptions while receivi
 test('new equipment uses only its own history when one already exists', () => {
   const {app, oldSession, save, upgrade, stored} = setup();
   app.history = [{id: 'prior-rdl', date: '2026-10-20', exercises: {
-    'Barbell Romanian Deadlift': {sets: [{weight: 95, reps: 8, completed: true}]},
+    '45-Degree Back Extension': {sets: [{weight: 95, reps: 8, completed: true}]},
     'Machine Hip Thrust / Glute Drive': {sets: [{weight: 250, reps: 8, completed: true}]}
   }}];
   save(oldSession()); upgrade();
@@ -359,4 +361,58 @@ test('backup migration previews stay read-only and late failures roll back stage
   failOnce('routineRev');
   assert.equal(app.applyBackupImport(plan), false);
   assert.deepEqual(snapshot(), before); assert.deepEqual(clone(app.routine), routine); assert.deepEqual(clone(app.session), session);
+});
+
+test('v34 RDL upgrade preserves progressed drafts and retains the old equipment as an option', () => {
+  const {app, values, defaults, upgrade, stored} = setup();
+  const routine = clone(defaults), day = routine.find(item => item.id === dayId);
+  const index = day.exercises.findIndex(item => item.id === revisions[0].id);
+  day.exercises[index] = clone(day.exercises[index].rdlVersion);
+  app.routine = routine;
+  const draft = app.initNewSession(app.activeDayIndex), id = revisions[0].id;
+  Object.assign(draft.logs[id][0], {weight: 95, reps: 8, completed: true});
+  draft.lastInteractionAt = '2026-10-31T17:00:00.000Z';
+  values.set('routine', JSON.stringify(routine)); values.set(app.getSessionKey(dayId), JSON.stringify(draft));
+  values.set('gym_saved_draft_test', JSON.stringify({...clone(draft), id: 'retained'}));
+  const updated = upgrade(), ex = updated.exercises[index];
+  assert.equal(ex.name, '45-Degree Back Extension'); assert.equal(ex.targetReps, '10–12');
+  assert.ok(ex.equipmentAlternatives.some(item => item.name === 'Barbell Romanian Deadlift'));
+  for (const key of [app.getSessionKey(dayId), 'gym_saved_draft_test']) {
+    const result = stored(key); assert.equal(result.logs[id][0].weight, 95);
+    assert.equal(result.logs[id][0].exerciseName, 'Barbell Romanian Deadlift');
+    assert.equal(result.swaps[id].name, 'Barbell Romanian Deadlift');
+    assert.equal(result.lastInteractionAt, draft.lastInteractionAt);
+  }
+});
+
+test('v34 untouched RDL draft upgrades and storage failure rolls the entire upgrade back', () => {
+  const {app, values, defaults, upgrade, stored, snapshot, failOnce} = setup();
+  const routine = clone(defaults), day = routine.find(item => item.id === dayId);
+  const index = day.exercises.findIndex(item => item.id === revisions[0].id);
+  day.exercises[index] = clone(day.exercises[index].rdlVersion); app.routine = routine;
+  const draft = app.initNewSession(app.activeDayIndex), id = revisions[0].id;
+  values.set('routine', JSON.stringify(routine)); values.set(app.getSessionKey(dayId), JSON.stringify(draft));
+  const before = snapshot(); failOnce('routineRev'); upgrade(); assert.deepEqual(snapshot(), before);
+  upgrade(); const result = stored(app.getSessionKey(dayId));
+  assert.equal(result.logs[id].length, 3); assert.ok(result.logs[id].every(row => row.exerciseName === '45-Degree Back Extension'));
+  assert.equal(result.logs[id][0].weight, null); assert.equal(result.logs[id][0].targetReps, '10–12');
+});
+
+test('v34 backup imports retain progressed RDLs with either program choice', () => {
+  for (const restoreSettings of [false, true]) {
+    const {app, defaults, upgrade} = setup();
+    const oldRoutine = clone(defaults), day = oldRoutine.find(item => item.id === dayId);
+    const index = day.exercises.findIndex(item => item.id === revisions[0].id);
+    day.exercises[index] = clone(day.exercises[index].rdlVersion); app.routine = oldRoutine;
+    const incoming = app.initNewSession(app.activeDayIndex), id = revisions[0].id;
+    Object.assign(incoming.logs[id][0], {weight: 95, reps: 8, completed: true});
+    app.routine = clone(defaults); upgrade(); app.routine = clone(defaults);
+    app.session = app.initNewSession(app.activeDayIndex); app.saveCurrentSession();
+    const plan = app.prepareBackupImport({version: '3.4', routine: oldRoutine, history: [], sessions: [incoming]}, {restoreSettings});
+    assert.equal(app.applyBackupImport(plan), true);
+    assert.equal(app.routine.find(item => item.id === dayId).exercises[index].name, '45-Degree Back Extension');
+    const imported = app.loadSession(app.routine.findIndex(day => day.id === dayId));
+    assert.equal(imported.logs[id][0].exerciseName, 'Barbell Romanian Deadlift');
+    assert.equal(imported.logs[id][0].weight, 95); assert.equal(imported.swaps[id].name, 'Barbell Romanian Deadlift');
+  }
 });
