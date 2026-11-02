@@ -107,7 +107,7 @@ class WorkoutApp {
     routine ||= JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
     routine = this.normalizeRoutineData(routine);
     const repair = this.prepareRoutineUpgrade(routine);
-    repair.writes.set(this.storageKeys.routineRev, '18');
+    repair.writes.set(this.storageKeys.routineRev, '19');
     repair.writes.set(this.storageKeys.routine, JSON.stringify(repair.routine));
     try {
       this.writeStorageTransaction(repair.writes);
@@ -144,7 +144,9 @@ class WorkoutApp {
     const monday = this.prepareMondayRoutineUpgrade(saturday.routine, this.storageOverlay(saturday.writes, storage));
     const priorWrites = new Map([...saturday.writes, ...monday.writes]);
     const back = this.prepareBackExtensionUpgrade(monday.routine, this.storageOverlay(priorWrites, storage));
-    return {routine: back.routine, writes: new Map([...priorWrites, ...back.writes])};
+    const stagedWrites = new Map([...priorWrites, ...back.writes]);
+    const simplified = this.prepareMondaySimplification(back.routine, this.storageOverlay(stagedWrites, storage));
+    return {routine: simplified.routine, writes: new Map([...stagedWrites, ...simplified.writes])};
   }
 
   prepareMondayRoutineUpgrade(routine, storage = localStorage) {
@@ -153,7 +155,8 @@ class WorkoutApp {
     const defaults = DEFAULT_ROUTINE.find(day => day.id === 'mon__lower_b');
     if (!day) return {routine: updated, writes};
     day.exercises.forEach(ex => {
-      const canonical = defaults.exercises.find(item => item.id === ex.id && item.previousExercise);
+      const canonical = defaults.exercises.find(item => item.id === ex.id && item.previousExercise) ||
+        (ex.id === RETIRED_MONDAY_ABDUCTION.id ? RETIRED_MONDAY_ABDUCTION : null);
       if (!canonical || ex.mondayRevision === 1) return;
       ex.mondayRevision = 1;
       const target = canonical.rdlVersion || canonical;
@@ -209,6 +212,34 @@ class WorkoutApp {
         });
         draft.initialLogs[ex.id] = JSON.parse(JSON.stringify(draft.logs[ex.id]));
       } else staged.reconcileSessionEquipmentIdentity(draft, ex, old);
+      if (JSON.stringify(draft) !== before) writes.set(key, JSON.stringify(draft));
+    }
+    return {routine: updated, writes};
+  }
+
+  prepareMondaySimplification(routine, storage = localStorage) {
+    const updated = JSON.parse(JSON.stringify(routine)), writes = new Map();
+    const day = updated.find(item => item.id === 'mon__lower_b');
+    if (!day) return {routine: updated, writes};
+    const retired = day.exercises.find(ex => ex.id === RETIRED_MONDAY_ABDUCTION.id);
+    day.exercises = day.exercises.filter(ex => ex.id !== RETIRED_MONDAY_ABDUCTION.id);
+    day.exercises.forEach(ex => {
+      if (['mon__lower_b_ex2', 'mon__lower_b_ex5'].includes(ex.id) && ex.superset?.id === 'lower_b_leg_press_calf') ex.superset = null;
+    });
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i), retained = key.startsWith('gym_saved_draft_') && !key.startsWith('gym_saved_draft_for_');
+      if (!(retained || key === this.storageKeys.legacyCurrentSession || key.startsWith(this.storageKeys.currentSessionPrefix))) continue;
+      let draft; try { draft = JSON.parse(storage.getItem(key)); } catch (_) { continue; }
+      if (draft?.dayId !== day.id || !draft.logs) continue;
+      const before = JSON.stringify(draft), rows = draft.logs[RETIRED_MONDAY_ABDUCTION.id];
+      // Keep removed rows in the snapshot and preserve identities for later history recording.
+      if (Array.isArray(rows)) {
+        const fallback = draft.mondayRevision === 1 ? (retired || RETIRED_MONDAY_ABDUCTION) : RETIRED_MONDAY_ABDUCTION.previousExercise;
+        for (const row of rows) {
+          row.exerciseName ||= fallback.name; row.muscle ||= fallback.muscle; row.targetReps ||= fallback.targetReps;
+        }
+      }
+      if (Array.isArray(draft.exerciseOrder)) draft.exerciseOrder = draft.exerciseOrder.filter(id => id !== RETIRED_MONDAY_ABDUCTION.id);
       if (JSON.stringify(draft) !== before) writes.set(key, JSON.stringify(draft));
     }
     return {routine: updated, writes};
@@ -773,7 +804,10 @@ class WorkoutApp {
   }
 
   getWorkingSetCounts(session = this.session) {
-    const sets = Object.values(session?.logs || {}).flat();
+    const day = this.routine?.find(item => item.id === session?.dayId);
+    const removed = session?.dayId === 'mon__lower_b' && !day?.exercises.some(ex => ex.id === RETIRED_MONDAY_ABDUCTION.id);
+    const sets = Object.entries(session?.logs || {}).flatMap(([id, rows]) =>
+      removed && id === RETIRED_MONDAY_ABDUCTION.id ? rows.filter(set => set.completed) : rows);
     const completed = sets.filter(set => set.completed).length;
     const skipped = sets.filter(set => !set.completed && set.skipped).length;
     return { total: sets.length, completed, skipped, remaining: sets.length - completed - skipped };
@@ -3075,8 +3109,12 @@ class WorkoutApp {
     const currentDay = this.routine[this.activeDayIndex];
     if (!currentDay) return;
 
+    // Completed sets from the retired Monday slot remain part of this workout.
+    const historical = currentDay.id === 'mon__lower_b' && !currentDay.exercises.some(ex => ex.id === RETIRED_MONDAY_ABDUCTION.id) && (this.session.logs?.[RETIRED_MONDAY_ABDUCTION.id] || []).some(set => set.completed)
+      ? [RETIRED_MONDAY_ABDUCTION] : [];
+    const workoutExercises = [...currentDay.exercises, ...historical];
     let totalCompletedSets = 0;
-    currentDay.exercises.forEach(ex => {
+    workoutExercises.forEach(ex => {
       const sets = (this.session && this.session.logs && this.session.logs[ex.id]) || [];
       totalCompletedSets += sets.filter(s => s.completed).length;
     });
@@ -3097,7 +3135,7 @@ class WorkoutApp {
     const weightIncreaseUnlocked = [];
     const recordedExercises = {};
 
-    currentDay.exercises.forEach(ex => {
+    workoutExercises.forEach(ex => {
       const sets = this.session.logs[ex.id] || [];
       const groups = new Map();
       sets.filter(s => s.completed).forEach(set => {
@@ -3525,7 +3563,7 @@ class WorkoutApp {
 
   getExerciseMuscleCredits(name, muscle) {
     // Only names from the exercise catalog (or explicitly tagged custom exercises) are mapped.
-    const catalog = [...DEFAULT_ROUTINE.flatMap(d => d.exercises).flatMap(ex => [ex, ex.previousExercise, ...(ex.equipmentAlternatives || [])]).filter(Boolean), ...(typeof EXERCISE_SUBSTITUTIONS === 'object' ? Object.values(EXERCISE_SUBSTITUTIONS).flat() : []), ...(this.routine || []).flatMap(d => d.exercises)];
+    const catalog = [...DEFAULT_ROUTINE.flatMap(d => d.exercises).flatMap(ex => [ex, ex.previousExercise, ...(ex.equipmentAlternatives || [])]).filter(Boolean), RETIRED_MONDAY_ABDUCTION, RETIRED_MONDAY_ABDUCTION.previousExercise, ...(typeof EXERCISE_SUBSTITUTIONS === 'object' ? Object.values(EXERCISE_SUBSTITUTIONS).flat() : []), ...(this.routine || []).flatMap(d => d.exercises)];
     const exercise = catalog.find(ex => ex.name === name);
     if (!exercise && !muscle) return null;
     const n = name.toLowerCase();
@@ -3710,7 +3748,7 @@ class WorkoutApp {
       <section aria-labelledby="settingsBackupHeading"><h2 id="settingsBackupHeading">Settings & backup</h2>
         <div class="insight-panel"><div class="insight-section-heading"><h3>Backup</h3><span class="insight-meta">${this.escapeHtml(this.getBackupStatusText())}</span></div><p>Save a copy of your history, active workouts, program and preferences before changing phones.</p><div class="insight-actions"><button type="button" class="secondary-btn" id="exportDataBtn">Download backup</button><button type="button" class="secondary-btn" id="importBackupBtn">Restore backup</button></div></div>
         <details class="insight-details"><summary>Recovery drafts</summary>${this.renderRecoveryDrafts()}</details>
-        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v35</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
+        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v36</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
         <div class="setting-row insight-panel"><div><label id="deloadSettingLabel" for="deloadSettingToggle">7-day deload</label><p id="deloadSettingDescription">${normalSets} → ${deloadSets} planned sets (${normalSets ? Math.round((normalSets-deloadSets)/normalSets*100) : 0}% fewer) and 10% lighter loads. Ends automatically after 7 days.${this.deloadActive ? ` ${this.getDeloadDaysLeft()} days remaining.` : ''}</p></div><label class="switch"><input type="checkbox" id="deloadSettingToggle" aria-labelledby="deloadSettingLabel" aria-describedby="deloadSettingDescription" ${this.deloadActive ? 'checked' : ''}><span class="slider"></span></label></div>
         <div class="setting-row insight-panel"><div><label id="wakeLockSettingLabel" for="wakeLockSettingToggle">Keep screen awake</label><p id="wakeLockSettingDescription">Keep the display on while logging a workout, when supported by your browser.</p></div><label class="switch"><input type="checkbox" id="wakeLockSettingToggle" aria-labelledby="wakeLockSettingLabel" aria-describedby="wakeLockSettingDescription" ${this.wakeLockEnabled ? 'checked' : ''}><span class="slider"></span></label></div>
         <details class="insight-panel insight-details"><summary>Rest sound & vibration</summary><p>Test alerts with the page open. Background and locked-screen alerts may not fire on iPhone; reopening restores the countdown.</p><button type="button" class="secondary-btn" id="testChimeBtn">Test sound & vibration</button></details>
@@ -4019,7 +4057,7 @@ class WorkoutApp {
     const repair = staged.prepareRoutineUpgrade(routine, this.storageOverlay(writes));
     repair.writes.forEach((value, key) => writes.set(key, value));
     writes.set(this.storageKeys.routine, JSON.stringify(repair.routine));
-    writes.set(this.storageKeys.routineRev, '18');
+    writes.set(this.storageKeys.routineRev, '19');
     nextState.routine = repair.routine;
     return {summary, writes, nextState, sourceStorage, sourceState};
   }

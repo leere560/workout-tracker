@@ -29,7 +29,8 @@ function legacyRoutine(defaults) {
   return routine;
 }
 
-function setup() {
+// Exercise the earlier v34/v35 repair stages against their original program.
+function setup({simplify = false} = {}) {
   const values = new Map(), elements = new Map();
   let failKey;
   const storage = {getItem: key => values.get(key) ?? null,
@@ -44,14 +45,18 @@ function setup() {
     document: {addEventListener() {}, getElementById: element, querySelector: () => ({click() {}}), body: {classList}},
     window: {}, setInterval: () => 1, clearInterval() {}, confirm: () => true, alert() {}});
   vm.runInContext(fs.readFileSync(path.join(root, 'routine-data.js'), 'utf8'), context);
+  if (!simplify) vm.runInContext(`const m = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b'); m.exercises.splice(4, 0, RETIRED_MONDAY_ABDUCTION); m.exercises.filter(e => ['mon__lower_b_ex2','mon__lower_b_ex5'].includes(e.id)).forEach((e,i) => {e.superset={id:'lower_b_leg_press_calf', tag:i?'2B':'2A', rest:'60 sec',restSeconds:60};});`, context);
   vm.runInContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8') + ';globalThis.App=WorkoutApp;', context);
   const defaults = vm.runInContext('JSON.parse(JSON.stringify(DEFAULT_ROUTINE))', context);
   const app = Object.create(context.App.prototype);
+  if (!simplify) app.prepareMondaySimplification = routine => ({routine, writes: new Map()});
   const keys = ['routine', 'routineRev', 'history', 'lastWeights', 'machineSettings', 'equipmentSettings', 'exerciseNotes',
     'exercisePreferences', 'wakeLockEnabled', 'deloadActive', 'deloadStartDate', 'lastBackupTime', 'timerTargetEnd', 'timerTotalDuration'];
   app.storageKeys = Object.fromEntries(keys.map(key => [key, key]));
   app.storageKeys.currentSessionPrefix = 'gym_session_'; app.storageKeys.legacyCurrentSession = 'legacy';
-  Object.assign(app, {routine: legacyRoutine(defaults), history: [], lastWeights: {}, machineSettings: {}, equipmentSettings: {},
+  const legacyDefaults = clone(defaults);
+  if (simplify) legacyDefaults.find(day => day.id === dayId).exercises.splice(4, 0, vm.runInContext('JSON.parse(JSON.stringify(RETIRED_MONDAY_ABDUCTION))', context));
+  Object.assign(app, {routine: legacyRoutine(legacyDefaults), history: [], lastWeights: {}, machineSettings: {}, equipmentSettings: {},
     exerciseNotes: {}, exercisePreferences: {}, activeDayIndex: defaults.findIndex(day => day.id === dayId),
     deloadActive: false, deloadStartDate: 0, wakeLockEnabled: true, activeView: 'workout', collapsedCards: new Set(),
     timer: {active: false, intervalId: null}, timerDockEl: {classList}, summaryModalEl: element('summaryModal'),
@@ -80,7 +85,7 @@ function setup() {
   const upgrade = () => {app.routine = app.loadRoutine(); return app.routine.find(day => day.id === dayId);};
   const stored = key => JSON.parse(values.get(key));
   const snapshot = () => [...values].sort(([a], [b]) => a.localeCompare(b));
-  return {app, values, defaults, oldSession, save, upgrade, stored, snapshot, failOnce: key => {failKey = key;}};
+  return {app, values, defaults, retired: vm.runInContext('JSON.parse(JSON.stringify(RETIRED_MONDAY_ABDUCTION))', context), oldSession, save, upgrade, stored, snapshot, failOnce: key => {failKey = key;}};
 }
 
 test('the published program changes only the three authorized Monday prescriptions', () => {
@@ -116,7 +121,7 @@ test('saved original Monday defaults upgrade once while unrelated prescriptions 
     else for (const ex of day.exercises.filter(ex => !revisions.some(change => change.id === ex.id)))
       assert.deepEqual(clone(monday.exercises.find(item => item.id === ex.id)), ex);
   }
-  assert.equal(values.get('routineRev'), '18');
+  assert.equal(values.get('routineRev'), '19');
   const first = JSON.stringify(app.routine); upgrade(); assert.equal(JSON.stringify(app.routine), first);
 });
 
@@ -414,5 +419,66 @@ test('v34 backup imports retain progressed RDLs with either program choice', () 
     const imported = app.loadSession(app.routine.findIndex(day => day.id === dayId));
     assert.equal(imported.logs[id][0].exerciseName, 'Barbell Romanian Deadlift');
     assert.equal(imported.logs[id][0].weight, 95); assert.equal(imported.swaps[id].name, 'Barbell Romanian Deadlift');
+  }
+});
+
+function oldV35Routine(defaults, retired) {
+  const routine = clone(defaults), day = routine.find(item => item.id === dayId);
+  day.exercises.splice(4, 0, clone(retired));
+  day.exercises.filter(ex => ['mon__lower_b_ex2', 'mon__lower_b_ex5'].includes(ex.id))
+    .forEach((ex, index) => {ex.superset = {id: 'lower_b_leg_press_calf', tag: index ? '2B' : '2A', rest: '60 sec', restSeconds: 60};});
+  return routine;
+}
+
+test('v36 Monday defaults omit abduction and use independent leg press and calf rest', () => {
+  const {app, defaults} = setup({simplify: true});
+  app.routine = clone(defaults); const monday = app.routine.find(day => day.id === dayId);
+  assert.equal(monday.exercises.some(ex => ex.id === 'mon__lower_b_ex_back_ext'), false);
+  assert.equal(monday.exercises.reduce((n, ex) => n + ex.sets, 0), 16);
+  const press = monday.exercises.find(ex => ex.id === 'mon__lower_b_ex2');
+  const calf = monday.exercises.find(ex => ex.id === 'mon__lower_b_ex5');
+  assert.equal(press.superset, null); assert.equal(calf.superset, null);
+  app.session = app.initNewSession(app.activeDayIndex);
+  assert.equal(app.getRestSeconds(press), 180); assert.equal(app.getRestSeconds(calf), 120);
+  app.session.logs.mon__lower_b_ex_hip_thrust.forEach(row => {row.completed = true;});
+  app.session.logs[press.id][0].completed = true;
+  assert.equal(app.getNextSet().ex.id, press.id); assert.equal(app.getNextSet().setIdx, 1);
+});
+
+test('v35 Monday drafts upgrade atomically and completed retired sets remain in history', () => {
+  const {app, values, defaults, retired, upgrade, stored, snapshot, failOnce} = setup({simplify: true});
+  const routine = oldV35Routine(defaults, retired); app.routine = routine;
+  const draft = app.initNewSession(app.activeDayIndex), id = retired.id;
+  Object.assign(draft.logs[id][0], {weight: 40, reps: 15, completed: true, needsBaseline: false});
+  draft.lastInteractionAt = '2026-11-02T17:00:00.000Z';
+  values.set('routine', JSON.stringify(routine)); values.set(app.getSessionKey(dayId), JSON.stringify(draft));
+  values.set('gym_saved_draft_test', JSON.stringify({...clone(draft), id: 'retained'}));
+  const before = snapshot(); failOnce('routineRev'); upgrade(); assert.deepEqual(snapshot(), before);
+  const day = upgrade(); assert.equal(day.exercises.some(ex => ex.id === id), false);
+  assert.ok(day.exercises.filter(ex => ['mon__lower_b_ex2','mon__lower_b_ex5'].includes(ex.id)).every(ex => !ex.superset));
+  for (const key of [app.getSessionKey(dayId), 'gym_saved_draft_test']) {
+    const saved = stored(key); assert.equal(saved.logs[id][0].weight, 40); assert.equal(saved.logs[id][0].completed, true);
+    assert.equal(saved.lastInteractionAt, draft.lastInteractionAt); assert.ok(!saved.exerciseOrder.includes(id));
+  }
+  app.session = stored(app.getSessionKey(dayId));
+  assert.deepEqual(clone(app.getWorkingSetCounts()), {total: 17, completed: 1, skipped: 0, remaining: 16});
+  assert.equal(app.finishSession(), true);
+  assert.equal(app.history.at(-1).exercises['Seated Hip Abduction'].sets[0].weight, 40);
+  assert.equal(app.history.at(-1).totalCompletedSets, 1);
+});
+
+test('v35 backup restore keeps retired completed sets and applies new Monday routine', () => {
+  for (const restoreSettings of [false, true]) {
+    const {app, values, defaults, retired, upgrade} = setup({simplify: true});
+    const routine = oldV35Routine(defaults, retired); app.routine = routine;
+    const incoming = app.initNewSession(app.activeDayIndex);
+    Object.assign(incoming.logs[retired.id][0], {weight: 30, reps: 12, completed: true, needsBaseline: false});
+    values.set('routine', JSON.stringify(defaults)); upgrade(); app.session = app.initNewSession(app.activeDayIndex); app.saveCurrentSession();
+    const plan = app.prepareBackupImport({version: '3.4', routine, history: [], sessions: [incoming]}, {restoreSettings});
+    assert.equal(app.applyBackupImport(plan), true);
+    const day = app.routine.find(item => item.id === dayId);
+    assert.ok(!day.exercises.some(ex => ex.id === retired.id));
+    const imported = app.loadSession(app.routine.findIndex(item => item.id === dayId));
+    assert.equal(imported.logs[retired.id][0].weight, 30);
   }
 });

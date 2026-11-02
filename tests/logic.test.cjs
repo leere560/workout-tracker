@@ -51,10 +51,11 @@ test('every straight rest is at least two minutes and seated curl superset is 75
 
 test('guidance alternates pairs, handles uneven counts, undone and out-of-order sets', () => {
   const { app } = harness();
-  app.activeDayIndex = 4;
-  app.session = app.initNewSession(4);
-  const pair = app.routine[4].exercises.filter(ex => ex.superset);
-  for (const ex of app.routine[4].exercises) if (!ex.superset) app.session.logs[ex.id].forEach(s => s.completed = true);
+  app.activeDayIndex = 1;
+  app.session = app.initNewSession(1);
+  const pair = app.routine[1].exercises.filter(ex => ex.superset);
+  app.session.logs[pair[0].id].pop(); // Uneven set counts remain supported.
+  for (const ex of app.routine[1].exercises) if (!ex.superset) app.session.logs[ex.id].forEach(s => s.completed = true);
   const order = [];
   let next;
   while ((next = app.getNextSet())) {
