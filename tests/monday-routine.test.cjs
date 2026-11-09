@@ -29,8 +29,8 @@ function legacyRoutine(defaults) {
   return routine;
 }
 
-// Exercise the earlier v34/v35 repair stages against their original program.
-function setup({simplify = false, real = false} = {}) {
+// Exercise the earlier v34-v37 repair stages against their historical program fixtures.
+function setup({simplify = false, real = false, v38 = false} = {}) {
   const values = new Map(), elements = new Map();
   let failKey;
   const storage = {getItem: key => values.get(key) ?? null,
@@ -45,13 +45,16 @@ function setup({simplify = false, real = false} = {}) {
     document: {addEventListener() {}, getElementById: element, querySelector: () => ({click() {}}), body: {classList}},
     window: {}, setInterval: () => 1, clearInterval() {}, confirm: () => true, alert() {}});
   vm.runInContext(fs.readFileSync(path.join(root, 'routine-data.js'), 'utf8'), context);
-  if (!simplify && !real) vm.runInContext(`const m = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b'); m.exercises.filter(e => ['mon__lower_b_ex2','mon__lower_b_ex5'].includes(e.id)).forEach((e,i) => {e.superset={id:'lower_b_leg_press_calf', tag:i?'2B':'2A', rest:'60 sec',restSeconds:60};});`, context);
-  if (simplify) vm.runInContext(`const m = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b'); m.exercises = m.exercises.filter(e => e.id !== RETIRED_MONDAY_ABDUCTION.id);`, context);
+  if (!v38) vm.runInContext(`{ const m = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b'); m.exercises = m.exercises.filter(e => e.id !== MONDAY_HIP_ADDUCTION.id); delete m.adductionSupersetVersion; }`, context);
+  if (!simplify && !real && !v38) vm.runInContext(`{ const m = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b'); m.exercises.filter(e => ['mon__lower_b_ex2','mon__lower_b_ex5'].includes(e.id)).forEach((e,i) => {e.superset={id:'lower_b_leg_press_calf', tag:i?'2B':'2A', rest:'60 sec',restSeconds:60};}); }`, context);
+  if ((simplify || real) && !v38) vm.runInContext(`{ const m = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b'); m.exercises.filter(e => ['mon__lower_b_ex2','mon__lower_b_ex5'].includes(e.id)).forEach(e => {e.superset = null;}); }`, context);
+  if (simplify) vm.runInContext(`{ const m = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b'); m.exercises = m.exercises.filter(e => e.id !== RETIRED_MONDAY_ABDUCTION.id); }`, context);
   vm.runInContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8') + ';globalThis.App=WorkoutApp;', context);
   const defaults = vm.runInContext('JSON.parse(JSON.stringify(DEFAULT_ROUTINE))', context);
   const app = Object.create(context.App.prototype);
-  // Keep historical v36 regressions on the v36 removal stage.
+  // Keep historical v36/v37 regressions on their respective stages.
   if (simplify) app.prepareMondayRestoration = app.prepareMondaySimplification;
+  if (!v38) app.prepareMondayAdductionAndSuperset = routine => ({routine, writes: new Map()});
   const keys = ['routine', 'routineRev', 'history', 'lastWeights', 'machineSettings', 'equipmentSettings', 'exerciseNotes',
     'exercisePreferences', 'wakeLockEnabled', 'deloadActive', 'deloadStartDate', 'lastBackupTime', 'timerTargetEnd', 'timerTotalDuration'];
   app.storageKeys = Object.fromEntries(keys.map(key => [key, key]));
@@ -123,7 +126,7 @@ test('saved original Monday defaults upgrade once while unrelated prescriptions 
     else for (const ex of day.exercises.filter(ex => !revisions.some(change => change.id === ex.id)))
       assert.deepEqual(clone(monday.exercises.find(item => item.id === ex.id)), ['mon__lower_b_ex2', 'mon__lower_b_ex5'].includes(ex.id) ? {...ex, superset: null} : ex);
   }
-  assert.equal(values.get('routineRev'), '20');
+  assert.equal(values.get('routineRev'), '21');
   const first = JSON.stringify(app.routine); upgrade(); assert.equal(JSON.stringify(app.routine), first);
 });
 
@@ -552,4 +555,73 @@ test('a later deliberate removal is not reversed on routine reload', () => {
   day.exercises = day.exercises.filter(ex => ex.id !== 'mon__lower_b_ex_back_ext');
   values.set('routine', JSON.stringify(later)); upgrade();
   assert.ok(!app.routine.find(item => item.id === dayId).exercises.some(ex => ex.id === 'mon__lower_b_ex_back_ext'));
+});
+
+function v37Routine(defaults) {
+  const routine = clone(defaults), day = routine.find(item => item.id === dayId);
+  day.exercises = day.exercises.filter(item => item.id !== 'mon__lower_b_ex_adduction');
+  day.exercises.filter(ex => ['mon__lower_b_ex2', 'mon__lower_b_ex5'].includes(ex.id)).forEach(ex => {ex.superset = null;});
+  delete day.adductionSupersetVersion;
+  return routine;
+}
+
+test('v38 adds two adduction sets and restores 90-second leg press and calf superset', () => {
+  const {app, defaults} = setup({v38: true}); app.routine = clone(defaults);
+  const day = app.routine.find(item => item.id === dayId);
+  const abduction = day.exercises.find(ex => ex.id === 'mon__lower_b_ex_back_ext');
+  const adduction = day.exercises.find(ex => ex.id === 'mon__lower_b_ex_adduction');
+  const press = day.exercises.find(ex => ex.id === 'mon__lower_b_ex2');
+  const calf = day.exercises.find(ex => ex.id === 'mon__lower_b_ex5');
+  assert.equal(abduction.name, 'Seated Hip Abduction'); assert.equal(abduction.sets, 2); assert.equal(abduction.targetReps, '12–20');
+  assert.equal(adduction.name, 'Seated Hip Adduction'); assert.equal(adduction.sets, 2); assert.equal(adduction.targetReps, '12–20');
+  assert.equal(day.exercises.reduce((n, ex) => n + ex.sets, 0), 20);
+  assert.equal(press.superset.id, 'lower_b_leg_press_calf'); assert.equal(press.superset.restSeconds, 90);
+  assert.equal(calf.superset.id, 'lower_b_leg_press_calf'); assert.equal(calf.superset.restSeconds, 90);
+  app.session = app.initNewSession(app.activeDayIndex);
+  assert.equal(app.getRestSeconds(press), 90); assert.equal(app.getRestSeconds(calf), 90);
+});
+
+test('v37 active and recovery drafts gain adduction and 90s superset without losing progress or timestamps', () => {
+  const {app, values, defaults, upgrade, stored, snapshot, failOnce} = setup({v38: true});
+  const old = v37Routine(defaults); app.routine = old;
+  const id = 'mon__lower_b_ex_adduction', draft = app.initNewSession(app.activeDayIndex);
+  Object.assign(draft.logs.mon__lower_b_ex2[0], {weight: 185, reps: 8, completed: true});
+  draft.lastInteractionAt = '2026-11-09T17:00:00.000Z';
+  values.set('routine', JSON.stringify(old)); values.set(app.getSessionKey(dayId), JSON.stringify(draft));
+  values.set('gym_saved_draft_test', JSON.stringify({...clone(draft), id: 'retained'}));
+  const before = snapshot(); failOnce('routineRev'); upgrade(); assert.deepEqual(snapshot(), before);
+  const day = upgrade();
+  assert.equal(day.exercises.find(ex => ex.id === id).sets, 2);
+  assert.equal(day.exercises.find(ex => ex.id === 'mon__lower_b_ex2').superset.restSeconds, 90);
+  assert.equal(day.exercises.find(ex => ex.id === 'mon__lower_b_ex5').superset.restSeconds, 90);
+  for (const key of [app.getSessionKey(dayId), 'gym_saved_draft_test']) {
+    const result = stored(key); assert.equal(result.logs[id].length, 2);
+    assert.equal(result.logs.mon__lower_b_ex2[0].weight, 185); assert.equal(result.logs.mon__lower_b_ex2[0].completed, true);
+    assert.equal(result.lastInteractionAt, draft.lastInteractionAt); assert.ok(result.exerciseOrder.includes(id));
+  }
+  const once = snapshot(); upgrade(); assert.deepEqual(snapshot(), once);
+});
+
+test('v37 backup restores add adduction and 90s superset for both program choices without losing drafts', () => {
+  for (const restoreSettings of [false, true]) {
+    const {app, values, defaults, upgrade} = setup({v38: true});
+    const old = v37Routine(defaults); app.routine = old;
+    const incoming = app.initNewSession(app.activeDayIndex);
+    Object.assign(incoming.logs.mon__lower_b_ex2[0], {weight: 185, reps: 8, completed: true});
+    values.set('routine', JSON.stringify(defaults)); upgrade(); app.session = app.initNewSession(app.activeDayIndex); app.saveCurrentSession();
+    const plan = app.prepareBackupImport({version: '3.4', routine: old, history: [], sessions: [incoming]}, {restoreSettings});
+    assert.equal(app.applyBackupImport(plan), true);
+    const day = app.routine.find(item => item.id === dayId), imported = app.loadSession(app.routine.findIndex(item => item.id === dayId));
+    assert.equal(day.exercises.find(ex => ex.id === 'mon__lower_b_ex_adduction').sets, 2);
+    assert.equal(day.exercises.find(ex => ex.id === 'mon__lower_b_ex2').superset.restSeconds, 90);
+    assert.equal(imported.logs.mon__lower_b_ex2[0].weight, 185); assert.equal(imported.logs.mon__lower_b_ex_adduction.length, 2);
+  }
+});
+
+test('a later deliberate adduction removal is not reversed on routine reload', () => {
+  const {app, values, defaults, upgrade} = setup({v38: true});
+  const later = clone(defaults), day = later.find(item => item.id === dayId);
+  day.exercises = day.exercises.filter(ex => ex.id !== 'mon__lower_b_ex_adduction');
+  values.set('routine', JSON.stringify(later)); upgrade();
+  assert.ok(!app.routine.find(item => item.id === dayId).exercises.some(ex => ex.id === 'mon__lower_b_ex_adduction'));
 });

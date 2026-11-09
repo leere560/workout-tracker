@@ -19,6 +19,7 @@ test('the program is preserved except the explicitly approved Monday revision', 
   };
   const monday = expected.find(day => day.id === 'mon__lower_b');
   monday.exercises.forEach(ex => Object.assign(ex, changes[ex.id] || {}));
+  monday.exercises.splice(5, 0, {id: 'mon__lower_b_ex_adduction', name: 'Seated Hip Adduction', sets: 2, targetReps: '12–20'});
   assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected);
 });
 

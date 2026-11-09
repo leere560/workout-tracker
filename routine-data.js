@@ -39,6 +39,24 @@ const RETIRED_MONDAY_ABDUCTION = {
   ]
 };
 
+const MONDAY_HIP_ADDUCTION = {
+  "id": "mon__lower_b_ex_adduction",
+  "name": "Seated Hip Adduction",
+  "muscle": "Adductors / Glutes",
+  "sets": 2,
+  "targetReps": "12–20",
+  "startingWeight": "Light (find weight)",
+  "rest": "2 min",
+  "notes": "Squeeze your knees together against the pads; this is adduction (inner thighs), not abduction. Keep your pelvis steady, pause briefly on the inner squeeze, and control the stretch on the way out. Leave 1–3 clean reps in reserve.",
+  "videoUrl": "https://www.youtube.com/results?search_query=seated+hip+adduction+machine+technique",
+  "isOptional": false,
+  "superset": null,
+  "increment": 5,
+  "restSeconds": 120,
+  "needsBaseline": true,
+  "mondayRevision": 1
+};
+
 // Routine from routine.xlsx + Sunday DB Arms & Shoulders + approved Monday revision (2026-10-30)
 const DEFAULT_ROUTINE = [
   {
@@ -444,6 +462,7 @@ const DEFAULT_ROUTINE = [
   {
     "id": "mon__lower_b",
     "abductionRestoreVersion": 1,
+    "adductionSupersetVersion": 1,
     "title": "Mon - Lower B",
     "tag": "Lower",
     "exercises": [
@@ -537,7 +556,14 @@ const DEFAULT_ROUTINE = [
         "notes": "Feet placed low-to-mid and shoulder-width on platform; maximize knee flexion depth to target quads while keeping hips glued to the pad.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+leg+press+technique",
         "isOptional": false,
-        "superset": null,
+        "superset": {
+          "id": "lower_b_leg_press_calf",
+          "tag": "2A",
+          "name": "Same-Machine Superset (Quads + Calves)",
+          "tip": "Alternate one set of each exercise. Rest 90 seconds after each set.",
+          "rest": "90 sec",
+          "restSeconds": 90
+        },
         "increment": 10,
         "restSeconds": 180
       },
@@ -552,7 +578,14 @@ const DEFAULT_ROUTINE = [
         "notes": "Balls of feet on lower edge; achieve full ankle flexion stretch with a 2-second dead stop.",
         "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+calf+press+leg+press",
         "isOptional": false,
-        "superset": null,
+        "superset": {
+          "id": "lower_b_leg_press_calf",
+          "tag": "2B",
+          "name": "Same-Machine Superset (Quads + Calves)",
+          "tip": "Alternate one set of each exercise. Rest 90 seconds after each set.",
+          "rest": "90 sec",
+          "restSeconds": 90
+        },
         "increment": 10,
         "restSeconds": 120
       },
@@ -572,6 +605,7 @@ const DEFAULT_ROUTINE = [
         "restSeconds": 120
       },
       {...RETIRED_MONDAY_ABDUCTION},
+      {...MONDAY_HIP_ADDUCTION},
       {
         "id": "mon__lower_b_ex6",
         "name": "Machine Crunch",
@@ -817,6 +851,10 @@ const EXERCISE_SUBSTITUTIONS = {
   ],
   "Seated Hip Abduction": [
     { name: "Standing Cable Hip Abduction", type: "Cable", muscle: "Glutes", targetReps: "12–20", notes: "Use an ankle strap and move the leg outward without leaning your torso.", videoUrl: "https://www.youtube.com/results?search_query=standing+cable+hip+abduction" }
+  ],
+  "Seated Hip Adduction": [
+    { name: "Standing Cable Hip Adduction", type: "Cable", muscle: "Adductors / Glutes", targetReps: "12–20", notes: "Use an ankle strap and pull the working leg across your midline with a steady torso.", videoUrl: "https://www.youtube.com/results?search_query=standing+cable+hip+adduction" },
+    { name: "Copenhagen Adductor Plank / Raise", type: "Bodyweight", muscle: "Adductors / Glutes", targetReps: "10–15", notes: "Top leg supported on a bench; lift hips smoothly to work the inner thigh.", videoUrl: "https://www.youtube.com/results?search_query=copenhagen+plank+adductors" }
   ],
   "Machine Crunch": [
     { name: "Kneeling Cable Crunch", type: "Cable", muscle: "Abs / Core", targetReps: "10–12", notes: "Curl your ribcage toward your pelvis without swinging your hips.", videoUrl: "https://www.youtube.com/results?search_query=kneeling+cable+crunch" }
