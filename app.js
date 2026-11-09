@@ -107,7 +107,7 @@ class WorkoutApp {
     routine ||= JSON.parse(JSON.stringify(DEFAULT_ROUTINE));
     routine = this.normalizeRoutineData(routine);
     const repair = this.prepareRoutineUpgrade(routine);
-    repair.writes.set(this.storageKeys.routineRev, '19');
+    repair.writes.set(this.storageKeys.routineRev, '20');
     repair.writes.set(this.storageKeys.routine, JSON.stringify(repair.routine));
     try {
       this.writeStorageTransaction(repair.writes);
@@ -145,8 +145,8 @@ class WorkoutApp {
     const priorWrites = new Map([...saturday.writes, ...monday.writes]);
     const back = this.prepareBackExtensionUpgrade(monday.routine, this.storageOverlay(priorWrites, storage));
     const stagedWrites = new Map([...priorWrites, ...back.writes]);
-    const simplified = this.prepareMondaySimplification(back.routine, this.storageOverlay(stagedWrites, storage));
-    return {routine: simplified.routine, writes: new Map([...stagedWrites, ...simplified.writes])};
+    const restored = this.prepareMondayRestoration(back.routine, this.storageOverlay(stagedWrites, storage));
+    return {routine: restored.routine, writes: new Map([...stagedWrites, ...restored.writes])};
   }
 
   prepareMondayRoutineUpgrade(routine, storage = localStorage) {
@@ -243,6 +243,52 @@ class WorkoutApp {
       if (JSON.stringify(draft) !== before) writes.set(key, JSON.stringify(draft));
     }
     return {routine: updated, writes};
+  }
+
+  prepareMondayRestoration(routine, storage = localStorage) {
+    const updated = JSON.parse(JSON.stringify(routine)), writes = new Map();
+    const day = updated.find(item => item.id === 'mon__lower_b');
+    if (!day) return {routine: updated, writes};
+    day.exercises.forEach(ex => {
+      if (['mon__lower_b_ex2', 'mon__lower_b_ex5'].includes(ex.id) && ex.superset?.id === 'lower_b_leg_press_calf') ex.superset = null;
+    });
+    if (day.abductionRestoreVersion !== 1 && !day.exercises.some(ex => ex.id === RETIRED_MONDAY_ABDUCTION.id)) {
+      const crunchIndex = day.exercises.findIndex(ex => ex.id === 'mon__lower_b_ex6');
+      day.exercises.splice(crunchIndex < 0 ? day.exercises.length : crunchIndex, 0, JSON.parse(JSON.stringify(RETIRED_MONDAY_ABDUCTION)));
+    }
+    day.abductionRestoreVersion = 1;
+    const staged = Object.assign(Object.create(this), {routine: updated});
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i), retained = key.startsWith('gym_saved_draft_') && !key.startsWith('gym_saved_draft_for_');
+      if (!(retained || key === this.storageKeys.legacyCurrentSession || key.startsWith(this.storageKeys.currentSessionPrefix))) continue;
+      let draft; try {draft = JSON.parse(storage.getItem(key));} catch (_) {continue;}
+      if (draft?.dayId !== day.id || !draft.logs) continue;
+      const before = JSON.stringify(draft);
+      staged.ensureMondayAbductionRows(draft, day);
+      if (JSON.stringify(draft) !== before) writes.set(key, JSON.stringify(draft));
+    }
+    return {routine: updated, writes};
+  }
+
+  ensureMondayAbductionRows(session, day) {
+    if (day?.id !== 'mon__lower_b' || !session?.logs) return session;
+    const ex = day.exercises.find(item => item.id === RETIRED_MONDAY_ABDUCTION.id);
+    if (!ex) return session;
+    if (!Array.isArray(session.logs[ex.id])) {
+      const targets = Object.assign(Object.create(this), {session, deloadActive: Boolean(session.deload)});
+      const count = session.deload ? Math.max(2, Math.floor(ex.sets * .67)) : ex.sets;
+      session.logs[ex.id] = Array.from({length: count}, (_, index) => {
+        const target = targets.getSetTarget(ex, index, ex.name);
+        return {setNum: index + 1, weight: target.targetWeight, reps: target.targetReps, completed: false, rir: null,
+          exerciseName: ex.name, muscle: ex.muscle, targetReps: ex.targetReps, needsBaseline: Boolean(target.needsBaseline)};
+      });
+      if (session.initialLogs) session.initialLogs[ex.id] = JSON.parse(JSON.stringify(session.logs[ex.id]));
+    }
+    if (Array.isArray(session.exerciseOrder) && !session.exerciseOrder.includes(ex.id)) {
+      const index = session.exerciseOrder.indexOf('mon__lower_b_ex6');
+      session.exerciseOrder.splice(index < 0 ? session.exerciseOrder.length : index, 0, ex.id);
+    }
+    return session;
   }
 
   reconcileMondaySession(session, day, {preserve = true, recordedExercises = {}} = {}) {
@@ -871,6 +917,7 @@ class WorkoutApp {
   }
 
   normalizeSessionFlow(session, day = this.routine.find(day => day.id === session.dayId)) {
+    this.ensureMondayAbductionRows(session, day);
     const ids = day?.exercises.map(ex => ex.id) || [];
     const order = Array.isArray(session.exerciseOrder) ? session.exerciseOrder : [];
     session.exerciseOrder = [...new Set([...order.filter(id => ids.includes(id)), ...ids])];
@@ -3748,7 +3795,7 @@ class WorkoutApp {
       <section aria-labelledby="settingsBackupHeading"><h2 id="settingsBackupHeading">Settings & backup</h2>
         <div class="insight-panel"><div class="insight-section-heading"><h3>Backup</h3><span class="insight-meta">${this.escapeHtml(this.getBackupStatusText())}</span></div><p>Save a copy of your history, active workouts, program and preferences before changing phones.</p><div class="insight-actions"><button type="button" class="secondary-btn" id="exportDataBtn">Download backup</button><button type="button" class="secondary-btn" id="importBackupBtn">Restore backup</button></div></div>
         <details class="insight-details"><summary>Recovery drafts</summary>${this.renderRecoveryDrafts()}</details>
-        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v36</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
+        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v37</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
         <div class="setting-row insight-panel"><div><label id="deloadSettingLabel" for="deloadSettingToggle">7-day deload</label><p id="deloadSettingDescription">${normalSets} → ${deloadSets} planned sets (${normalSets ? Math.round((normalSets-deloadSets)/normalSets*100) : 0}% fewer) and 10% lighter loads. Ends automatically after 7 days.${this.deloadActive ? ` ${this.getDeloadDaysLeft()} days remaining.` : ''}</p></div><label class="switch"><input type="checkbox" id="deloadSettingToggle" aria-labelledby="deloadSettingLabel" aria-describedby="deloadSettingDescription" ${this.deloadActive ? 'checked' : ''}><span class="slider"></span></label></div>
         <div class="setting-row insight-panel"><div><label id="wakeLockSettingLabel" for="wakeLockSettingToggle">Keep screen awake</label><p id="wakeLockSettingDescription">Keep the display on while logging a workout, when supported by your browser.</p></div><label class="switch"><input type="checkbox" id="wakeLockSettingToggle" aria-labelledby="wakeLockSettingLabel" aria-describedby="wakeLockSettingDescription" ${this.wakeLockEnabled ? 'checked' : ''}><span class="slider"></span></label></div>
         <details class="insight-panel insight-details"><summary>Rest sound & vibration</summary><p>Test alerts with the page open. Background and locked-screen alerts may not fire on iPhone; reopening restores the countdown.</p><button type="button" class="secondary-btn" id="testChimeBtn">Test sound & vibration</button></details>
@@ -4057,7 +4104,7 @@ class WorkoutApp {
     const repair = staged.prepareRoutineUpgrade(routine, this.storageOverlay(writes));
     repair.writes.forEach((value, key) => writes.set(key, value));
     writes.set(this.storageKeys.routine, JSON.stringify(repair.routine));
-    writes.set(this.storageKeys.routineRev, '19');
+    writes.set(this.storageKeys.routineRev, '20');
     nextState.routine = repair.routine;
     return {summary, writes, nextState, sourceStorage, sourceState};
   }

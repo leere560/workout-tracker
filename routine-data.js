@@ -1,3 +1,44 @@
+// Historical descriptor keeps old Monday sets and restores identifiable.
+const RETIRED_MONDAY_ABDUCTION = {
+  "id": "mon__lower_b_ex_back_ext",
+  "name": "Seated Hip Abduction",
+  "muscle": "Glutes",
+  "sets": 2,
+  "targetReps": "12–20",
+  "startingWeight": "Light (find weight)",
+  "rest": "2 min",
+  "notes": "Push your knees apart against the pads; this is abduction, not adduction. Keep your pelvis steady, use a controlled range, and return slowly. Leave 1–3 clean reps in reserve.",
+  "videoUrl": "https://www.youtube.com/results?search_query=seated+hip+abduction+machine+technique",
+  "isOptional": false,
+  "superset": null,
+  "increment": 5,
+  "restSeconds": 120,
+  "needsBaseline": true,
+  "mondayRevision": 1,
+  "previousExercise": {
+    "name": "45-Degree Back Extension",
+    "muscle": "Glutes / Hamstrings",
+    "targetReps": "8–12",
+    "startingWeight": "Bodyweight",
+    "notes": "Pad just below the hip crease, feet secured, hinge slowly at the hips while keeping the spine comfortably steady. Rise until torso and legs align; don’t swing or arch backward. Effort: finish with 3–4 clean reps in reserve.",
+    "videoUrl": "https://www.youtube.com/results?search_query=45+degree+back+extension+for+glutes+technique",
+    "increment": 5,
+    "programSets": 3
+  },
+  "equipmentAlternatives": [
+    {
+      "name": "45-Degree Back Extension",
+      "muscle": "Glutes / Hamstrings",
+      "targetReps": "8–12",
+      "startingWeight": "Bodyweight",
+      "notes": "Pad just below the hip crease, feet secured, hinge slowly at the hips while keeping the spine comfortably steady. Rise until torso and legs align; don’t swing or arch backward. Effort: finish with 3–4 clean reps in reserve.",
+      "videoUrl": "https://www.youtube.com/results?search_query=45+degree+back+extension+for+glutes+technique",
+      "increment": 5,
+      "programSets": 3
+    }
+  ]
+};
+
 // Routine from routine.xlsx + Sunday DB Arms & Shoulders + approved Monday revision (2026-10-30)
 const DEFAULT_ROUTINE = [
   {
@@ -402,6 +443,7 @@ const DEFAULT_ROUTINE = [
   },
   {
     "id": "mon__lower_b",
+    "abductionRestoreVersion": 1,
     "title": "Mon - Lower B",
     "tag": "Lower",
     "exercises": [
@@ -529,6 +571,7 @@ const DEFAULT_ROUTINE = [
         "increment": 5,
         "restSeconds": 120
       },
+      {...RETIRED_MONDAY_ABDUCTION},
       {
         "id": "mon__lower_b_ex6",
         "name": "Machine Crunch",
@@ -839,44 +882,3 @@ const SECONDARY_MUSCLE_CONTRIBUTIONS = {
 if (typeof module !== "undefined") { 
   module.exports = { DEFAULT_ROUTINE, EXERCISE_SUBSTITUTIONS, VOLUME_LANDMARKS, SECONDARY_MUSCLE_CONTRIBUTIONS }; 
 }
-
-// Historical descriptor keeps old Monday sets and restores identifiable.
-const RETIRED_MONDAY_ABDUCTION = {
-  "id": "mon__lower_b_ex_back_ext",
-  "name": "Seated Hip Abduction",
-  "muscle": "Glutes",
-  "sets": 2,
-  "targetReps": "12–20",
-  "startingWeight": "Light (find weight)",
-  "rest": "2 min",
-  "notes": "Push your knees apart against the pads; this is abduction, not adduction. Keep your pelvis steady, use a controlled range, and return slowly. Leave 1–3 clean reps in reserve.",
-  "videoUrl": "https://www.youtube.com/results?search_query=seated+hip+abduction+machine+technique",
-  "isOptional": false,
-  "superset": null,
-  "increment": 5,
-  "restSeconds": 120,
-  "needsBaseline": true,
-  "mondayRevision": 1,
-  "previousExercise": {
-    "name": "45-Degree Back Extension",
-    "muscle": "Glutes / Hamstrings",
-    "targetReps": "8–12",
-    "startingWeight": "Bodyweight",
-    "notes": "Pad just below the hip crease, feet secured, hinge slowly at the hips while keeping the spine comfortably steady. Rise until torso and legs align; don’t swing or arch backward. Effort: finish with 3–4 clean reps in reserve.",
-    "videoUrl": "https://www.youtube.com/results?search_query=45+degree+back+extension+for+glutes+technique",
-    "increment": 5,
-    "programSets": 3
-  },
-  "equipmentAlternatives": [
-    {
-      "name": "45-Degree Back Extension",
-      "muscle": "Glutes / Hamstrings",
-      "targetReps": "8–12",
-      "startingWeight": "Bodyweight",
-      "notes": "Pad just below the hip crease, feet secured, hinge slowly at the hips while keeping the spine comfortably steady. Rise until torso and legs align; don’t swing or arch backward. Effort: finish with 3–4 clean reps in reserve.",
-      "videoUrl": "https://www.youtube.com/results?search_query=45+degree+back+extension+for+glutes+technique",
-      "increment": 5,
-      "programSets": 3
-    }
-  ]
-};

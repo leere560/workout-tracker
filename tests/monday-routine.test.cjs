@@ -30,7 +30,7 @@ function legacyRoutine(defaults) {
 }
 
 // Exercise the earlier v34/v35 repair stages against their original program.
-function setup({simplify = false} = {}) {
+function setup({simplify = false, real = false} = {}) {
   const values = new Map(), elements = new Map();
   let failKey;
   const storage = {getItem: key => values.get(key) ?? null,
@@ -45,11 +45,13 @@ function setup({simplify = false} = {}) {
     document: {addEventListener() {}, getElementById: element, querySelector: () => ({click() {}}), body: {classList}},
     window: {}, setInterval: () => 1, clearInterval() {}, confirm: () => true, alert() {}});
   vm.runInContext(fs.readFileSync(path.join(root, 'routine-data.js'), 'utf8'), context);
-  if (!simplify) vm.runInContext(`const m = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b'); m.exercises.splice(4, 0, RETIRED_MONDAY_ABDUCTION); m.exercises.filter(e => ['mon__lower_b_ex2','mon__lower_b_ex5'].includes(e.id)).forEach((e,i) => {e.superset={id:'lower_b_leg_press_calf', tag:i?'2B':'2A', rest:'60 sec',restSeconds:60};});`, context);
+  if (!simplify && !real) vm.runInContext(`const m = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b'); m.exercises.filter(e => ['mon__lower_b_ex2','mon__lower_b_ex5'].includes(e.id)).forEach((e,i) => {e.superset={id:'lower_b_leg_press_calf', tag:i?'2B':'2A', rest:'60 sec',restSeconds:60};});`, context);
+  if (simplify) vm.runInContext(`const m = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b'); m.exercises = m.exercises.filter(e => e.id !== RETIRED_MONDAY_ABDUCTION.id);`, context);
   vm.runInContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8') + ';globalThis.App=WorkoutApp;', context);
   const defaults = vm.runInContext('JSON.parse(JSON.stringify(DEFAULT_ROUTINE))', context);
   const app = Object.create(context.App.prototype);
-  if (!simplify) app.prepareMondaySimplification = routine => ({routine, writes: new Map()});
+  // Keep historical v36 regressions on the v36 removal stage.
+  if (simplify) app.prepareMondayRestoration = app.prepareMondaySimplification;
   const keys = ['routine', 'routineRev', 'history', 'lastWeights', 'machineSettings', 'equipmentSettings', 'exerciseNotes',
     'exercisePreferences', 'wakeLockEnabled', 'deloadActive', 'deloadStartDate', 'lastBackupTime', 'timerTargetEnd', 'timerTotalDuration'];
   app.storageKeys = Object.fromEntries(keys.map(key => [key, key]));
@@ -119,9 +121,9 @@ test('saved original Monday defaults upgrade once while unrelated prescriptions 
   for (const day of before) {
     if (day.id !== dayId) assert.deepEqual(clone(app.routine.find(item => item.id === day.id)), day);
     else for (const ex of day.exercises.filter(ex => !revisions.some(change => change.id === ex.id)))
-      assert.deepEqual(clone(monday.exercises.find(item => item.id === ex.id)), ex);
+      assert.deepEqual(clone(monday.exercises.find(item => item.id === ex.id)), ['mon__lower_b_ex2', 'mon__lower_b_ex5'].includes(ex.id) ? {...ex, superset: null} : ex);
   }
-  assert.equal(values.get('routineRev'), '19');
+  assert.equal(values.get('routineRev'), '20');
   const first = JSON.stringify(app.routine); upgrade(); assert.equal(JSON.stringify(app.routine), first);
 });
 
@@ -481,4 +483,73 @@ test('v35 backup restore keeps retired completed sets and applies new Monday rou
     const imported = app.loadSession(app.routine.findIndex(item => item.id === dayId));
     assert.equal(imported.logs[retired.id][0].weight, 30);
   }
+});
+
+function v36Routine(defaults) {
+  const routine = clone(defaults), day = routine.find(item => item.id === dayId);
+  day.exercises = day.exercises.filter(item => item.id !== 'mon__lower_b_ex_back_ext');
+  delete day.abductionRestoreVersion; return routine;
+}
+
+test('v37 restores two abduction sets and keeps Monday leg press and calves separate', () => {
+  const {app, defaults} = setup({real: true}); app.routine = clone(defaults);
+  const day = app.routine.find(item => item.id === dayId), abduction = day.exercises.find(ex => ex.id === 'mon__lower_b_ex_back_ext');
+  assert.equal(abduction.name, 'Seated Hip Abduction'); assert.equal(abduction.sets, 2); assert.equal(abduction.targetReps, '12–20');
+  assert.equal(day.exercises.reduce((n, ex) => n + ex.sets, 0), 18);
+  assert.equal(day.exercises.find(ex => ex.id === 'mon__lower_b_ex2').superset, null);
+  assert.equal(day.exercises.find(ex => ex.id === 'mon__lower_b_ex5').superset, null);
+});
+
+test('v36 active and recovery drafts gain abduction without losing progress or timestamps', () => {
+  const {app, values, defaults, upgrade, stored, snapshot, failOnce} = setup({real: true});
+  const old = v36Routine(defaults); app.routine = old;
+  const id = 'mon__lower_b_ex_back_ext', draft = app.initNewSession(app.activeDayIndex);
+  Object.assign(draft.logs.mon__lower_b_ex2[0], {weight: 180, reps: 8, completed: true});
+  draft.lastInteractionAt = '2026-11-08T17:00:00.000Z';
+  values.set('routine', JSON.stringify(old)); values.set(app.getSessionKey(dayId), JSON.stringify(draft));
+  values.set('gym_saved_draft_test', JSON.stringify({...clone(draft), id: 'retained'}));
+  const before = snapshot(); failOnce('routineRev'); upgrade(); assert.deepEqual(snapshot(), before);
+  const day = upgrade(); assert.equal(day.exercises.find(ex => ex.id === id).sets, 2);
+  for (const key of [app.getSessionKey(dayId), 'gym_saved_draft_test']) {
+    const result = stored(key); assert.equal(result.logs[id].length, 2);
+    assert.equal(result.logs.mon__lower_b_ex2[0].weight, 180); assert.equal(result.logs.mon__lower_b_ex2[0].completed, true);
+    assert.equal(result.lastInteractionAt, draft.lastInteractionAt); assert.ok(result.exerciseOrder.includes(id));
+  }
+  const once = snapshot(); upgrade(); assert.deepEqual(snapshot(), once);
+});
+
+test('returning abduction preserves existing hidden rows, swaps, settings and history', () => {
+  const {app, values, defaults, upgrade, stored} = setup({real: true});
+  const old = v36Routine(defaults); app.routine = old; const draft = app.initNewSession(app.activeDayIndex), id = 'mon__lower_b_ex_back_ext';
+  const rows = [{setNum: 1, exerciseName: 'Seated Hip Abduction', muscle: 'Glutes', targetReps: '12–20', weight: 40, reps: 15, completed: true}];
+  draft.logs[id] = clone(rows); draft.swaps[id] = {name: 'Seated Hip Abduction', targetReps: '12–20'};
+  values.set('routine', JSON.stringify(old)); values.set(app.getSessionKey(dayId), JSON.stringify(draft));
+  app.history = [{id: 'old', exercises: {'Seated Hip Abduction': {sets: clone(rows)}}}];
+  app.equipmentSettings = {'Seated Hip Abduction': 'Seat 3'}; upgrade();
+  const saved = stored(app.getSessionKey(dayId)); assert.deepEqual(saved.logs[id], rows);
+  assert.equal(saved.swaps[id].name, 'Seated Hip Abduction'); assert.equal(app.history[0].exercises['Seated Hip Abduction'].sets[0].weight, 40);
+  assert.equal(app.equipmentSettings['Seated Hip Abduction'], 'Seat 3');
+});
+
+test('v36 backup restores add abduction for both program choices without losing drafts', () => {
+  for (const restoreSettings of [false, true]) {
+    const {app, values, defaults, upgrade} = setup({real: true});
+    const old = v36Routine(defaults); app.routine = old;
+    const incoming = app.initNewSession(app.activeDayIndex);
+    Object.assign(incoming.logs.mon__lower_b_ex2[0], {weight: 180, reps: 8, completed: true});
+    values.set('routine', JSON.stringify(defaults)); upgrade(); app.session = app.initNewSession(app.activeDayIndex); app.saveCurrentSession();
+    const plan = app.prepareBackupImport({version: '3.4', routine: old, history: [], sessions: [incoming]}, {restoreSettings});
+    assert.equal(app.applyBackupImport(plan), true);
+    const day = app.routine.find(item => item.id === dayId), imported = app.loadSession(app.routine.findIndex(item => item.id === dayId));
+    assert.equal(day.exercises.find(ex => ex.id === 'mon__lower_b_ex_back_ext').sets, 2);
+    assert.equal(imported.logs.mon__lower_b_ex2[0].weight, 180); assert.equal(imported.logs.mon__lower_b_ex_back_ext.length, 2);
+  }
+});
+
+test('a later deliberate removal is not reversed on routine reload', () => {
+  const {app, values, defaults, upgrade} = setup({real: true});
+  const later = clone(defaults), day = later.find(item => item.id === dayId);
+  day.exercises = day.exercises.filter(ex => ex.id !== 'mon__lower_b_ex_back_ext');
+  values.set('routine', JSON.stringify(later)); upgrade();
+  assert.ok(!app.routine.find(item => item.id === dayId).exercises.some(ex => ex.id === 'mon__lower_b_ex_back_ext'));
 });

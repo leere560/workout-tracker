@@ -18,7 +18,6 @@ test('the program is preserved except the explicitly approved Monday revision', 
     mon__lower_b_ex6: {name: 'Machine Crunch', sets: 3, targetReps: '10–12'}
   };
   const monday = expected.find(day => day.id === 'mon__lower_b');
-  monday.exercises = monday.exercises.filter(ex => ex.id !== 'mon__lower_b_ex_back_ext');
   monday.exercises.forEach(ex => Object.assign(ex, changes[ex.id] || {}));
   assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected);
 });
