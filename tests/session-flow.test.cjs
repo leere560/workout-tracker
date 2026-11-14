@@ -173,3 +173,54 @@ test('working set completion requires positive whole reps and valid load while p
  app.updateSetReps(ex.id,0,'8');app.updateSetWeight(ex.id,0,-5);app.toggleSetCompletion(ex.id,0);assert.equal(first().completed,false);assert.equal(first().weight,-5);
  app.updateSetWeight(ex.id,0,0);app.toggleSetCompletion(ex.id,0);assert.equal(first().completed,true);
 });
+
+test('one-time Sunday Upper B + Arms combo provisions, completes with optional finishers, cleans itself up, and reopens',()=>{
+ const {app,values,advance}=setup();
+ advance(5 * 86400000); // 2026-10-20 -> Sunday 2026-10-25
+ const baselineVolume = app.calculateWeeklyVolume().planned;
+ app.routine = app.loadRoutine();
+ const comboIndex = app.routine.findIndex(d => d.id === 'sun__upper_b_arms_combo_onetime');
+ assert.equal(comboIndex, 5);
+ const combo = app.routine[comboIndex];
+ assert.equal(combo.oneTime, true);
+ assert.equal(combo.exercises.filter(e => !e.isOptional).length, 7);
+ assert.equal(combo.exercises.filter(e => e.isOptional).length, 2);
+ assert.equal(app.getSuggestedDayIndex(), comboIndex);
+ assert.equal(app.getResumeDayIndex(), comboIndex);
+ assert.deepEqual(app.calculateWeeklyVolume().planned, baselineVolume);
+
+ app.activeDayIndex = comboIndex;
+ app.session = app.initNewSession(comboIndex);
+ assert.deepEqual(clone(app.getWorkingSetCounts()), { total: 21, completed: 0, skipped: 0, remaining: 21 });
+
+ combo.exercises.filter(e => !e.isOptional).forEach(ex => {
+  const maxReps = app.getMaxTargetReps(ex.targetReps);
+  app.session.logs[ex.id].forEach(s => Object.assign(s, { weight: 100, reps: maxReps, completed: true }));
+ });
+ assert.deepEqual(clone(app.getWorkingSetCounts()), { total: 21, completed: 21, skipped: 0, remaining: 0 });
+ app.session.startTime = new Date(Date.parse('2026-10-25T16:15:00Z')).toISOString();
+
+ assert.equal(app.finishSession(), true);
+ const record = app.history[0];
+ assert.equal(record.dayId, 'sun__upper_b_arms_combo_onetime');
+ assert.equal(record.oneTime, true);
+ assert.deepEqual(clone(record.replacesDayIds), ['sat___upper_b', 'sun___db_arms']);
+ assert.equal(record.totalCompletedSets, 21);
+ assert.equal(record.exercises['Machine Pec Deck Flye'].sets.length, 3);
+ assert.equal(record.exercises['Machine Pec Deck Flye'].sets[0].programSets, 3);
+ assert.equal(app.lastWeights['Machine Pec Deck Flye'].sets[0].programSets, 3);
+ assert.equal(app.routine.some(d => d.id === 'sun__upper_b_arms_combo_onetime'), false);
+ assert.equal(JSON.parse(values.get(app.storageKeys.routine)).some(d => d.id === 'sun__upper_b_arms_combo_onetime'), false);
+ assert.equal(values.get('gym_onetime_done_sun__upper_b_arms_combo_onetime'), '1');
+ assert.equal(app.activeDayIndex, 4);
+ assert.equal(app.session.dayId, 'mon__lower_b');
+ assert.equal(app.loadRoutine().some(d => d.id === 'sun__upper_b_arms_combo_onetime'), false);
+
+ const satPecDeck = app.routine.find(d => d.id === 'sat___upper_b').exercises.find(e => e.name === 'Machine Pec Deck Flye');
+ const pecTarget = app.getSetTarget(satPecDeck, 0, satPecDeck.name);
+ assert.equal(pecTarget.targetWeight, 100 + app.getExerciseIncrement(satPecDeck, satPecDeck.name));
+
+ assert.equal(app.reopenWorkout(record.id), true);
+ assert.equal(app.routine[app.activeDayIndex].id, 'sun__upper_b_arms_combo_onetime');
+ assert.equal(values.has('gym_onetime_done_sun__upper_b_arms_combo_onetime'), false);
+});

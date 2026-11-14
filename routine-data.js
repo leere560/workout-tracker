@@ -57,6 +57,188 @@ const MONDAY_HIP_ADDUCTION = {
   "mondayRevision": 1
 };
 
+const ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO = {
+  "id": "sun__upper_b_arms_combo_onetime",
+  "title": "Sun - Upper B + Arms (One-Time)",
+  "tag": "Upper + Arms (One-Time)",
+  "oneTime": true,
+  "replacesDayIds": ["sat___upper_b", "sun___db_arms"],
+  "exercises": [
+    {
+      "id": "combo_upper_b_arms_ex1",
+      "sourceExerciseId": "sat___upper_b_ex1",
+      "name": "Smith Machine Incline Press (30°)",
+      "muscle": "Chest",
+      "sets": 3,
+      "targetReps": "6–8",
+      "startingWeight": "Bar + 50–70 lbs",
+      "rest": "3 min",
+      "notes": "Bench at ~30°; bar lowers directly to clavicle/upper chest; tuck elbows 45°; 2–3s descent.",
+      "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+smith+machine+incline+press",
+      "isOptional": false,
+      "superset": null,
+      "increment": 10,
+      "restSeconds": 180
+    },
+    {
+      "id": "combo_upper_b_arms_ex2",
+      "sourceExerciseId": "sat___upper_b_ex2",
+      "name": "Half-Kneeling Single-Arm Pulldown",
+      "muscle": "Back / Lats",
+      "sets": 3,
+      "targetReps": "8–12",
+      "startingWeight": "40–55 lbs",
+      "rest": "2 min",
+      "notes": "Set pulley high; kneel on mat; drive elbow straight down to hip pocket for pure lat focus.",
+      "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+single+arm+lat+pulldown",
+      "isOptional": false,
+      "superset": null,
+      "increment": 5,
+      "restSeconds": 120
+    },
+    {
+      "id": "combo_upper_b_arms_ex3",
+      "sourceExerciseId": "sat___upper_b_ex_cable_row",
+      "name": "Neutral-Grip Seated Cable Row",
+      "muscle": "Back / Lats",
+      "sets": 3,
+      "targetReps": "8–12",
+      "startingWeight": "90–120 lbs",
+      "rest": "2 min",
+      "notes": "Sit tall with chest proud; pull attachment into navel; pause 1s at contraction; slow stretch.",
+      "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+seated+cable+row+technique",
+      "isOptional": false,
+      "superset": null,
+      "increment": 10,
+      "restSeconds": 120
+    },
+    {
+      "id": "combo_upper_b_arms_ex4",
+      "sourceExerciseId": "sat___upper_b_ex4",
+      "name": "Machine Pec Deck Flye",
+      "muscle": "Chest",
+      "sets": 3,
+      "targetReps": "8–12",
+      "startingWeight": "70–90 lbs",
+      "rest": "2 min",
+      "notes": "Soft bend in elbows; squeeze chest together without shrugging shoulders forward; deep stretch.",
+      "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+chest+flye+pec+deck",
+      "isOptional": false,
+      "superset": {
+        "id": "combo_pec_lateral_superset",
+        "tag": "4A",
+        "name": "Chest + Side Delt Superset",
+        "tip": "Alternate Machine Pec Deck Flye and Standing Dumbbell Lateral Raise. Rest 60 seconds after each set.",
+        "rest": "60 sec",
+        "restSeconds": 60
+      },
+      "increment": 5,
+      "restSeconds": 120
+    },
+    {
+      "id": "combo_upper_b_arms_ex5",
+      "sourceExerciseId": "sun___db_arms_ex2",
+      "name": "Standing Dumbbell Lateral Raise",
+      "muscle": "Shoulders",
+      "sets": 3,
+      "targetReps": "8–12",
+      "startingWeight": "15–20 lbs DBs",
+      "rest": "2 min",
+      "notes": "Stand with slight forward torso hinge; raise dumbbells out leading with your elbows; control the 2-second negative. Zero bench needed!",
+      "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+lateral+raise",
+      "isOptional": false,
+      "superset": {
+        "id": "combo_pec_lateral_superset",
+        "tag": "4B",
+        "name": "Chest + Side Delt Superset",
+        "tip": "Alternate Machine Pec Deck Flye and Standing Dumbbell Lateral Raise. Rest 60 seconds after each set.",
+        "rest": "60 sec",
+        "restSeconds": 60
+      },
+      "increment": 5,
+      "restSeconds": 120
+    },
+    {
+      "id": "combo_upper_b_arms_ex6",
+      "sourceExerciseId": "sun___db_arms_ex3",
+      "name": "Standing Dumbbell Biceps / Hammer Curl",
+      "muscle": "Biceps",
+      "sets": 3,
+      "targetReps": "8–12",
+      "startingWeight": "20–30 lbs DBs",
+      "rest": "2 min",
+      "notes": "Stand tall with chest up; keep elbows pinned slightly forward of hips; curl with controlled supination (or hammer grip) and squeeze at the top; 2–3s negative. Zero bench needed!",
+      "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+bicep+curl",
+      "isOptional": false,
+      "superset": {
+        "id": "combo_db_arm_superset",
+        "tag": "5A",
+        "name": "Dumbbell Arm Superset (Biceps + Triceps)",
+        "tip": "Alternate one set of each exercise. Rest 60 seconds after each set.",
+        "rest": "60 sec",
+        "restSeconds": 60
+      },
+      "increment": 5,
+      "restSeconds": 120
+    },
+    {
+      "id": "combo_upper_b_arms_ex7",
+      "sourceExerciseId": "sun___db_arms_ex4",
+      "name": "Standing / Seated DB Overhead Triceps Extension",
+      "muscle": "Triceps",
+      "sets": 3,
+      "targetReps": "8–12",
+      "startingWeight": "30–45 lbs DB",
+      "rest": "2 min",
+      "notes": "Cup one dumbbell with both hands overhead (standing or seated in a regular chair); lower behind head for full triceps stretch; flare elbows only slightly. Zero bench needed!",
+      "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+overhead+tricep+extension",
+      "isOptional": false,
+      "superset": {
+        "id": "combo_db_arm_superset",
+        "tag": "5B",
+        "name": "Dumbbell Arm Superset (Biceps + Triceps)",
+        "tip": "Alternate one set of each exercise. Rest 60 seconds after each set.",
+        "rest": "60 sec",
+        "restSeconds": 60
+      },
+      "increment": 5,
+      "restSeconds": 120
+    },
+    {
+      "id": "combo_upper_b_arms_opt_reardelt",
+      "sourceExerciseId": "sun___db_arms_ex5",
+      "name": "Standing Bent-Over DB Rear Delt Flye",
+      "muscle": "Shoulders",
+      "sets": 2,
+      "targetReps": "10–12",
+      "startingWeight": "15–20 lbs DBs",
+      "rest": "2 min",
+      "notes": "Hinge at the hips with soft knees and a flat back; sweep dumbbells out wide leading with pinkies to isolate rear delts. Zero bench needed!",
+      "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+rear+delt+flye",
+      "isOptional": true,
+      "superset": null,
+      "increment": 5,
+      "restSeconds": 120
+    },
+    {
+      "id": "combo_upper_b_arms_opt_forearms",
+      "sourceExerciseId": "sun___db_arms_ex_forearms",
+      "name": "Standing Dumbbell Reverse Curl",
+      "muscle": "Forearms",
+      "sets": 2,
+      "targetReps": "10–12",
+      "startingWeight": "15–25 lbs DBs",
+      "rest": "2 min",
+      "notes": "Pronated overhand grip (palms down/knuckles forward); lock wrists straight; controlled 2–3s negative to blast the brachioradialis and forearm extensors. Zero bench needed!",
+      "videoUrl": "https://www.youtube.com/results?search_query=Jeff+Nippard+reverse+curl+technique",
+      "isOptional": true,
+      "superset": null,
+      "increment": 5,
+      "restSeconds": 120
+    }
+  ]
+};
+
 // Routine from routine.xlsx + Sunday DB Arms & Shoulders + approved Monday revision (2026-10-30)
 const DEFAULT_ROUTINE = [
   {
@@ -918,5 +1100,5 @@ const SECONDARY_MUSCLE_CONTRIBUTIONS = {
 };
 
 if (typeof module !== "undefined") { 
-  module.exports = { DEFAULT_ROUTINE, EXERCISE_SUBSTITUTIONS, VOLUME_LANDMARKS, SECONDARY_MUSCLE_CONTRIBUTIONS }; 
+  module.exports = { DEFAULT_ROUTINE, ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO, EXERCISE_SUBSTITUTIONS, VOLUME_LANDMARKS, SECONDARY_MUSCLE_CONTRIBUTIONS };
 }

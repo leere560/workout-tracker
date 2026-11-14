@@ -148,7 +148,49 @@ class WorkoutApp {
     const restored = this.prepareMondayRestoration(back.routine, this.storageOverlay(stagedWrites, storage));
     const restoredWrites = new Map([...stagedWrites, ...restored.writes]);
     const adduction = this.prepareMondayAdductionAndSuperset(restored.routine, this.storageOverlay(restoredWrites, storage));
-    return {routine: adduction.routine, writes: new Map([...restoredWrites, ...adduction.writes])};
+    const adductionWrites = new Map([...restoredWrites, ...adduction.writes]);
+    const combo = this.prepareOneTimeSundayCombo(adduction.routine, this.storageOverlay(adductionWrites, storage));
+    return {routine: combo.routine, writes: new Map([...adductionWrites, ...combo.writes])};
+  }
+
+  isOneTimeWorkoutCompleted(dayId, storage = localStorage) {
+    if (!dayId) return false;
+    if (storage?.getItem?.(`gym_onetime_done_${dayId}`) === '1') return true;
+    const hasMatch = list => Array.isArray(list) && list.some(record => record?.dayId === dayId || record?.sessionSnapshot?.dayId === dayId);
+    if (hasMatch(this.history)) return true;
+    try {
+      const raw = storage?.getItem?.(this.storageKeys?.history || 'gym_history_v1');
+      if (raw && hasMatch(JSON.parse(raw))) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  buildOneTimeSundayComboDay(routine) {
+    const combo = JSON.parse(JSON.stringify(ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO));
+    const allExercises = (routine || []).flatMap(day => day.exercises || []);
+    combo.exercises.forEach(ex => {
+      if (!ex.sourceExerciseId) return;
+      const source = allExercises.find(item => item.id === ex.sourceExerciseId);
+      if (!source) return;
+      ['name', 'muscle', 'increment', 'startingWeight', 'needsBaseline', 'notes', 'videoUrl', 'originalExercise', 'equipmentAlternatives']
+        .forEach(key => { if (source[key] !== undefined) ex[key] = JSON.parse(JSON.stringify(source[key])); });
+    });
+    return combo;
+  }
+
+  prepareOneTimeSundayCombo(routine, storage = localStorage) {
+    const updated = JSON.parse(JSON.stringify(routine)), writes = new Map();
+    if (typeof ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO === 'undefined') return {routine: updated, writes};
+    const baseIds = ['wed___upper_a', 'fri___lower_a', 'sat___upper_b', 'sun___db_arms', 'mon__lower_b'];
+    if (!baseIds.every(id => updated.some(d => d.id === id))) return {routine: updated, writes};
+    const comboId = ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO.id;
+    if (this.isOneTimeWorkoutCompleted(comboId, storage)) {
+      return {routine: updated.filter(d => d.id !== comboId), writes};
+    }
+    if (!updated.some(d => d.id === comboId)) {
+      updated.push(this.buildOneTimeSundayComboDay(updated));
+    }
+    return {routine: updated, writes};
   }
 
   prepareMondayRoutineUpgrade(routine, storage = localStorage) {
@@ -611,7 +653,12 @@ class WorkoutApp {
 
   getLegacyMachineSetting(exId) {
     const legacy = this.machineSettings || {};
-    return Object.prototype.hasOwnProperty.call(legacy, exId) && typeof legacy[exId] === 'string' ? legacy[exId] : '';
+    if (Object.prototype.hasOwnProperty.call(legacy, exId) && typeof legacy[exId] === 'string') return legacy[exId];
+    const ex = this.findExerciseById(exId);
+    if (ex?.sourceExerciseId && Object.prototype.hasOwnProperty.call(legacy, ex.sourceExerciseId) && typeof legacy[ex.sourceExerciseId] === 'string') {
+      return legacy[ex.sourceExerciseId];
+    }
+    return '';
   }
 
   updateEquipmentSetting(name, value) {
@@ -818,6 +865,8 @@ class WorkoutApp {
     }
 
     const targetSetsCount = this.getPrescribedSetCount(ex, activeSubName) || 3;
+    const prevProgramSets = validPrevSets.find(s => Number.isInteger(s.programSets) && s.programSets > 0)?.programSets;
+    const requiredPrevSets = prevProgramSets ? (this.deloadActive ? Math.max(2, Math.floor(prevProgramSets * 0.67)) : prevProgramSets) : targetSetsCount;
     const exactPrevSet = this.getPreviousSetAt(validPrevSets, setIdx);
     const fallbackWeightSet = validPrevSets[validPrevSets.length - 1] || validPrevSets[0] || {};
     let baseWeight = exactPrevSet ? (exactPrevSet.weight || 0) : (fallbackWeightSet.weight || 0);
@@ -825,7 +874,7 @@ class WorkoutApp {
 
     // Only unlock weight increase if ALL required sets were completed AND every set hit maxTarget at the working weight
     const allSetsHitMax = !this.deloadActive &&
-      validPrevSets.length >= targetSetsCount &&
+      validPrevSets.length >= requiredPrevSets &&
       validPrevSets.every(s => (s.reps || 0) >= maxTarget && (topPrevWeight === 0 || (s.weight || 0) >= topPrevWeight));
 
     let targetWeight = baseWeight;
@@ -888,10 +937,13 @@ class WorkoutApp {
   }
 
   getWorkingSetCounts(session = this.session) {
-    const day = this.routine?.find(item => item.id === session?.dayId);
+    const fallbackDay = typeof ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO !== 'undefined' && session?.dayId === ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO.id
+      ? ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO : null;
+    const day = this.routine?.find(item => item.id === session?.dayId) || fallbackDay;
     const removed = session?.dayId === 'mon__lower_b' && !day?.exercises.some(ex => ex.id === RETIRED_MONDAY_ABDUCTION.id);
+    const optionalIds = new Set((day?.exercises || []).filter(ex => ex.isOptional).map(ex => ex.id));
     const sets = Object.entries(session?.logs || {}).flatMap(([id, rows]) =>
-      removed && id === RETIRED_MONDAY_ABDUCTION.id ? rows.filter(set => set.completed) : rows);
+      (removed && id === RETIRED_MONDAY_ABDUCTION.id) || optionalIds.has(id) ? rows.filter(set => set.completed) : rows);
     const completed = sets.filter(set => set.completed).length;
     const skipped = sets.filter(set => !set.completed && set.skipped).length;
     return { total: sets.length, completed, skipped, remaining: sets.length - completed - skipped };
@@ -1359,13 +1411,17 @@ class WorkoutApp {
       if (!id || !week) return;
       if (!completed.has(week)) completed.set(week, new Set());
       completed.get(week).add(id);
+      if (Array.isArray(record?.replacesDayIds)) {
+        record.replacesDayIds.forEach(replacedId => { if (replacedId) completed.get(week).add(replacedId); });
+      }
     });
     date.setHours(12, 0, 0, 0);
     // Each saved record can skip at most one scheduled occurrence. Calendar-day
     // arithmetic preserves local weekdays across daylight-saving changes.
     for (let offset = 0; offset < (history.length + 1) * 7; offset++) {
       const done = completed.get(this.getLocalWeekKey(date));
-      const next = schedule.find(item => item.weekday === date.getDay() && !done?.has(item.day.id));
+      const matches = schedule.filter(item => item.weekday === date.getDay() && !done?.has(item.day.id));
+      const next = matches.find(item => item.day.oneTime) || matches[0];
       if (next) return next.index;
       date.setDate(date.getDate() + 1);
     }
@@ -1378,7 +1434,8 @@ class WorkoutApp {
     if (!prev || !prev.sets || prev.sets.length === 0) return { unlocked: false };
     const maxTarget = this.getMaxTargetReps(targetRepsStr);
     const validSets = prev.sets.filter(s => s && s.completed !== false && (s.reps > 0 || s.weight > 0));
-    const targetSets = requiredSetsCount || 3;
+    const prevProgramSets = validSets.find(s => Number.isInteger(s.programSets) && s.programSets > 0)?.programSets;
+    const targetSets = prevProgramSets || requiredSetsCount || 3;
     if (validSets.length < targetSets) return { unlocked: false };
     
     const topWeight = Math.max(...validSets.map(s => s.weight || 0));
@@ -1741,9 +1798,10 @@ class WorkoutApp {
 
   renderDaySelector() {
     const todayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()];
+    const hasOneTimeToday = this.routine.some(d => d.oneTime && d.title.startsWith(todayName));
     this.daySelectorEl.innerHTML = `<label class="day-picker-label" for="workoutDayPicker">Workout day</label>
       <select id="workoutDayPicker" class="day-picker">${this.routine.map((day, idx) =>
-        `<option value="${idx}" ${idx === this.activeDayIndex ? 'selected' : ''}>${this.escapeHtml(day.title)}${day.title.startsWith(todayName) ? ' · Today' : ''}</option>`).join('')}</select>`;
+        `<option value="${idx}" ${idx === this.activeDayIndex ? 'selected' : ''}>${this.escapeHtml(day.title)}${day.title.startsWith(todayName) && (!hasOneTimeToday || day.oneTime) ? ' · Today' : ''}</option>`).join('')}</select>`;
     document.getElementById('workoutDayPicker').addEventListener('change', e => {
       this.saveCurrentSession();
       this.activeDayIndex = Number(e.target.value);
@@ -1809,7 +1867,10 @@ class WorkoutApp {
       <p><strong>Last set: ${this.escapeHtml(pendingSet.exerciseName || pending.name)}</strong></p>${this.renderEffortPrompt(pending.id, this.pendingRir.setIdx, pendingSet)}
     </aside>` : '';
     const workoutCounts = this.getWorkingSetCounts();
-    const ready = !next ? `<aside class="workout-ready">${workoutCounts.completed ? `<strong>${workoutCounts.skipped ? 'No sets remaining' : 'All sets complete'}</strong><button type="button" class="primary-btn review-finish-btn">Review & finish</button>` : '<span>No working sets logged. Restore a skipped set to continue, or use Overview to start a new workout.</span>'}</aside>` : '';
+    const coreRemaining = core.some(ex => (this.session.logs[ex.id] || []).some(set => this.isSetPending(set)) ||
+      (this.session.warmups?.[ex.id] || []).some(set => this.isSetPending(set)));
+    const ready = !next ? `<aside class="workout-ready">${workoutCounts.completed ? `<strong>${workoutCounts.skipped ? 'No sets remaining' : 'All sets complete'}</strong><button type="button" class="primary-btn review-finish-btn">Review & finish</button>` : '<span>No working sets logged. Restore a skipped set to continue, or use Overview to start a new workout.</span>'}</aside>` :
+      (!coreRemaining && workoutCounts.completed > 0) ? '<aside class="workout-ready"><strong>Core sets complete · Optional finishers below</strong><button type="button" class="primary-btn review-finish-btn">Review & finish</button></aside>' : '';
     this.exerciseListEl.innerHTML = `${ready}${effortPrompt}${this.focusedExerciseId && next && this.focusedExerciseId !== next.ex.id ? '<button type="button" class="secondary-btn return-next-btn">Return to next set</button>' : ''}
     ${visible.map(ex => this.renderExerciseCard(ex, ex.isOptional)).join('')}`;
     this.bindWorkoutCardEvents();
@@ -2406,7 +2467,7 @@ class WorkoutApp {
   getOriginalExercise(exercise) {
     if (typeof exercise?.originalExercise?.name === 'string' && exercise.originalExercise.name.trim()) return this.getExerciseSnapshot(exercise.originalExercise);
     const canonical = typeof DEFAULT_ROUTINE !== 'undefined'
-      ? DEFAULT_ROUTINE.flatMap(day => day.exercises).find(candidate => candidate.id === exercise?.id) : null;
+      ? DEFAULT_ROUTINE.flatMap(day => day.exercises).find(candidate => candidate.id === exercise?.id || (exercise?.sourceExerciseId && candidate.id === exercise.sourceExerciseId)) : null;
     return this.getExerciseSnapshot(canonical || exercise);
   }
 
@@ -2421,7 +2482,7 @@ class WorkoutApp {
   getSubstitutionsForExercise(exerciseName, exercise) {
     const original = this.getOriginalExercise(exercise);
     const canonical = typeof DEFAULT_ROUTINE !== 'undefined'
-      ? DEFAULT_ROUTINE.flatMap(day => day.exercises).find(candidate => candidate.id === exercise?.id) : null;
+      ? DEFAULT_ROUTINE.flatMap(day => day.exercises).find(candidate => candidate.id === exercise?.id || (exercise?.sourceExerciseId && candidate.id === exercise.sourceExerciseId)) : null;
     const cleanName = (original.name || exerciseName).replace(/\s*\(alt for.*?\)/i, '').trim();
     let alternatives;
     if (typeof EXERCISE_SUBSTITUTIONS !== 'undefined') {
@@ -3248,7 +3309,7 @@ class WorkoutApp {
           if (description && !newPRs.includes(description)) newPRs.push(description);
         });
         const entry = recordedExercises[effectiveName] ||= { swappedFrom: isSwapped ? ex.name : null, sets: [] };
-        completedSets.forEach(s => entry.sets.push({ ...s, setNum: sets.indexOf(s) + 1, exerciseName: effectiveName, muscle: s.muscle || (currentSwap?.name === effectiveName ? currentSwap.muscle : ex.muscle), completed: true, rir: typeof s.rir === 'number' ? s.rir : null, type: s.type || 'working' }));
+        completedSets.forEach(s => entry.sets.push({ ...s, setNum: sets.indexOf(s) + 1, exerciseName: effectiveName, muscle: s.muscle || (currentSwap?.name === effectiveName ? currentSwap.muscle : ex.muscle), completed: true, rir: typeof s.rir === 'number' ? s.rir : null, type: s.type || 'working', ...(currentDay.oneTime ? { programSets: prescribedCount } : {}) }));
         // A recovery week must not overwrite the normal progression baseline.
         if (!this.session.deload) {
           this.lastWeights ||= {};
@@ -3259,6 +3320,7 @@ class WorkoutApp {
     // Keep pending entries recoverable without duplicating the untouched baseline.
     const sessionSnapshot = JSON.parse(JSON.stringify(this.session));
     delete sessionSnapshot.initialLogs;
+    const isOneTime = Boolean(currentDay.oneTime);
     // Save to history
     const workoutRecord = {
       id: 'w_' + this.session.id,
@@ -3267,6 +3329,11 @@ class WorkoutApp {
       date: new Date().toISOString(),
       dayTitle: currentDay.title,
       deload: Boolean(this.session.deload),
+      ...(isOneTime ? {
+        oneTime: true,
+        replacesDayIds: Array.isArray(currentDay.replacesDayIds) ? [...currentDay.replacesDayIds] : ['sun___db_arms'],
+        oneTimeDay: JSON.parse(JSON.stringify(currentDay))
+      } : {}),
       totalVolume,
       totalCompletedSets,
       durationMins,
@@ -3278,19 +3345,33 @@ class WorkoutApp {
 
     const previousHistory = this.history;
     const previousSession = this.session;
+    const previousRoutine = this.routine;
+    const previousActiveDayIndex = this.activeDayIndex;
     this.history = [...this.history, workoutRecord];
-    const nextSession = this.initNewSession(this.activeDayIndex);
+    if (isOneTime) {
+      this.routine = this.routine.filter(day => day.id !== currentDay.id);
+      this.activeDayIndex = this.getResumeDayIndex();
+    }
+    const nextSession = isOneTime ? this.loadSession(this.activeDayIndex) : this.initNewSession(this.activeDayIndex);
     try {
-      this.writeStorageTransaction(new Map([
+      const writes = new Map([
         [this.storageKeys.history, JSON.stringify(this.history)],
         [this.storageKeys.lastWeights, JSON.stringify(this.lastWeights)],
         [this.getSessionKey(nextSession.dayId), JSON.stringify(nextSession)],
         ['gym_last_active_day_v1', nextSession.dayId]
-      ]));
+      ]);
+      if (isOneTime) {
+        writes.set(this.storageKeys.routine, JSON.stringify(this.routine));
+        writes.set(`gym_onetime_done_${currentDay.id}`, '1');
+        writes.set(this.getSessionKey(currentDay.id), null);
+      }
+      this.writeStorageTransaction(writes);
     } catch (_) {
       this.history = previousHistory;
       this.session = previousSession;
       this.lastWeights = previousWeights;
+      this.routine = previousRoutine;
+      this.activeDayIndex = previousActiveDayIndex;
       this.showToast('Could not save the workout. Your workout is still open; try again or download a backup.');
       return false;
     }
@@ -3369,16 +3450,25 @@ class WorkoutApp {
   reopenWorkout(recordId) {
     const record = this.history.find(workout => workout.id === recordId);
     if (!record?.sessionSnapshot) { this.showToast('This older workout has no recoverable session draft.'); return false; }
-    const dayIndex = this.routine.findIndex(day => day.id === record.dayId);
-    if (dayIndex < 0) { this.showToast('Restore this workout’s routine day before reopening.'); return false; }
-    const saved = this.loadSession(dayIndex);
+    let nextRoutine = this.routine;
+    let dayIndex = nextRoutine.findIndex(day => day.id === record.dayId);
+    const restoredOneTimeDay = dayIndex < 0
+      ? (record.oneTimeDay || (typeof ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO !== 'undefined' && record.dayId === ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO.id ? ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO : null))
+      : null;
+    if (dayIndex < 0 && !restoredOneTimeDay) { this.showToast('Restore this workout’s routine day before reopening.'); return false; }
+    if (restoredOneTimeDay) {
+      nextRoutine = [...this.routine, JSON.parse(JSON.stringify(restoredOneTimeDay))];
+      dayIndex = nextRoutine.length - 1;
+    }
+    const saved = restoredOneTimeDay ? null : this.loadSession(dayIndex);
     if (this.hasSessionProgress(saved) && saved.id !== record.sessionId) {
       this.showToast('A newer workout is in progress for this day. Finish it or start a new draft before reopening.');
       return false;
     }
+    const targetDay = nextRoutine[dayIndex];
     const snapshot = JSON.parse(JSON.stringify(record.sessionSnapshot));
-    this.reconcileMondaySession(snapshot, this.routine[dayIndex], {preserve: true, recordedExercises: record.exercises});
-    this.routine[dayIndex].exercises.forEach(exercise =>
+    this.reconcileMondaySession(snapshot, targetDay, {preserve: true, recordedExercises: record.exercises});
+    targetDay.exercises.forEach(exercise =>
       this.reconcileSessionEquipmentIdentity(snapshot, exercise, exercise, record.exercises));
     snapshot.lastInteractionAt = new Date().toISOString();
     const history = this.history.filter(workout => workout.id !== recordId);
@@ -3391,9 +3481,14 @@ class WorkoutApp {
         ['gym_last_active_day_v1', snapshot.dayId]
       ]);
       if (this.session.dayId !== snapshot.dayId) writes.set(this.getSessionKey(this.session.dayId), JSON.stringify(this.session));
+      if (restoredOneTimeDay) {
+        writes.set(this.storageKeys.routine, JSON.stringify(nextRoutine));
+        writes.set(`gym_onetime_done_${record.dayId}`, null);
+      }
       this.writeStorageTransaction(writes);
     } catch (_) { this.showToast('Could not reopen this workout. The saved workout is still in history.'); return false; }
     this.stopTimer();
+    if (restoredOneTimeDay) this.routine = nextRoutine;
     this.activeDayIndex = dayIndex;
     this.selectionLocalDate = this.getLocalDateKey(new Date());
     this.session = this.normalizeSessionFlow(snapshot);
@@ -3693,7 +3788,7 @@ class WorkoutApp {
       mapping.direct.forEach(m => { if (result[kind][m]) result[kind][m].direct += count; });
       Object.entries(mapping.indirect).forEach(([m, credit]) => { if (result[kind][m]) result[kind][m].indirect += count * credit; });
     };
-    (this.routine || []).forEach(day => day.exercises.forEach(ex => add('planned', ex.name, ex.muscle, this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets)));
+    (this.routine || []).filter(day => !day.oneTime).forEach(day => day.exercises.forEach(ex => add('planned', ex.name, ex.muscle, this.deloadActive ? Math.max(2, Math.floor(ex.sets * 0.67)) : ex.sets)));
     const cutoff = now - 7 * 86400000;
     const recent = date => { const value = new Date(date).getTime(); return value >= cutoff && value <= now; };
     const savedSessionIds = new Set((this.history || []).map(h => h.sessionId).filter(Boolean));
@@ -3701,7 +3796,8 @@ class WorkoutApp {
       Object.entries(h.exercises || {}).forEach(([name, entry]) => (entry.sets || []).filter(set => set.completed !== false && set.type !== 'warmup' && (!set.completedAt || recent(set.completedAt))).forEach(set => add('completed', set.exerciseName || name, set.muscle, 1)));
     });
     this.getStoredSessions().filter(session => !savedSessionIds.has(session.id)).forEach(session => {
-      const day = (this.routine || []).find(d => d.id === session.dayId);
+      const day = (this.routine || []).find(d => d.id === session.dayId)
+        || (typeof ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO !== 'undefined' && session.dayId === ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO.id ? ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO : null);
       Object.entries(session.logs).forEach(([id, sets]) => (Array.isArray(sets) ? sets : []).filter(set => set.completed && set.type !== 'warmup' && recent(set.completedAt || session.startTime || session.updatedAt)).forEach(set => {
         const ex = day?.exercises.find(e => e.id === id);
         const swap = session.swaps?.[id];
@@ -3823,17 +3919,18 @@ class WorkoutApp {
 
   // Routine & Customizer View
   renderRoutineEditor() {
-    const exercises = this.routine.flatMap(day => day.exercises).filter(ex => !ex.isOptional);
+    const permanentDays = this.routine.filter(day => !day.oneTime);
+    const exercises = permanentDays.flatMap(day => day.exercises).filter(ex => !ex.isOptional);
     const normalSets = exercises.reduce((sum, ex) => sum + ex.sets, 0);
     const deloadSets = exercises.reduce((sum, ex) => sum + Math.max(2, Math.floor(ex.sets * .67)), 0);
     this.routineEditorEl.innerHTML = `<div class="insights-page">
-      <section class="program-overview" aria-labelledby="programOverviewHeading"><div class="insight-section-heading"><h2 id="programOverviewHeading">Your program</h2><a class="insight-jump" href="#settingsBackupHeading">Settings & backup</a></div><p class="insight-meta">${this.routine.length} training days · ${normalSets} planned sets per week</p>
+      <section class="program-overview" aria-labelledby="programOverviewHeading"><div class="insight-section-heading"><h2 id="programOverviewHeading">Your program</h2><a class="insight-jump" href="#settingsBackupHeading">Settings & backup</a></div><p class="insight-meta">${permanentDays.length} training days · ${normalSets} planned sets per week</p>
         ${this.routine.map(day => `<details class="program-day insight-details"><summary><span>${this.escapeHtml(day.title)}</span><small>${day.exercises.length} lifts · ${day.exercises.reduce((sum, ex) => sum + ex.sets, 0)} sets</small></summary><ul>${day.exercises.map(ex => `<li><span>${this.escapeHtml(ex.name)}</span><strong>${ex.sets} × ${this.escapeHtml(ex.targetReps)}</strong></li>`).join('')}</ul></details>`).join('')}
       </section>
       <section aria-labelledby="settingsBackupHeading"><h2 id="settingsBackupHeading">Settings & backup</h2>
         <div class="insight-panel"><div class="insight-section-heading"><h3>Backup</h3><span class="insight-meta">${this.escapeHtml(this.getBackupStatusText())}</span></div><p>Save a copy of your history, active workouts, program and preferences before changing phones.</p><div class="insight-actions"><button type="button" class="secondary-btn" id="exportDataBtn">Download backup</button><button type="button" class="secondary-btn" id="importBackupBtn">Restore backup</button></div></div>
         <details class="insight-details"><summary>Recovery drafts</summary>${this.renderRecoveryDrafts()}</details>
-        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v38</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
+        <div class="insight-panel"><div class="insight-section-heading"><h3>App updates</h3><span class="insight-meta">Build v39</span></div><p>Update the app while keeping your saved workouts and settings.</p><button type="button" class="secondary-btn" id="forceUpdateBtn">Check for update</button></div>
         <div class="setting-row insight-panel"><div><label id="deloadSettingLabel" for="deloadSettingToggle">7-day deload</label><p id="deloadSettingDescription">${normalSets} → ${deloadSets} planned sets (${normalSets ? Math.round((normalSets-deloadSets)/normalSets*100) : 0}% fewer) and 10% lighter loads. Ends automatically after 7 days.${this.deloadActive ? ` ${this.getDeloadDaysLeft()} days remaining.` : ''}</p></div><label class="switch"><input type="checkbox" id="deloadSettingToggle" aria-labelledby="deloadSettingLabel" aria-describedby="deloadSettingDescription" ${this.deloadActive ? 'checked' : ''}><span class="slider"></span></label></div>
         <div class="setting-row insight-panel"><div><label id="wakeLockSettingLabel" for="wakeLockSettingToggle">Keep screen awake</label><p id="wakeLockSettingDescription">Keep the display on while logging a workout, when supported by your browser.</p></div><label class="switch"><input type="checkbox" id="wakeLockSettingToggle" aria-labelledby="wakeLockSettingLabel" aria-describedby="wakeLockSettingDescription" ${this.wakeLockEnabled ? 'checked' : ''}><span class="slider"></span></label></div>
         <details class="insight-panel insight-details"><summary>Rest sound & vibration</summary><p>Test alerts with the page open. Background and locked-screen alerts may not fire on iPhone; reopening restores the countdown.</p><button type="button" class="secondary-btn" id="testChimeBtn">Test sound & vibration</button></details>
