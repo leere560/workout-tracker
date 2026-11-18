@@ -4,15 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Track your 5-day machine hypertrophy routine with progressive overload, rest timers, and superset pacing.">
-  <title>5-Day Machine Lifting Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=39">
-  <link rel="stylesheet" href="workout-flow.css?v=39">
-  <link rel="stylesheet" href="insights.css?v=39">
-  <link rel="stylesheet" href="warmups.css?v=39">
+  <title>Machine Master — Workout Tracker</title>
+  <link rel="stylesheet" href="styles.css?v=40">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
   <meta name="theme-color" content="#0a0e17">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
@@ -22,21 +20,21 @@
   <header class="app-header">
     <div class="header-top">
       <div class="brand">
-        <div class="brand-icon">🏋️‍♂️</div>
+        <div class="brand-icon" aria-hidden="true">🏋️‍♂️</div>
         <div>
           <h1 class="brand-title">Machine Master</h1>
           <div class="brand-subtitle">Hypertrophy Routine (5-Day Split)</div>
         </div>
       </div>
 
-      <nav class="nav-tabs">
-        <button class="nav-btn active" data-view="workout">
+      <nav class="nav-tabs" aria-label="Primary">
+        <button type="button" class="nav-btn active" data-view="workout" aria-current="page">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7v10M3 9v6m15-8v10m3-8v6M6 12h12"/></svg> Workout
         </button>
-        <button class="nav-btn" data-view="analytics">
+        <button type="button" class="nav-btn" data-view="analytics">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16h16M7 15l4-5 4 3 5-7"/></svg> Progress
         </button>
-        <button class="nav-btn" data-view="routine">
+        <button type="button" class="nav-btn" data-view="routine">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18m12-18v18M3 8h6m6 8h6"/><circle cx="6" cy="8" r="2"/><circle cx="18" cy="16" r="2"/></svg> Routine
         </button>
       </nav>
@@ -60,8 +58,7 @@
       <section class="session-bar" aria-label="Session progress and overview">
         <div class="session-info" id="sessionInfo"></div>
         <div class="session-actions-group">
-          <div class="wake-lock-status-badge" id="wakeLockBadge" title="Screen awake status"><span class="wake-dot">●</span> Screen awake</div>
-          <button class="finish-btn" id="finishWorkoutBtn">Finish workout</button>
+          <button type="button" class="finish-btn" id="finishWorkoutBtn">Finish workout</button>
         </div>
       </section>
 
@@ -89,7 +86,7 @@
 
   <aside class="workout-dock" aria-label="Next set and rest timer">
   <!-- Persistent Now-Lifting Dock -->
-  <div class="now-lifting-dock" id="nowLiftingDock" style="display: none;">
+  <div class="now-lifting-dock" id="nowLiftingDock" hidden>
     <div class="now-lifting-left">
 
       <div class="now-lifting-title" id="nowLiftingTitle">Next Lift</div>
@@ -121,57 +118,68 @@
   </aside>
 
   <!-- Workout Summary Modal -->
-  <div class="modal-backdrop" id="summaryModal" role="dialog" aria-modal="true" aria-labelledby="summaryModalTitle">
+  <dialog class="app-dialog" id="summaryModal" closedby="any" aria-labelledby="summaryModalTitle">
     <div class="modal-content">
       <div class="modal-header">
         <h3 id="summaryModalTitle">Session Completed</h3>
-        <button class="close-modal-btn" aria-label="Close modal">&times;</button>
+        <button type="button" class="close-modal-btn" aria-label="Close modal">&times;</button>
       </div>
       <div id="summaryContent">
         <!-- Populated dynamically -->
       </div>
     </div>
-  </div>
+  </dialog>
 
   <!-- Exercise / Machine Swap Modal -->
-  <div class="modal-backdrop" id="swapModal" role="dialog" aria-modal="true" aria-labelledby="swapModalTitle">
+  <dialog class="app-dialog" id="swapModal" closedby="any" aria-labelledby="swapModalTitle">
     <div class="modal-content">
       <div class="modal-header">
         <div>
-          <h3 id="swapModalTitle">🔄 Equipment Swap</h3>
-          <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">Machine taken or broken? Select an alternative:</div>
+          <h3 id="swapModalTitle">Equipment Swap</h3>
+          <div class="modal-subtitle">Machine taken or broken? Select an alternative:</div>
         </div>
-        <button class="close-modal-btn" id="closeSwapModalBtn" aria-label="Close modal">&times;</button>
+        <button type="button" class="close-modal-btn" id="closeSwapModalBtn" aria-label="Close modal">&times;</button>
       </div>
       <div id="swapContent">
         <!-- Populated dynamically -->
       </div>
     </div>
-  </div>
+  </dialog>
 
   <!-- Quick History Modal -->
-  <div class="modal-backdrop" id="quickHistoryModal" role="dialog" aria-modal="true" aria-labelledby="quickHistoryTitle">
+  <dialog class="app-dialog" id="quickHistoryModal" closedby="any" aria-labelledby="quickHistoryTitle">
     <div class="modal-content">
       <div class="modal-header">
         <div>
-          <h3 id="quickHistoryTitle">📈 Exercise Performance Log</h3>
-          <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">Past weights, reps, and all-time records</div>
+          <h3 id="quickHistoryTitle">Exercise Performance Log</h3>
+          <div class="modal-subtitle">Past weights, reps, and all-time records</div>
         </div>
-        <button class="close-modal-btn" id="closeQuickHistoryModalBtn" aria-label="Close modal">&times;</button>
+        <button type="button" class="close-modal-btn" id="closeQuickHistoryModalBtn" aria-label="Close modal">&times;</button>
       </div>
       <div id="quickHistoryContent">
         <!-- Populated dynamically -->
       </div>
     </div>
-  </div>
+  </dialog>
+
+  <!-- Centralized screen-reader live regions (present on initial load) -->
+  <div id="statusAnnouncer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="alertAnnouncer" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
 
   <!-- Hidden file input for backup restore -->
-  <input type="file" id="importFileInput" accept=".json,application/json" style="display: none;">
+  <input type="file" id="importFileInput" accept=".json,application/json" hidden>
 
   <!-- Scripts -->
-  <script src="routine-data.js?v=39"></script>
-  <script src="app.js?v=39"></script>
-  <script src="accessibility.js?v=39"></script>
-  <script src="update-manager.js?v=39"></script>
+  <script src="routine-data.js?v=40"></script>
+  <script src="src/migrations.js?v=40"></script>
+  <script src="src/storage.js?v=40"></script>
+  <script src="src/progression.js?v=40"></script>
+  <script src="src/timer.js?v=40"></script>
+  <script src="src/view-workout.js?v=40"></script>
+  <script src="src/view-insights.js?v=40"></script>
+  <script src="src/view-routine.js?v=40"></script>
+  <script src="app.js?v=40"></script>
+  <script src="accessibility.js?v=40"></script>
+  <script src="update-manager.js?v=40"></script>
 </body>
 </html>

@@ -4,10 +4,12 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 
+const { loadApp } = require('./load-app.cjs');
+
 test('touch users can see when the minimum rest becomes available', () => {
   let now = 1000000;
   const context = vm.createContext({ document: { addEventListener() {} }, Date: class extends Date { static now() { return now; } } });
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8') + '\nglobalThis.App = WorkoutApp;', context);
+  loadApp(context);
   const app = Object.create(context.App.prototype);
   app.timer = { startedAt: now, minimumDuration: 120 };
   assert.equal(app.getMinimumRestLabel(), 'Minimum rest: 2:00 left');

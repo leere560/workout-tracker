@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { loadApp } = require('./load-app.cjs');
 const clone = x => JSON.parse(JSON.stringify(x));
 function setup() {
  let now = Date.parse('2026-10-20T17:00:00Z');
@@ -11,9 +12,8 @@ function setup() {
  const localStorage = {getItem:k=>values.get(k) ?? null,setItem(k,v){if(k===failKey){failKey=null;throw Error('Quota exceeded');}values.set(k,String(v));},removeItem:k=>values.delete(k),key:i=>[...values.keys()][i],get length(){return values.size;}};
  const classList={add(){},remove(){}};
  const element=id=>{if(!elements.has(id)) elements.set(id,{innerHTML:'',textContent:'',style:{},classList,addEventListener:(name,fn)=>handlers.set(id+':'+name,fn),click(){}});return elements.get(id);};
- const context=vm.createContext({console,localStorage,Date:class extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}},document:{addEventListener(){},getElementById:element,querySelector:selector=>selector==='.modal-backdrop.open' ? (modalOpen ? {} : null) : {click(){}},body:{classList}},window:{},setInterval:()=>1,clearInterval(){},confirm:()=>true,alert(){}});
- vm.runInContext(fs.readFileSync(path.join(__dirname,'../routine-data.js'),'utf8'),context);
- vm.runInContext(fs.readFileSync(path.join(__dirname,'../app.js'),'utf8')+';globalThis.App=WorkoutApp;',context);
+ const context=vm.createContext({console,localStorage,Date:class extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}},document:{addEventListener(){},getElementById:element,querySelector:selector=>(selector.includes('dialog[open]') || selector.includes('.modal-backdrop.open')) ? (modalOpen ? {} : null) : {click(){}},body:{classList}},window:{},setInterval:()=>1,clearInterval(){},confirm:()=>true,alert(){}});
+ loadApp(context, { includeData: true });
  const app=Object.create(context.App.prototype);
  const keys=['routine','history','lastWeights','routineRev','machineSettings','exerciseNotes','exercisePreferences','wakeLockEnabled','deloadActive','deloadStartDate','lastBackupTime','timerTargetEnd','timerTotalDuration'];
  app.storageKeys=Object.fromEntries(keys.map(k=>[k,k]));app.storageKeys.currentSessionPrefix='gym_session_';app.storageKeys.legacyCurrentSession='legacy';

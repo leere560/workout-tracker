@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const clone = value => JSON.parse(JSON.stringify(value));
+const { loadApp } = require('./load-app.cjs');
 
 function setup() {
   let now = Date.parse('2026-10-21T16:00:00Z'), failKey = null;
@@ -23,7 +24,7 @@ function setup() {
     Date: class extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } },
     document: {addEventListener() {}, getElementById: element, activeElement: null}, window: {}});
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../routine-data.js'), 'utf8'), context);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8') + ';globalThis.App=WorkoutApp;', context);
+  loadApp(context);
   const app = Object.create(context.App.prototype);
   const keys = ['routine', 'history', 'machineSettings', 'exerciseNotes', 'lastWeights', 'exercisePreferences', 'routineRev',
     'wakeLockEnabled', 'deloadActive', 'deloadStartDate', 'lastBackupTime', 'timerTargetEnd', 'timerTotalDuration'];

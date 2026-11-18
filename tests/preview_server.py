@@ -1,6 +1,7 @@
 """Local preview without service-worker caching; /index.html tests the real PWA."""
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -12,7 +13,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.split('?')[0] == '/preview.html':
             html = (ROOT / 'index.html').read_text(encoding='utf-8')
-            html = html.replace('  <script src="update-manager.js?v=38"></script>', '')
+            html = re.sub(r'\s*<script src="update-manager\.js\?v=\d+"></script>', '', html)
             data = html.encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'text/html; charset=utf-8')

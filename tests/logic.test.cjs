@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { DEFAULT_ROUTINE } = require('../routine-data.js');
+const { loadApp } = require('./load-app.cjs');
 
 function harness() {
   let now = 1000000;
@@ -18,7 +19,7 @@ function harness() {
     setInterval: () => 1, clearInterval() {},
   };
   vm.createContext(context);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8') + '\nglobalThis.App = WorkoutApp;', context);
+  loadApp(context);
   const app = Object.create(context.App.prototype);
   Object.assign(app, {
     history: [], lastWeights: {}, exercisePreferences: {}, routine: JSON.parse(JSON.stringify(DEFAULT_ROUTINE)),
@@ -180,10 +181,10 @@ test('final effort stays visible until selected or skipped', () => {
   app.session.logs[ex.id].forEach((s, i) => s.completed = i < 2);
   app.toggleSetCompletion(ex.id, 2);
   assert.equal(app.pendingRir.exId, ex.id);
-  assert.equal(app.collapsedCards.has(ex.id), false);
+  assert.equal(app.session.logs[ex.id][2].rirAnswered, undefined);
   app.setSetRIR(ex.id, 2, null);
   assert.equal(app.pendingRir, null);
-  assert.equal(app.collapsedCards.has(ex.id), true);
+  assert.equal(app.session.logs[ex.id][2].rirAnswered, true);
 });
 
 test('adding sets after a completed exercise is swapped uses the current equipment baseline and identity', () => {

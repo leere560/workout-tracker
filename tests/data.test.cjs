@@ -4,12 +4,12 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const root = path.join(__dirname, '..');
+const { loadApp } = require('./load-app.cjs');
 function setup() {
   const storage = new Map();
   const localStorage = { getItem: k => storage.get(k) ?? null, setItem: (k,v) => storage.set(k,String(v)), removeItem:k=>storage.delete(k), key:i=>[...storage.keys()][i], get length(){return storage.size;} };
   const context = vm.createContext({ console: {error(){}}, localStorage, document:{addEventListener(){}}, window:{}, Date, setTimeout, clearTimeout, setInterval, clearInterval, confirm:()=>true, alert:message=>{context.alertMessage=message;} });
-  vm.runInContext(fs.readFileSync(path.join(root,'routine-data.js'),'utf8'),context);
-  vm.runInContext(fs.readFileSync(path.join(root,'app.js'),'utf8')+'\nglobalThis.App=WorkoutApp;',context);
+  loadApp(context, { includeData: true });
   const app = Object.create(context.App.prototype);
   const keys = ['routine','history','machineSettings','exerciseNotes','lastWeights','exercisePreferences','routineRev','wakeLockEnabled','deloadActive','deloadStartDate','lastBackupTime','timerTargetEnd','timerTotalDuration'];
   app.storageKeys=Object.fromEntries(keys.map(key=>[key,key]));

@@ -3,10 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
+const { loadApp } = require('./load-app.cjs');
 function setup() {
  const handlers={}; const elements={};
  const context=vm.createContext({document:{addEventListener(){},getElementById(id){return elements[id] ||= {addEventListener(name,fn){handlers[id+':'+name]=fn;},focus(){}};}},localStorage:{getItem(){return null;}},console,Date});
- vm.runInContext(fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8')+';globalThis.App=WorkoutApp;',context);
+ loadApp(context);
  const app=Object.create(context.App.prototype);app.escapeHtml=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
  const selectors={};app.analyticsContentEl={innerHTML:'',querySelectorAll(selector){return selectors[selector] || [];}};app.routineEditorEl={innerHTML:''};app.history=[];app.routine=[{title:'Wed',exercises:[{name:'Press',sets:3,targetReps:'6–8'}]}];app.lastWeights={};app.selectedProgressExercise=null;app.getPersonalRecord=()=>({maxWeight:100,max1RM:120});app.generateSVGProgressionChart=()=>'<svg></svg>';app.generateWeeklyVolumeLandmarksHTML=()=>'<table>Muscle volumes</table>';app.getBackupStatusText=()=> 'Last backup: yesterday';app.deloadActive=false;app.getDeloadDaysLeft=()=>5;app.storageKeys={};
  return {app,handlers,selectors};

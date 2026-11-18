@@ -4,13 +4,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const clone = value => JSON.parse(JSON.stringify(value));
+const { loadApp } = require('./load-app.cjs');
 
 function setup() {
   const values = new Map(); let failKey;
   const localStorage = {getItem:key=>values.get(key)??null, setItem(key,value){if(key===failKey){failKey=null;throw Error('Quota');}values.set(key,String(value));},removeItem:key=>values.delete(key),key:index=>[...values.keys()][index],get length(){return values.size;}};
   const context=vm.createContext({localStorage,console:{error(){}},document:{addEventListener(){},querySelector(){return {click(){}};}},window:{},Date});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../routine-data.js'),'utf8'),context);
-  vm.runInContext(fs.readFileSync(path.join(__dirname,'../app.js'),'utf8')+';globalThis.App=WorkoutApp;',context);
+  loadApp(context);
   const defaults=vm.runInContext('JSON.parse(JSON.stringify(DEFAULT_ROUTINE))',context);
   const app=Object.create(context.App.prototype);
   Object.assign(app,{routine:clone(defaults),history:[],lastWeights:{},exercisePreferences:{},activeDayIndex:2,deloadActive:false,
@@ -153,9 +154,11 @@ test('explicit snapshot swaps override named pending rows and completed names re
   assert.deepEqual(clone(snapshot.logs[id]),beforeRows);
 });
 
-test('equipment change success toasts escape imported equipment names',()=>{
-  const {app}=setup();app.session=app.initNewSession(2);app.showToast=message=>{app.toast=message;};
+test('equipment change success toasts render imported names as safe plain text without HTML injection',()=>{
+  const {app}=setup();app.session=app.initNewSession(2);
+  app.showToast=message=>{app.toast=message;};
   const ex=app.routine[2].exercises[0];ex.name='<b>Original</b>';
   app.applyExerciseSwap(ex.id,{name:'<img src=x onerror=alert(1)>',muscle:'Chest'},'permanent');
-  assert.match(app.toast,/&lt;b&gt;Original&lt;\/b&gt;/);assert.match(app.toast,/&lt;img src=x onerror=alert\(1\)&gt;/);assert.ok(!app.toast.includes('<img'));
+  assert.equal(app.toast,'Replaced "<b>Original</b>" with "<img src=x onerror=alert(1)>" in your routine.');
+  assert.match(Object.getPrototypeOf(app).showToast.toString(), /textContent\s*=\s*text/);
 });

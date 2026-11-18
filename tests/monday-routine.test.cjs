@@ -6,6 +6,7 @@ const vm = require('node:vm');
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const root = path.join(__dirname, '..');
+const { loadApp } = require('./load-app.cjs');
 const dayId = 'mon__lower_b';
 const revisions = [
   {id: 'mon__lower_b_ex_hip_thrust', oldName: 'Machine Hip Thrust / Glute Drive', oldMuscle: 'Glutes', oldReps: '6–8', oldWeight: 'Light (find weight)', name: '45-Degree Back Extension', sets: 3, targetReps: '10–12', restSeconds: 180},
@@ -49,7 +50,7 @@ function setup({simplify = false, real = false, v38 = false} = {}) {
   if (!simplify && !real && !v38) vm.runInContext(`{ const m = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b'); m.exercises.filter(e => ['mon__lower_b_ex2','mon__lower_b_ex5'].includes(e.id)).forEach((e,i) => {e.superset={id:'lower_b_leg_press_calf', tag:i?'2B':'2A', rest:'60 sec',restSeconds:60};}); }`, context);
   if ((simplify || real) && !v38) vm.runInContext(`{ const m = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b'); m.exercises.filter(e => ['mon__lower_b_ex2','mon__lower_b_ex5'].includes(e.id)).forEach(e => {e.superset = null;}); }`, context);
   if (simplify) vm.runInContext(`{ const m = DEFAULT_ROUTINE.find(d => d.id === 'mon__lower_b'); m.exercises = m.exercises.filter(e => e.id !== RETIRED_MONDAY_ABDUCTION.id); }`, context);
-  vm.runInContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8') + ';globalThis.App=WorkoutApp;', context);
+  loadApp(context);
   const defaults = vm.runInContext('JSON.parse(JSON.stringify(DEFAULT_ROUTINE))', context);
   const app = Object.create(context.App.prototype);
   // Keep historical v36/v37 regressions on their respective stages.
@@ -126,7 +127,7 @@ test('saved original Monday defaults upgrade once while unrelated prescriptions 
     else for (const ex of day.exercises.filter(ex => !revisions.some(change => change.id === ex.id)))
       assert.deepEqual(clone(monday.exercises.find(item => item.id === ex.id)), ['mon__lower_b_ex2', 'mon__lower_b_ex5'].includes(ex.id) ? {...ex, superset: null} : ex);
   }
-  assert.equal(values.get('routineRev'), '21');
+  assert.equal(values.get('routineRev'), app.CURRENT_ROUTINE_REV);
   const first = JSON.stringify(app.routine); upgrade(); assert.equal(JSON.stringify(app.routine), first);
 });
 

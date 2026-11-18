@@ -1,58 +1,70 @@
-// Keep modal and keyboard interaction predictable on phones and keyboards.
+// Keep native modal light-dismiss, dynamic content focus, and keyboard insets predictable.
 document.addEventListener('DOMContentLoaded', () => {
-  const modals = [...document.querySelectorAll('.modal-backdrop')];
-  let activeModal = null;
-  let returnFocus = null;
-  const background = [...document.querySelectorAll('.app-header, main, #liftingDock, #nowLiftingDock, #timerDock')];
-  const focusable = modal => [...modal.querySelectorAll('button, a[href], input, select, textarea, [tabindex="0"]')]
+  const dialogs = [...document.querySelectorAll('dialog.app-dialog')];
+  const focusable = root => [...root.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
     .filter(el => !el.disabled && el.getClientRects().length);
-  const syncModal = () => {
-    const opened = modals.find(modal => modal.classList.contains('open')) || null;
-    modals.forEach(modal => {
-      modal.inert = modal !== opened;
-      modal.setAttribute('aria-hidden', String(modal !== opened));
+
+  dialogs.forEach(dialog => {
+    dialog.addEventListener('close', () => {
+      dialog.returnValue = '';
+      window.app?.refreshWorkoutSelectionForDate?.();
     });
-    if (opened === activeModal) {
-      // Review and confirmation can replace the contents of the same dialog.
-      if (opened && !opened.contains(document.activeElement)) {
-        (focusable(opened)[0] || opened).focus({ preventScroll: true });
+  });
+
+  // Fallback for browsers without native closedby="any" support (e.g., older Safari).
+  if (typeof HTMLDialogElement !== 'undefined' && !('closedBy' in HTMLDialogElement.prototype)) {
+    const isOutsideDialog = (dialog, event) => {
+      const rect = dialog.getBoundingClientRect();
+      return (
+        event.clientX < rect.left ||
+        event.clientX > rect.right ||
+        event.clientY < rect.top ||
+        event.clientY > rect.bottom
+      );
+    };
+    dialogs.forEach(dialog => {
+      if (dialog.getAttribute('closedby') !== 'any') return;
+      let startedOutside = false;
+      dialog.addEventListener('pointerdown', event => {
+        startedOutside = dialog.open && event.target === dialog && isOutsideDialog(dialog, event);
+      });
+      dialog.addEventListener('pointerup', event => {
+        const shouldClose = startedOutside && dialog.open && event.target === dialog && isOutsideDialog(dialog, event);
+        startedOutside = false;
+        if (shouldClose) dialog.close('dismiss');
+      });
+    });
+  }
+
+  // Handle autofocus or lost focus when replacing content inside an already-open dialog.
+  const containers = ['summaryContent', 'swapContent', 'quickHistoryContent']
+    .map(id => document.getElementById(id))
+    .filter(Boolean);
+  const contentObserver = new MutationObserver(mutations => {
+    for (const mutation of mutations) {
+      const container = mutation.target;
+      const dialog = container.closest('dialog.app-dialog');
+      if (!dialog?.open) continue;
+      const explicitTarget = container.querySelector('[autofocus]');
+      if (explicitTarget && document.activeElement !== explicitTarget) {
+        explicitTarget.focus({ preventScroll: true });
+        break;
       }
-      return;
-    }
-    if (opened) {
-      if (!activeModal) returnFocus = document.activeElement;
-      activeModal = opened;
-      background.forEach(el => { el.inert = true; });
-      const target = focusable(opened)[0] || opened;
-      if (target === opened) target.tabIndex = -1;
-      target.focus({ preventScroll: true });
-    } else {
-      activeModal = null;
-      background.forEach(el => { el.inert = false; });
-      if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
-      else document.querySelector('.nav-btn.active')?.focus({ preventScroll: true });
-      returnFocus = null;
-    }
-  };
-  const observer = new MutationObserver(syncModal);
-  modals.forEach(modal => observer.observe(modal, { attributes: true, attributeFilter: ['class'], childList: true, subtree: true }));
-  document.addEventListener('keydown', event => {
-    if (!activeModal || event.key !== 'Tab') return;
-    const items = focusable(activeModal);
-    const first = items[0];
-    const last = items[items.length - 1];
-    if (!first) { event.preventDefault(); return; }
-    if (event.shiftKey && (document.activeElement === first || !activeModal.contains(document.activeElement))) {
-      event.preventDefault(); last.focus();
-    } else if (!event.shiftKey && (document.activeElement === last || !activeModal.contains(document.activeElement))) {
-      event.preventDefault(); first.focus();
+      if (!dialog.contains(document.activeElement)) {
+        const target = focusable(dialog)[0] || dialog;
+        if (target === dialog && !dialog.hasAttribute('tabindex')) dialog.tabIndex = -1;
+        target.focus({ preventScroll: true });
+        break;
+      }
     }
   });
-  syncModal();
-  // Announce completion through the existing completion banner, not each tick.
+  containers.forEach(container => contentObserver.observe(container, { childList: true }));
+
+  // Announce completion through centralized live regions, not each timer tick.
   const timer = document.getElementById('timerDisplay');
   timer?.setAttribute('aria-live', 'off');
   timer?.setAttribute('role', 'timer');
+
   const updateKeyboardInset = () => {
     const viewport = window.visualViewport;
     const inset = viewport ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop) : 0;

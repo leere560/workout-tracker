@@ -3,6 +3,6 @@
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.cjs",
-    "check": "node --check app.js && node --check routine-data.js && node --check sw.js && node --check update-manager.js && node --check accessibility.js"
+    "check": "node --check routine-data.js && node --check src/migrations.js && node --check src/storage.js && node --check src/progression.js && node --check src/timer.js && node --check src/view-workout.js && node --check src/view-insights.js && node --check src/view-routine.js && node --check app.js && node --check sw.js && node --check update-manager.js && node --check accessibility.js"
   }
 }

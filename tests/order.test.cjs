@@ -4,10 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
+const { loadApp } = require('./load-app.cjs');
 const clone = value => JSON.parse(JSON.stringify(value));
 function setup(ids = ['A', 'B', 'C']) {
   const context = vm.createContext({ document: { addEventListener() {} }, window: {}, console });
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8') + ';globalThis.App = WorkoutApp;', context);
+  loadApp(context);
   const app = Object.create(context.App.prototype);
   const exercises = ids.map(id => ({ id, name: id, muscle: 'Quads', sets: 3, targetReps: '6–8', restSeconds: 180 }));
   Object.assign(app, {

@@ -5,6 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
 const { DEFAULT_ROUTINE } = require('../routine-data.js');
+const { loadApp } = require('./load-app.cjs');
 const clone = value => JSON.parse(JSON.stringify(value));
 const local = (day, hour = 12) => new Date(2026, 9, day, hour);
 
@@ -15,7 +16,7 @@ function setup() {
     setItem: (key, value) => values.set(key, String(value))
   } });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../routine-data.js'), 'utf8'), context);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8') + ';globalThis.App = WorkoutApp;', context);
+  loadApp(context);
   const app = Object.create(context.App.prototype);
   Object.assign(app, { routine: clone(DEFAULT_ROUTINE), history: [], storageKeys: { currentSessionPrefix: 'gym_session_', legacyCurrentSession: 'legacy' } });
   const save = (index, fields = {}) => {
@@ -162,9 +163,10 @@ test('selection ignores malformed timestamps and storage without mutating date, 
 test('local week boundaries and calendar iteration work across both daylight-saving transitions', () => {
   const script = `
     const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+    const { loadApp } = require('./tests/load-app.cjs');
     const context = vm.createContext({ console, Date, document: { addEventListener() {} } });
-    vm.runInContext(fs.readFileSync('routine-data.js', 'utf8'), context);
-    vm.runInContext(fs.readFileSync('app.js', 'utf8') + ';globalThis.App=WorkoutApp;globalThis.routine=DEFAULT_ROUTINE;', context);
+    loadApp(context, { includeData: true });
+    vm.runInContext('globalThis.routine=DEFAULT_ROUTINE;', context);
     const app = Object.create(context.App.prototype); app.routine = context.routine; app.history = [];
     assert.equal(app.getLocalDateKey(new Date('2026-10-26T04:59:59Z')), '2026-10-25');
     assert.equal(app.getLocalWeekKey(new Date('2026-10-26T04:59:59Z')), '2026-10-19');

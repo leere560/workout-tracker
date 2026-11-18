@@ -836,7 +836,7 @@ const EXERCISE_SUBSTITUTIONS = {
   "Converging Machine Chest Press": [
     { name: "Incline Dumbbell Bench Press", type: "Dumbbell", muscle: "Chest", targetReps: "6–8", notes: "Set bench to 30°; lower dumbbells under control; press up and slightly inward.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+incline+dumbbell+press" },
     { name: "Flat Dumbbell Bench Press", type: "Dumbbell", muscle: "Chest", targetReps: "6–8", notes: "Tuck elbows 45–60°; arch upper back; squeeze chest at top.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+bench+press" },
-    { name: "Pec Fly Machine", type: "Machine", muscle: "Chest", targetReps: "10–12", notes: "Seat height so handles line up with mid-chest; feel full horizontal adduction stretch.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+pec+deck+fly" },
+    { name: "Machine Pec Deck Flye", type: "Machine", muscle: "Chest", targetReps: "10–12", notes: "Seat height so handles line up with mid-chest; feel full horizontal adduction stretch.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+pec+deck+fly" },
     { name: "Smith Machine Chest Press", type: "Machine", muscle: "Chest", targetReps: "6–8", notes: "Bar tracks directly to mid-chest; full control on 2–3s negative.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+smith+machine+bench+press" }
   ],
   "Neutral-Grip Lat Pulldown": [
@@ -858,7 +858,7 @@ const EXERCISE_SUBSTITUTIONS = {
   "Triceps Rope Pushdown": [
     { name: "Straight Bar Cable Pushdown", type: "Cable", muscle: "Triceps", targetReps: "8–12", notes: "Overhand grip; lock elbows at sides; full lockout at bottom.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+straight+bar+pushdown" },
     { name: "Overhead Cable Triceps Extension", type: "Cable", muscle: "Triceps", targetReps: "10–12", notes: "Face away from high/low pulley; extend arms overhead for long head tricep stretch.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+overhead+cable+tricep+extension" },
-    { name: "Standing Overhead DB Triceps Extension", type: "Dumbbell", muscle: "Triceps", targetReps: "10–12", notes: "Cup DB with both hands overhead; keep elbows pointing upward.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+overhead+dumbbell+tricep+extension" }
+    { name: "Standing / Seated DB Overhead Triceps Extension", type: "Dumbbell", muscle: "Triceps", targetReps: "10–12", notes: "Cup DB with both hands overhead; keep elbows pointing upward.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+overhead+dumbbell+tricep+extension" }
   ],
   "Cable Biceps Curl": [
     { name: "Standing Alternating DB Curl", type: "Dumbbell", muscle: "Biceps", targetReps: "8–12", notes: "Supinate wrists as you curl up; squeeze biceps hard at the peak.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+bicep+curl" },
@@ -875,35 +875,10 @@ const EXERCISE_SUBSTITUTIONS = {
     { name: "Bulgarian Split Squat", type: "Dumbbell", muscle: "Quads", targetReps: "8–10", notes: "Rear foot on bench; stay upright to target front quad.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+bulgarian+split+squat" },
     { name: "Sissy Squat (Machine/Bodyweight)", type: "Bodyweight", muscle: "Quads", targetReps: "10–12", notes: "Lean back maintaining straight hip line; intense rectus femoris stretch.", videoUrl: "https://www.youtube.com/results?search_query=sissy+squat+technique" }
   ],
-  "Hack Squat (or Leg Press)": [
-    { name: "45° Leg Press", type: "Machine", muscle: "Quads / Glutes", targetReps: "8–12", notes: "Feet shoulder-width on lower platform; depth to 90° knee angle.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+leg+press" },
-    { name: "Smith Machine Squat", type: "Machine", muscle: "Quads / Glutes", targetReps: "8–10", notes: "Feet slightly in front of bar; upright torso; deep knee flexion.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+smith+machine+squat" },
-    { name: "Dumbbell Goblet Squat", type: "Dumbbell", muscle: "Quads / Glutes", targetReps: "10–12", notes: "Heavy DB held at chest; squat between knees with control.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+goblet+squat" }
-  ],
-  "Standing Calf Raise": [
-    { name: "Seated Calf Raise", type: "Machine", muscle: "Calves", targetReps: "12–15", notes: "Knees bent 90°; targets soleus; 2s pause at bottom stretch.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+seated+calf+raise" },
-    { name: "Leg Press Calf Press", type: "Machine", muscle: "Calves", targetReps: "12–15", notes: "Balls of feet on lower edge of sled; full ankle flexion and extension.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+leg+press+calf+raise" },
-    { name: "Single-Leg Dumbbell Calf Raise", type: "Dumbbell", muscle: "Calves", targetReps: "12–15", notes: "Hold DB in working hand; stand on step; pause at deep stretch.", videoUrl: "https://www.youtube.com/results?search_query=single+leg+calf+raise" }
-  ],
-  "Cable Crunch": [
-    { name: "Machine Ab Crunch", type: "Machine", muscle: "Abs / Core", targetReps: "10–15", notes: "Seat adjusted; curl ribs toward pelvis; avoid pulling with arms.", videoUrl: "https://www.youtube.com/results?search_query=machine+ab+crunch+technique" },
-    { name: "Hanging Knee / Leg Raise", type: "Bodyweight", muscle: "Abs / Core", targetReps: "10–12", notes: "Tuck pelvis upward; focus on curling lower spine.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+hanging+knee+raise" },
-    { name: "Decline Bench Sit-Up", type: "Bodyweight", muscle: "Abs / Core", targetReps: "12–15", notes: "Cross arms on chest; round spine as you curl up.", videoUrl: "https://www.youtube.com/results?search_query=decline+sit+up+technique" }
-  ],
-  "Machine Shoulder Press": [
-    { name: "Seated Dumbbell Shoulder Press", type: "Dumbbell", muscle: "Shoulders", targetReps: "8–10", notes: "Bench at 75–80°; press dumbbells overhead without clanking.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+shoulder+press" },
-    { name: "Smith Machine Overhead Press", type: "Machine", muscle: "Shoulders", targetReps: "8–10", notes: "Seat adjusted; bar passes just in front of nose; elbows tucked 30°.", videoUrl: "https://www.youtube.com/results?search_query=smith+machine+shoulder+press" },
-    { name: "Standing Overhead DB Press", type: "Dumbbell", muscle: "Shoulders", targetReps: "8–10", notes: "Core braced; press overhead with clean vertical bar path.", videoUrl: "https://www.youtube.com/results?search_query=overhead+dumbbell+press" }
-  ],
   "Neutral-Grip Seated Cable Row": [
     { name: "Chest-Supported Machine Row", type: "Machine", muscle: "Back / Lats", targetReps: "8–12", notes: "Pad adjusted; elbows tight to sides for lats.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+chest+supported+row" },
     { name: "One-Arm Dumbbell Row", type: "Dumbbell", muscle: "Back / Lats", targetReps: "8–10", notes: "Brace on bench; pull DB to hip pocket; control the stretch.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+one+arm+dumbbell+row" },
     { name: "T-Bar Row Machine", type: "Machine", muscle: "Back / Lats", targetReps: "8–10", notes: "Neutral grip; pull into abdomen.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+t+bar+row" }
-  ],
-  "Pec Fly Machine": [
-    { name: "Standing Cable Crossover / Fly", type: "Cable", muscle: "Chest", targetReps: "10–12", notes: "Pulleys at mid height; hug-a-tree motion; squeeze inner pecs.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+cable+crossover" },
-    { name: "Flat Dumbbell Fly", type: "Dumbbell", muscle: "Chest", targetReps: "10–12", notes: "Slight bend in elbows; deep chest stretch at bottom; squeeze up.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+dumbbell+fly" },
-    { name: "Incline Cable Fly", type: "Cable", muscle: "Chest", targetReps: "10–12", notes: "Bench at 30°; cables pull from low position up across upper chest.", videoUrl: "https://www.youtube.com/results?search_query=incline+cable+fly" }
   ],
   "Lat Pulldown (Wide-Grip)": [
     { name: "Neutral-Grip Lat Pulldown", type: "Cable", muscle: "Back / Lats", targetReps: "8–10", notes: "Close parallel grip; pull to upper chest; intense lat stretch.", videoUrl: "https://www.youtube.com/results?search_query=neutral+grip+lat+pulldown" },
@@ -912,10 +887,10 @@ const EXERCISE_SUBSTITUTIONS = {
   ],
   "Incline Overhead Cable Triceps Extension": [
     { name: "Triceps Rope Pushdown", type: "Cable", muscle: "Triceps", targetReps: "8–12", notes: "Lock elbows at ribs; spread rope at bottom.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+tricep+pushdown" },
-    { name: "Standing Overhead DB Triceps Extension", type: "Dumbbell", muscle: "Triceps", targetReps: "10–12", notes: "Both hands cup DB overhead; deep elbow flexion.", videoUrl: "https://www.youtube.com/results?search_query=overhead+dumbbell+tricep+extension" },
+    { name: "Standing / Seated DB Overhead Triceps Extension", type: "Dumbbell", muscle: "Triceps", targetReps: "10–12", notes: "Both hands cup DB overhead; deep elbow flexion.", videoUrl: "https://www.youtube.com/results?search_query=overhead+dumbbell+tricep+extension" },
     { name: "Skull Crushers (Dumbbell or EZ-Bar)", type: "Free Weight", muscle: "Triceps", targetReps: "8–12", notes: "Lie flat; lower weight towards forehead; extend back up.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+skull+crushers" }
   ],
-  "Cable Bayian / Behind-the-Back Curl": [
+  "Cable Bayesian / Behind-the-Back Curl": [
     { name: "Incline Dumbbell Curl", type: "Dumbbell", muscle: "Biceps", targetReps: "8–12", notes: "Bench at 45–60°; arms hang vertical behind torso.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+incline+dumbbell+curl" },
     { name: "Cable Biceps Curl", type: "Cable", muscle: "Biceps", targetReps: "8–12", notes: "Facing low pulley; elbows locked slightly forward.", videoUrl: "https://www.youtube.com/results?search_query=cable+bicep+curl" },
     { name: "Standing Alternating DB Curl", type: "Dumbbell", muscle: "Biceps", targetReps: "8–12", notes: "Supinate at top of contraction.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+bicep+curl" }
@@ -926,12 +901,12 @@ const EXERCISE_SUBSTITUTIONS = {
     { name: "Swiss Ball / Slider Leg Curl", type: "Bodyweight", muscle: "Hamstrings", targetReps: "10–15", notes: "Bridge hips and curl heels toward glutes.", videoUrl: "https://www.youtube.com/results?search_query=swiss+ball+leg+curl" }
   ],
   "Leg Press": [
-    { name: "Hack Squat", type: "Machine", muscle: "Quads / Glutes", targetReps: "8–12", notes: "Shoulders snug against pads; descent to parallel.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+hack+squat" },
+    { name: "Hack Squat (or 45° Leg Press)", type: "Machine", muscle: "Quads / Glutes", targetReps: "8–12", notes: "Shoulders snug against pads; descent to parallel.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+hack+squat" },
     { name: "Smith Machine Squat", type: "Machine", muscle: "Quads / Glutes", targetReps: "8–10", notes: "Bar on upper traps; feet slightly forward; deep squat.", videoUrl: "https://www.youtube.com/results?search_query=smith+machine+squat" },
     { name: "Dumbbell Goblet Squat", type: "Dumbbell", muscle: "Quads / Glutes", targetReps: "10–12", notes: "Hold heavy dumbbell at chest; controlled reps.", videoUrl: "https://www.youtube.com/results?search_query=dumbbell+goblet+squat" }
   ],
   "Seated Calf Raise": [
-    { name: "Standing Calf Raise", type: "Machine", muscle: "Calves", targetReps: "10–15", notes: "Full range of motion; hold bottom stretch 2 seconds.", videoUrl: "https://www.youtube.com/results?search_query=standing+calf+raise" },
+    { name: "Standing / Leg Press Calf Raise", type: "Machine", muscle: "Calves", targetReps: "10–15", notes: "Full range of motion; hold bottom stretch 2 seconds.", videoUrl: "https://www.youtube.com/results?search_query=standing+calf+raise" },
     { name: "Leg Press Calf Press", type: "Machine", muscle: "Calves", targetReps: "12–15", notes: "Balls of feet on bottom edge; deep stretch and peak extension.", videoUrl: "https://www.youtube.com/results?search_query=leg+press+calf+raise" }
   ],
   "Cable Face Pull (Rear Delts & Posture)": [
@@ -950,7 +925,7 @@ const EXERCISE_SUBSTITUTIONS = {
     { name: "Single-Leg Dumbbell Calf Raise", type: "Dumbbell", muscle: "Calves", targetReps: "12–15", notes: "Hold DB in working hand; stand on step; pause at deep stretch.", videoUrl: "https://www.youtube.com/results?search_query=single+leg+calf+raise" }
   ],
   "Kneeling Cable Crunch": [
-    { name: "Machine Ab Crunch", type: "Machine", muscle: "Abs / Core", targetReps: "10–15", notes: "Seat adjusted; curl ribs toward pelvis; avoid pulling with arms.", videoUrl: "https://www.youtube.com/results?search_query=machine+ab+crunch+technique" },
+    { name: "Machine Crunch", type: "Machine", muscle: "Abs / Core", targetReps: "10–15", notes: "Seat adjusted; curl ribs toward pelvis; avoid pulling with arms.", videoUrl: "https://www.youtube.com/results?search_query=machine+ab+crunch+technique" },
     { name: "Captain's Chair Knee Raise", type: "Bodyweight", muscle: "Abs / Core", targetReps: "10–12", notes: "Forearms braced; tuck pelvis up toward sternum.", videoUrl: "https://www.youtube.com/results?search_query=hanging+knee+raise" },
     { name: "Decline Bench Sit-Up", type: "Bodyweight", muscle: "Abs / Core", targetReps: "12–15", notes: "Cross arms on chest; round spine smoothly as you curl up.", videoUrl: "https://www.youtube.com/results?search_query=decline+sit+up+technique" }
   ],
@@ -979,7 +954,7 @@ const EXERCISE_SUBSTITUTIONS = {
     { name: "Standing / Seated DB Overhead Triceps Extension", type: "Dumbbell", muscle: "Triceps", targetReps: "10–12", notes: "Both hands cup DB overhead; deep elbow flexion.", videoUrl: "https://www.youtube.com/results?search_query=overhead+dumbbell+tricep+extension" },
     { name: "Skull Crushers (Dumbbell or EZ-Bar)", type: "Free Weight", muscle: "Triceps", targetReps: "8–12", notes: "Lie flat; lower weight towards forehead; extend back up.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+skull+crushers" }
   ],
-  "Incline / Bayonet Cable Curl": [
+  "Incline / Bayesian Cable Curl": [
     { name: "Incline Dumbbell Curl", type: "Dumbbell", muscle: "Biceps", targetReps: "8–12", notes: "Bench at 45–60°; arms hang vertical behind torso for deep stretch.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+incline+dumbbell+curl" },
     { name: "Cable Biceps Curl", type: "Cable", muscle: "Biceps", targetReps: "8–12", notes: "Facing low pulley; elbows locked slightly forward.", videoUrl: "https://www.youtube.com/results?search_query=cable+bicep+curl" },
     { name: "Standing Alternating DB Curl", type: "Dumbbell", muscle: "Biceps", targetReps: "8–12", notes: "Supinate wrists as you curl up; squeeze biceps hard at peak.", videoUrl: "https://www.youtube.com/results?search_query=Jeff+Nippard+bicep+curl" }
@@ -1006,7 +981,7 @@ const EXERCISE_SUBSTITUTIONS = {
     { name: "Bench Dips (Bodyweight)", type: "Bodyweight", muscle: "Triceps", targetReps: "10–15", notes: "Hands on bench behind hips; lower to 90° elbow bend; press up.", videoUrl: "https://www.youtube.com/results?search_query=bench+dips" }
   ],
   "Standing Bent-Over DB Rear Delt Flye": [
-    { name: "Cable Face Pull", type: "Cable", muscle: "Shoulders", targetReps: "10–12", notes: "Rope to eye level; pull toward face while spreading elbows wide.", videoUrl: "https://www.youtube.com/results?search_query=face+pull" },
+    { name: "Cable Face Pull (Rear Delts & Posture)", type: "Cable", muscle: "Shoulders", targetReps: "10–12", notes: "Rope to eye level; pull toward face while spreading elbows wide.", videoUrl: "https://www.youtube.com/results?search_query=face+pull" },
     { name: "Machine Reverse Pec Deck", type: "Machine", muscle: "Shoulders", targetReps: "10–12", notes: "Chest against pad; pull handles back horizontally.", videoUrl: "https://www.youtube.com/results?search_query=reverse+pec+deck" },
     { name: "Prone Incline DB Rear Delt Flye", type: "Dumbbell", muscle: "Shoulders", targetReps: "10–12", notes: "Lie face down on 30° incline; sweep dumbbells wide.", videoUrl: "https://www.youtube.com/results?search_query=incline+rear+delt+flye" }
   ],
@@ -1018,13 +993,13 @@ const EXERCISE_SUBSTITUTIONS = {
   ],
   "Horizontal Leg Press": [
     { name: "45° Leg Press", type: "Machine", muscle: "Quads / Glutes", targetReps: "8–12", notes: "Feet shoulder-width on platform; lower sled to 90° knee angle.", videoUrl: "https://www.youtube.com/results?search_query=45+degree+leg+press" },
-    { name: "Hack Squat Machine", type: "Machine", muscle: "Quads / Glutes", targetReps: "8–10", notes: "Back glued to pad; descend under control; drive through midfoot.", videoUrl: "https://www.youtube.com/results?search_query=hack+squat" },
+    { name: "Hack Squat (or 45° Leg Press)", type: "Machine", muscle: "Quads / Glutes", targetReps: "8–10", notes: "Back glued to pad; descend under control; drive through midfoot.", videoUrl: "https://www.youtube.com/results?search_query=hack+squat" },
     { name: "Dumbbell Goblet Squat", type: "Dumbbell", muscle: "Quads / Glutes", targetReps: "10–12", notes: "Hold heavy DB at chest; keep chest proud; deep controlled squat.", videoUrl: "https://www.youtube.com/results?search_query=dumbbell+goblet+squat" },
     { name: "Smith Machine Squat", type: "Machine", muscle: "Quads / Glutes", targetReps: "8–10", notes: "Feet slightly forward of bar; upright torso; smooth squat cadence.", videoUrl: "https://www.youtube.com/results?search_query=smith+machine+squat" }
   ],
   "Leg Press Calf Press": [
-    { name: "Standing Calf Raise Machine", type: "Machine", muscle: "Calves", targetReps: "10–15", notes: "Full stretch at bottom; pause 2s; explode onto balls of feet.", videoUrl: "https://www.youtube.com/results?search_query=standing+calf+raise" },
-    { name: "Seated Calf Raise Machine", type: "Machine", muscle: "Calves", targetReps: "12–15", notes: "Knees bent 90°; targets soleus muscle; full stretch pause.", videoUrl: "https://www.youtube.com/results?search_query=seated+calf+raise" },
+    { name: "Standing / Leg Press Calf Raise", type: "Machine", muscle: "Calves", targetReps: "10–15", notes: "Full stretch at bottom; pause 2s; explode onto balls of feet.", videoUrl: "https://www.youtube.com/results?search_query=standing+calf+raise" },
+    { name: "Seated Calf Raise", type: "Machine", muscle: "Calves", targetReps: "12–15", notes: "Knees bent 90°; targets soleus muscle; full stretch pause.", videoUrl: "https://www.youtube.com/results?search_query=seated+calf+raise" },
     { name: "Single-Leg Dumbbell Calf Raise", type: "Dumbbell", muscle: "Calves", targetReps: "12–15", notes: "Hold dumbbell on working side; ball of foot on step; deep pause.", videoUrl: "https://www.youtube.com/results?search_query=single+leg+calf+raise" }
   ],
   "Barbell Romanian Deadlift": [
@@ -1068,37 +1043,24 @@ const EXERCISE_SUBSTITUTIONS = {
   ]
 };
 
-// Evidence-based Hypertrophy Volume Landmarks (sets / week)
-// Based on Dr. Mike Israetel & modern hypertrophy research:
-// MEV = Minimum Effective Volume, MAV = Maximum Adaptive Volume (Growth Sweet Spot), MRV = Maximum Recoverable Volume
-const VOLUME_LANDMARKS = {
-  "Chest": { mev: 8, mavMin: 10, mavMax: 16, mrv: 22 },
-  "Back / Lats": { mev: 10, mavMin: 12, mavMax: 18, mrv: 24 },
-  "Shoulders": { mev: 8, mavMin: 10, mavMax: 16, mrv: 22 },
-  "Biceps": { mev: 6, mavMin: 8, mavMax: 14, mrv: 20 },
-  "Triceps": { mev: 6, mavMin: 8, mavMax: 14, mrv: 20 },
-  "Forearms": { mev: 4, mavMin: 6, mavMax: 12, mrv: 18 },
-  "Quads": { mev: 8, mavMin: 10, mavMax: 16, mrv: 22 },
-  "Hamstrings / Glutes": { mev: 8, mavMin: 10, mavMax: 16, mrv: 22 },
-  "Calves": { mev: 6, mavMin: 8, mavMax: 14, mrv: 20 },
-  "Abs / Core": { mev: 4, mavMin: 6, mavMax: 12, mrv: 18 }
+const EXERCISE_ALIASES = {
+  "Pec Fly Machine": "Machine Pec Deck Flye",
+  "Machine Ab Crunch": "Machine Crunch",
+  "Standing Overhead DB Triceps Extension": "Standing / Seated DB Overhead Triceps Extension",
+  "Standing Calf Raise Machine": "Standing / Leg Press Calf Raise",
+  "Seated Calf Raise Machine": "Seated Calf Raise",
+  "Cable Face Pull": "Cable Face Pull (Rear Delts & Posture)",
+  "Hack Squat Machine": "Hack Squat (or 45° Leg Press)",
+  "Hack Squat": "Hack Squat (or 45° Leg Press)",
+  "Standing Overhead DB Press": "Standing Dumbbell Overhead Press",
+  "Cable Bayian / Behind-the-Back Curl": "Cable Bayesian / Behind-the-Back Curl",
+  "Incline / Bayonet Cable Curl": "Incline / Bayesian Cable Curl",
+  "Hack Squat (or Leg Press)": "Hack Squat (or 45° Leg Press)",
+  "Standing Calf Raise": "Standing / Leg Press Calf Raise",
+  "Cable Crunch": "Kneeling Cable Crunch",
+  "Machine Shoulder Press": "Machine Overhead Shoulder Press"
 };
 
-// Secondary muscle contributions (0.5 set credit for compound synergists)
-const SECONDARY_MUSCLE_CONTRIBUTIONS = {
-  "Converging Machine Chest Press": { "Triceps": 0.5 },
-  "Smith Machine Incline Press": { "Triceps": 0.5 },
-  "Neutral-Grip Lat Pulldown": { "Biceps": 0.5, "Forearms": 0.5 },
-  "Half-Kneeling Single-Arm Pulldown": { "Biceps": 0.5, "Forearms": 0.5 },
-  "Chest-Supported Machine Row": { "Biceps": 0.5, "Forearms": 0.5, "Shoulders": 0.25 },
-  "Neutral-Grip Seated Cable Row": { "Biceps": 0.5, "Forearms": 0.5, "Shoulders": 0.25 },
-  "Machine Overhead Shoulder Press": { "Triceps": 0.5 },
-  "Hack Squat (or 45° Leg Press)": { "Hamstrings / Glutes": 0.5 },
-  "Horizontal Leg Press": { "Hamstrings / Glutes": 0.5 },
-  "Machine Hip Thrust / Glute Drive": { "Hamstrings / Glutes": 0.5 },
-  "Standing Dumbbell Biceps / Hammer Curl": { "Forearms": 0.5 }
-};
-
-if (typeof module !== "undefined") { 
-  module.exports = { DEFAULT_ROUTINE, ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO, EXERCISE_SUBSTITUTIONS, VOLUME_LANDMARKS, SECONDARY_MUSCLE_CONTRIBUTIONS };
+if (typeof module !== "undefined") {
+  module.exports = { DEFAULT_ROUTINE, ONE_TIME_SUNDAY_UPPER_B_ARMS_COMBO, EXERCISE_SUBSTITUTIONS, EXERCISE_ALIASES, RETIRED_MONDAY_ABDUCTION, MONDAY_HIP_ADDUCTION };
 }

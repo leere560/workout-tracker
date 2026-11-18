@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const clone = value => JSON.parse(JSON.stringify(value));
+const { loadApp } = require('./load-app.cjs');
 
 function setup(dayIndex = 1) {
   const values = new Map();
@@ -15,7 +16,7 @@ function setup(dayIndex = 1) {
   };
   const context = vm.createContext({document: {addEventListener() {}}, localStorage, Date, console});
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../routine-data.js'), 'utf8'), context);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8') + ';globalThis.App=WorkoutApp;', context);
+  loadApp(context);
   const app = Object.create(context.App.prototype);
   Object.assign(app, {
     routine: vm.runInContext('JSON.parse(JSON.stringify(DEFAULT_ROUTINE))', context), activeDayIndex: dayIndex,

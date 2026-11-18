@@ -12,13 +12,15 @@
     notice.className = 'app-update-notice';
     notice.setAttribute('aria-label', 'App update available');
     notice.innerHTML = '<span>Update ready. Your workout will be saved.</span><button type="button" id="applyAppUpdate">Save & update</button><button type="button" id="dismissAppUpdate">Later</button>';
-    document.body.appendChild(notice);
+    const header = document.querySelector('.app-header');
+    if (header) header.insertAdjacentElement('afterend', notice);
+    else document.body.prepend(notice);
     notice.querySelector('#applyAppUpdate').addEventListener('click', () => apply());
     notice.querySelector('#dismissAppUpdate').addEventListener('click', () => notice.remove());
   }
 
   async function check() {
-    if (!registration) registration = await navigator.serviceWorker.register('./sw.js?v=34');
+    if (!registration) registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
     await registration.update();
     if (registration.installing) {
       const worker = registration.installing;
@@ -59,7 +61,7 @@
   });
   window.addEventListener('load', async () => {
     try {
-      registration = await navigator.serviceWorker.register('./sw.js?v=34');
+      registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
       registration.addEventListener('updatefound', () => {
         const worker = registration.installing;
         worker?.addEventListener('statechange', () => {

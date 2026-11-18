@@ -37,6 +37,13 @@ test('all published release assets exist and the script versions match the worke
   for (const script of scripts) assert.ok(assets.includes(script), script + ' must be precached');
   const version = /const CACHE_NAME = 'workout-tracker-v(\d+)'/.exec(read('sw.js'))[1];
   assert.ok(read('app.js').includes(`Build v${version}`), 'Settings must display the installed release version');
+  for (const mod of ['migrations', 'storage', 'progression', 'timer', 'view-workout', 'view-insights', 'view-routine']) {
+    const expected = `./src/${mod}.js?v=${version}`;
+    assert.ok(assets.includes(expected), `${expected} must be precached in sw.js`);
+    assert.ok(scripts.includes(expected), `${expected} must be loaded by index.html`);
+  }
+  const updater = read('update-manager.js');
+  assert.match(updater, /register\('\.\/sw\.js',\s*\{\s*updateViaCache:\s*'none'\s*\}\)/);
 });
 
 test('service worker waits for explicit update and preserves unrelated caches', async () => {
