@@ -8,7 +8,7 @@
     const exercises = permanentDays.flatMap(day => day.exercises).filter(ex => !ex.isOptional);
     const normalSets = exercises.reduce((sum, ex) => sum + ex.sets, 0);
     const deloadSets = exercises.reduce((sum, ex) => sum + Math.max(2, Math.floor(ex.sets * .67)), 0);
-    const buildLabel = typeof APP_BUILD_VERSION !== 'undefined' ? APP_BUILD_VERSION : 'Build v40';
+    const buildLabel = typeof APP_BUILD_VERSION !== 'undefined' ? APP_BUILD_VERSION : 'Build v41';
     const reminder = typeof this.getBackupReminderInfo === 'function' ? this.getBackupReminderInfo() : { shouldRemind: false };
 
     this.routineEditorEl.innerHTML = `<div class="insights-page">

@@ -1,11 +1,11 @@
 // A release is cached together. Existing tabs opt in before activating an update.
-const CACHE_NAME = 'workout-tracker-v40';
+const CACHE_NAME = 'workout-tracker-v41';
 const ASSETS_TO_CACHE = [
-  './', './index.html', './styles.css?v=40', './routine-data.js?v=40',
-  './src/migrations.js?v=40', './src/storage.js?v=40', './src/progression.js?v=40',
-  './src/timer.js?v=40', './src/view-workout.js?v=40', './src/view-insights.js?v=40',
-  './src/view-routine.js?v=40', './app.js?v=40', './update-manager.js?v=40',
-  './accessibility.js?v=40', './manifest.json', './icon-192.png', './icon-512.png'
+  './', './index.html', './styles.css?v=41', './routine-data.js?v=41',
+  './src/migrations.js?v=41', './src/storage.js?v=41', './src/progression.js?v=41',
+  './src/timer.js?v=41', './src/view-workout.js?v=41', './src/view-insights.js?v=41',
+  './src/view-routine.js?v=41', './app.js?v=41', './update-manager.js?v=41',
+  './accessibility.js?v=41', './manifest.json', './icon-192.png', './icon-512.png'
 ];
 
 self.addEventListener('install', event => {

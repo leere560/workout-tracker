@@ -1,5 +1,5 @@
 // Core controller & bootstrap for Machine Master Workout Tracker.
-const APP_BUILD_VERSION = 'Build v40';
+const APP_BUILD_VERSION = 'Build v41';
 
 class WorkoutApp {
   constructor() {
